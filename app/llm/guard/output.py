@@ -199,6 +199,7 @@ class Feature(StrEnum):
     STOCK_ANALYST_SECTION = "stock_analyst_section"
     THESIS_CHECK = "thesis_check"
     PORTFOLIO_DOCTOR_FINDING = "portfolio_doctor_finding"
+    PORTFOLIO_DOCTOR_SUMMARY = "portfolio_doctor_summary"
     WHY_MOVED = "why_moved"
     BEFORE_YOU_TRADE = "before_you_trade"
     ASK_MY_PORTFOLIO = "ask_my_portfolio"
@@ -211,6 +212,9 @@ SENTENCE_LIMITS: dict[Feature, tuple[int, int]] = {
     Feature.STOCK_ANALYST_SECTION: (3, 4),
     Feature.THESIS_CHECK: (4, 4),
     Feature.PORTFOLIO_DOCTOR_FINDING: (3, 3),
+    # §2 표에 Portfolio Doctor 요약 행은 없다. finding을 되풀이할 만큼 길면 가장 큰
+    # 위험이 무엇인지가 묻히므로, Fact → Risk 두 문장을 하한, 세 문장을 상한으로 둔다.
+    Feature.PORTFOLIO_DOCTOR_SUMMARY: (2, 3),
     Feature.WHY_MOVED: (3, 4),
     Feature.BEFORE_YOU_TRADE: (2, 3),
     Feature.ASK_MY_PORTFOLIO: (1, 6),

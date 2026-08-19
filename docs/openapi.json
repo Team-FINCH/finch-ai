@@ -785,6 +785,7 @@
     },
     "/api/ai/v1/portfolio/diagnosis": {
       "post": {
+        "description": "위험 지표를 계산하고 상위 항목을 설명한다(§5).\n\n히스토리가 짧으면 409로 끊지 않는다. 집중도·현금·금리민감도 진단은 그대로 유효해서\n신규 포트폴리오에도 절반은 답할 수 있다. 대신 `risk_score`·`risk_level`·\n`annualized_volatility`·`diversification_ratio`가 null이 되고, 왜 null인지는\n`insufficient_history`에 문장으로 담긴다.\n\n보유 0종목이거나 원장을 못 읽을 때만 409다 — 진단할 대상 자체가 없는 경우다.",
         "operationId": "diagnosis_api_ai_v1_portfolio_diagnosis_post",
         "responses": {
           "200": {
