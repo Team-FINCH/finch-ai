@@ -114,6 +114,21 @@ uvicorn app.api.main:app --reload
 완료 정의)을 담당한다. 태스크 지시문에 규율을 다시 적지 않는다 —
 형식은 [docs/worker-task-template.md](docs/worker-task-template.md) 참고.
 
+## 평가
+
+```bash
+python -m eval.run --list       # 검색 평가셋 요약
+python -m eval.run --metrics    # 지표 자체 점검 (키 불필요, CI에 포함)
+python -m eval.run --retrieval  # 검색 정확도 (임베딩 키 필요)
+```
+
+자동 지표는 셋뿐이다 — `Numerical Accuracy` · `Groundedness` ·
+`Portfolio Accuracy`. 응답 정책의 목록은 열한 개지만 초기에 다 만들면 어느 것도
+제대로 쓰지 못한다. 이 셋은 LLM 판정 없이 계산돼 CI에서 돈다.
+
+검색 평가셋은 **우리 코퍼스에 실제로 답이 있는 질문만** 담는다. 코퍼스를 다시
+적재하면 `eval/retrieval.yaml`도 같이 손봐야 한다.
+
 ## 브랜치 전략
 
 현재는 AI 파트 전용 임시 저장소이므로 `main` + 작업 브랜치로 운영합니다.
