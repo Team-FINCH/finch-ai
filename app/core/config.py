@@ -33,8 +33,15 @@ class Settings(BaseSettings):
 
     # ── 임베딩 ───────────────────────────────────────────
     # DDL 시점에 벡터 차원이 고정되므로, 모델을 바꾸면 마이그레이션이 필요하다.
+    # text-embedding-3 계열은 dimensions 파라미터로 축소를 지원해(Matryoshka)
+    # 기본 1536 대신 1024를 요청한다. 스키마를 건드리지 않기 위해서다.
     embedding_dim: int = 1024
-    embedding_model: str = "voyage-3"
+    embedding_model: str = "text-embedding-3-small"
+    embedding_batch_size: int = 128
+
+    openai_api_key: str = ""
+    # 사내 게이트웨이를 쓰면 여기를 바꾼다. 비우면 순정 OpenAI로 붙는다.
+    openai_base_url: str = ""
 
     # ── 외부 데이터 ──────────────────────────────────────
     kis_app_key: str = ""
