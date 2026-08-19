@@ -745,6 +745,7 @@
     },
     "/api/ai/v1/portfolio/attribution": {
       "post": {
+        "description": "기간 수익률을 시장·섹터·선택으로 분해한다(§6).\n\n벤치마크는 시가총액으로 합성한 시장 전체다 — 왜 업종지수를 쓰지 않는지는\n`app.engines.attribution` 모듈 설명에 적혀 있다. 원장을 못 읽거나 구간에 거래일이\n없으면 409, 지원하지 않는 기간이면 400이다.",
         "operationId": "attribution_api_ai_v1_portfolio_attribution_post",
         "requestBody": {
           "content": {

@@ -203,6 +203,7 @@ class Feature(StrEnum):
     WHY_MOVED = "why_moved"
     BEFORE_YOU_TRADE = "before_you_trade"
     ASK_MY_PORTFOLIO = "ask_my_portfolio"
+    PERFORMANCE_ATTRIBUTION = "performance_attribution"
 
 
 #: (최소, 최대) 문장 수. §2 표의 "문장" 열을 그대로 옮겼다.
@@ -218,6 +219,9 @@ SENTENCE_LIMITS: dict[Feature, tuple[int, int]] = {
     Feature.WHY_MOVED: (3, 4),
     Feature.BEFORE_YOU_TRADE: (2, 3),
     Feature.ASK_MY_PORTFOLIO: (1, 6),
+    # §2 표에 성과 요인 분해 행은 없다. 시장·섹터·선택 세 축과 상위 기여 종목까지
+    # 짚어야 해서 Portfolio Doctor 요약보다 한 문장 더 준다.
+    Feature.PERFORMANCE_ATTRIBUTION: (2, 4),
 }
 
 
