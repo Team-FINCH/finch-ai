@@ -119,6 +119,42 @@ class IndexDaily(Base):
     close: Mapped[float] = mapped_column(Float, nullable=False)
 
 
+# ── 재무 ─────────────────────────────────────────────────
+class FinancialAnnual(Base):
+    """사업보고서 기준 연간 재무 수치. 지금은 §3.5 성장 판정용 자본총계뿐이다.
+
+    PBR = 시가총액 / 자본총계이고 시가총액은 `Instrument.market_cap`에 있으므로,
+    성장 판정에 모자란 조각은 자본총계 하나다. 손익 계정은 쓰는 산식이 없어 넣지
+    않는다 — 필요해지면 컬럼을 늘리면 된다.
+
+    **(ticker, fiscal_year)당 한 행이고, 연결·별도 중 하나만 담는다.** DART는
+    같은 보고서에서 연결(CFS)과 별도(OFS) 자본총계를 함께 주는데(삼성전자 2025년은
+    436조 대 254조로 1.7배 차이), 둘을 다 넣으면 읽는 쪽이 매번 어느 쪽을 쓸지
+    다시 정해야 한다. 고르는 규칙은 적재 시점에 한 번만 적용하고(`ingest.financials`
+    의 CFS → OFS 순), 어느 쪽을 골랐는지는 `fs_div`에 남겨 사후 확인이 되게 한다.
+    PBR 백분위는 시장 횡단면 비교라서, 종목마다 기준이 섞이면 순위 자체가 무의미해진다.
+    """
+
+    __tablename__ = "financial_annual"
+
+    ticker: Mapped[str] = mapped_column(
+        String(6), ForeignKey("instruments.ticker", ondelete="CASCADE"), primary_key=True
+    )
+    fiscal_year: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # 자본총계(원). 코스피 대형주는 400조를 넘어 Integer로는 담기지 않는다.
+    # 완전자본잠식이면 음수가 정상값이라 CHECK로 막지 않는다 — PBR을 읽는 쪽이 거른다.
+    total_equity: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # CFS(연결) | OFS(별도). 위 docstring의 선택 규칙이 남긴 자취다.
+    fs_div: Mapped[str] = mapped_column(String(3), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        TS, server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("fs_div IN ('CFS', 'OFS')", name="ck_financial_annual_fs_div"),
+    )
+
+
 # ── 문서 · 임베딩 ────────────────────────────────────────
 class Document(Base):
     """공시·뉴스 원문. RAG의 근거 원천이다."""

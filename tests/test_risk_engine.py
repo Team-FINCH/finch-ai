@@ -21,6 +21,7 @@ from app.engines.risk import (
     _LEVEL_CUTS,
     _RATE_SENSITIVITY,
     _SCORE_COMPONENTS,
+    Finding,
     _level,
     _normalize,
     assess,
@@ -524,17 +525,101 @@ def test_보유하지_않은_대형주는_비중에_섞이지_않는다() -> Non
     assert result.large_cap_weight == pytest.approx(0.0)
 
 
-def test_style_tilt_finding은_아직_만들지_않는다() -> None:
-    """대형 비중은 생겼지만 성장 판정(PBR = 시가총액/자본총계)의 자본총계가 없다.
-    절반만 보고 §3.7 `style_tilt`를 내면 문서와 다른 판정을 같은 이름으로 내보내게 된다.
+# ── §3.5 성장주 비중 ───────────────────────────────────────
+def test_백분위를_안_넘기면_성장주_비중은_None이다() -> None:
+    """0.0으로 채우면 "성장주 한 주도 없음"이라는 거짓이 API로 나가고,
+    §3.7 `style_tilt`의 `≤ 0.15` 쪽이 근거 없이 걸린다.
     """
     result = assess(
         _snapshot(_holding("A", 1.0)),
         {"A": _series(*MARKET)},
-        benchmark=_series(*MARKET),
         market_cap_ranks={"A": 1},
     )
+    assert result.growth_weight is None
     assert all(f.category is not FindingCategory.STYLE_TILT for f in result.findings)
+
+
+def test_성장주_비중은_상위_30_분위_종목_비중의_합이다() -> None:
+    result = assess(
+        _snapshot(_holding("A", 0.6), _holding("B", 0.3), _holding("C", 0.1)),
+        {},
+        pbr_percentiles={"A": 0.95, "B": 0.40, "C": 0.80},
+    )
+    assert result.growth_weight == pytest.approx(0.7)
+
+
+@pytest.mark.parametrize(("percentile", "expected"), [(0.70, 1.0), (0.699, 0.0)])
+def test_상위_30_분위_경계는_0_70을_포함한다(percentile: float, expected: float) -> None:
+    """"PBR ≥ 상위 30% 분위"라서 `≥`가 경계다. 부등호가 밀리면 딱 걸친 종목이 사라진다."""
+    result = assess(_snapshot(_holding("A", 1.0)), {}, pbr_percentiles={"A": percentile})
+    assert result.growth_weight == pytest.approx(expected)
+
+
+def test_백분위표에_없는_종목은_성장이_아니고_분모에서도_빠지지_않는다() -> None:
+    """미제출·자본잠식으로 PBR을 모르는 종목의 처리. §3.5 식이 `Σ ŵ_i`라 재정규화할
+    분모가 없고, 짝인 `w_large`도 순위표에 없는 종목을 같은 방식으로 다룬다.
+    B를 분모에서 빼면 0.5가 아니라 1.0이 나온다 — 답이 달라지는 자리다.
+    """
+    result = assess(
+        _snapshot(_holding("A", 0.5), _holding("B", 0.5)),
+        {},
+        pbr_percentiles={"A": 0.9},
+    )
+    assert result.growth_weight == pytest.approx(0.5)
+
+
+def test_보유하지_않은_성장주는_비중에_섞이지_않는다() -> None:
+    """시장 전체 백분위표를 통째로 넘겨도 세는 대상은 보유 종목뿐이다."""
+    result = assess(
+        _snapshot(_holding("Z", 1.0)),
+        {},
+        pbr_percentiles={"A": 0.99, "B": 0.98, "Z": 0.10},
+    )
+    assert result.growth_weight == pytest.approx(0.0)
+
+
+# ── §3.7 style_tilt ────────────────────────────────────────
+def _style_tilt(result) -> Finding | None:
+    found = [f for f in result.findings if f.category is FindingCategory.STYLE_TILT]
+    assert len(found) <= 1, "양쪽 구간이 겹치지 않으므로 동시에 걸릴 수 없다"
+    return found[0] if found else None
+
+
+@pytest.mark.parametrize(
+    ("percentile", "value", "threshold"),
+    [(0.9, 1.0, 0.70), (0.1, 0.0, 0.15)],
+)
+def test_style_tilt는_양쪽으로_치우쳤을_때_걸린다(
+    percentile: float, value: float, threshold: float
+) -> None:
+    """§3.7 표의 `w_growth ≥ 0.70` 또는 `≤ 0.15`. 성장 쏠림과 가치 쏠림이 같은 지적이라
+    id를 나누지 않는다 — 어느 쪽인지는 `value`와 `threshold`가 말한다.
+    """
+    result = assess(_snapshot(_holding("A", 1.0)), {}, pbr_percentiles={"A": percentile})
+    finding = _style_tilt(result)
+    assert finding is not None
+    assert (finding.id, finding.severity) == ("style_tilt", Severity.INFO)
+    assert (finding.value, finding.threshold) == pytest.approx((value, threshold))
+
+
+def test_style_tilt는_한쪽으로_안_쏠리면_안_걸린다() -> None:
+    result = assess(
+        _snapshot(_holding("A", 0.5), _holding("B", 0.5)),
+        {},
+        pbr_percentiles={"A": 0.9, "B": 0.1},
+    )
+    assert result.growth_weight == pytest.approx(0.5)
+    assert _style_tilt(result) is None
+
+
+def test_성장주_비중은_위험점수를_바꾸지_않는다() -> None:
+    """§3.6은 가중 5개 구성요소로만 점수를 낸다. 성장은 거기 없고 보고용 지표다."""
+    args = (_snapshot(_holding("A", 1.0)), {"A": _series(*_zigzag(N, 0.005))})
+    baseline = assess(*args)
+    tilted = assess(*args, pbr_percentiles={"A": 0.99})
+    assert tilted.risk_score == pytest.approx(baseline.risk_score)
+    assert tilted.risk_level is baseline.risk_level
+    assert tilted.beta == baseline.beta
 
 
 # ── §3.6 risk_score ────────────────────────────────────────

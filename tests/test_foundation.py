@@ -23,6 +23,7 @@ EXPECTED_TABLES = {
     "instruments",
     "price_daily",
     "index_daily",
+    "financial_annual",
     "documents",
     "document_chunks",
     "events",

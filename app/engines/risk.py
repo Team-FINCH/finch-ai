@@ -8,18 +8,10 @@
 결과를 소비하고, 문서 §3.7의 `sector_concentration`이 요구하는 *단일 섹터 최대 비중*만
 따로 구한다(`HHI_sec`는 합산 지표라 "어느 섹터가 몇 %인가"에 답하지 못한다).
 
-벤치마크 시계열(§3.4 베타)과 시가총액 순위(§3.5 대형주 비중)도 DB가 아니라 인자로
-받는다. 이유는 위와 같다 — 엔진이 조회를 시작하는 순간 골든 픽스처가 무의미해진다.
-둘 다 선택 인자라서 안 넘기면 해당 지표만 `None`이 되고 나머지 진단은 그대로 나온다.
-
-## 아직 데이터가 없어서 비워 둔 자리
-
-- **성장주 비중(§3.5 `w_growth`)과 `style_tilt` finding.** 성장 판정이 PBR =
-  시가총액 / 자본총계인데 자본총계가 없다. 재무제표 테이블도, DART 인제스터도 아직
-  없다(`app/llm/tools.py`의 `get_financials`는 공시 본문 RAG 질의의 별칭이지 DART
-  수치가 아니다). 대형주 비중만으로 `style_tilt`를 내면 문서 §3.7이 요구하는 판정과
-  다른 것을 같은 이름으로 내보내게 되므로, 재무 인제스트가 붙을 때까지 미룬다.
-  0.0으로 채운 `w_growth`를 두면 "성장주 비중 0%"라는 거짓이 API로 그대로 나간다.
+벤치마크 시계열(§3.4 베타), 시가총액 순위(§3.5 대형주 비중), PBR 백분위(§3.5 성장주
+비중)도 DB가 아니라 인자로 받는다. 이유는 위와 같다 — 엔진이 조회를 시작하는 순간
+골든 픽스처가 무의미해진다. 셋 다 선택 인자라서 안 넘기면 해당 지표만 `None`이 되고
+나머지 진단은 그대로 나온다.
 
 같은 §3.5의 금리민감도는 섹터 규칙 기반이라 데이터가 필요 없고, 여기서 계산한다.
 """
@@ -77,6 +69,12 @@ _RATE_SENSITIVITY: Mapping[str, float] = {
 
 # ── §3.5 대형 판정 ──────────────────────────────────────────
 _LARGE_CAP_RANK = 100  # "시가총액 순위 ≤ 100위"
+
+# ── §3.5 성장 판정 ──────────────────────────────────────────
+# "PBR ≥ 시장 상위 30% 분위". 고정 임계(예: PBR 2배)가 아니라 분위라서, 백분위
+# 0.70 이상이 곧 상위 30%다. 임계는 여기 두고 백분위 자체는 호출자가 준다 —
+# `_growth_weight` docstring 참고.
+_GROWTH_PERCENTILE = 0.70
 
 # 벤치마크를 보유 종목 하나처럼 끼워 넣어 정렬할 때 쓰는 자리표. 종목코드는 6자리
 # 숫자라 겹칠 일이 없다.
@@ -174,9 +172,11 @@ class RiskAssessment:
     # 공통 거래일이 짧으면 None이다. §3.6 risk_score에는 들어가지 않는 보고용 지표다.
     beta: float | None = None
     # §3.5 w_large. `market_cap_ranks`를 안 넘기면 None — 0.0과 구분해야 한다
-    # ("대형주 없음"과 "안 세어 봤음"은 다른 말이다). 짝인 w_growth는 자본총계가
-    # 없어서 아직 필드조차 만들지 않았다(모듈 docstring 참고).
+    # ("대형주 없음"과 "안 세어 봤음"은 다른 말이다).
     large_cap_weight: float | None = None
+    # §3.5 w_growth. `pbr_percentiles`를 안 넘기면 None이고, 위와 같은 이유로 0.0과
+    # 구분한다. §3.6 risk_score에는 들어가지 않는다 — 가중 5개 구성요소에 성장은 없다.
+    growth_weight: float | None = None
 
 
 # ── 정규화 ──────────────────────────────────────────────────
@@ -325,6 +325,40 @@ def _large_cap_weight(snapshot: PortfolioSnapshot, ranks: Mapping[str, int]) -> 
     )
 
 
+def _growth_weight(
+    snapshot: PortfolioSnapshot, percentiles: Mapping[str, float]
+) -> float | None:
+    """§3.5 `w_growth = Σ_{i ∈ 성장} ŵ_i`, 성장 판정은 `PBR_i ≥ 시장 상위 30% 분위`.
+
+    PBR이 아니라 *백분위*를 받는다. 이유는 `_large_cap_weight`가 시가총액 대신 순위를
+    받는 것과 같다 — "상위 30%"는 시장 횡단면에서만 정해지는데 엔진은 포트폴리오만
+    본다. 보유 종목의 PBR을 전부 줘도 그게 시장에서 몇 분위인지는 알 수 없다.
+
+    **백분위의 모집단은 호출자가 정하고, 엔진은 그것을 그대로 믿는다.** 지금 그 모집단은
+    "PBR을 계산할 수 있는 상장 종목 전체"다 — `instruments.market_cap`과
+    `financial_annual.total_equity`가 둘 다 있고 자본총계가 양수인 종목
+    (`PBR = market_cap / total_equity`). 자본잠식(자본총계 ≤ 0)은 PBR이 음수나 발산이
+    되어 순서를 매길 수 없으므로 모집단에서 뺀다. 값은 0.0~1.0이고 1.0이 가장 비싸다.
+
+    **매핑에 없는 보유 종목은 "성장 아님"으로 보고, 분모에서 빼지 않는다.** §3.5의
+    식이 `Σ ŵ_i`라 재정규화할 분모가 애초에 없고, 짝인 `w_large`도 순위표에 없는 종목을
+    같은 방식으로 다룬다. 대신 부작용이 하나 있다: 미제출·자본잠식으로 PBR을 모르는
+    비중이 크면 `w_growth`가 실제보다 낮게 나오고, §3.7 `style_tilt`의 `≤ 0.15` 쪽이
+    먼저 걸린다. severity가 info인 이유이기도 하다. 커버리지를 임계로 막지 않는 것은
+    문서에 그런 규칙이 없어서다 — 필요해지면 호출자가 커버리지를 재서 넘기지 않으면 된다.
+
+    빈 매핑은 "호출자가 백분위를 안 줬다"로 본다 → None. 0.0("성장주 없음")과 구분해야
+    한다.
+    """
+    if not percentiles:
+        return None
+    return sum(
+        h.stock_weight
+        for h in snapshot.holdings
+        if percentiles.get(h.symbol, 0.0) >= _GROWTH_PERCENTILE
+    )
+
+
 def _drawdown(value_series: Sequence[tuple[date, float]]) -> Drawdown:
     """§3.4 `MDD = min_t (V_t / peak_t − 1)`.
 
@@ -399,8 +433,9 @@ def _findings(
     volatility: Volatility | None,
     diversification: Diversification | None,
     rate_exposure: RateExposure,
+    growth_weight: float | None,
 ) -> tuple[Finding, ...]:
-    """문서 §3.7 표를 그대로 옮겼다. `style_tilt`는 시가총액이 없어 빠졌다."""
+    """문서 §3.7 표를 그대로 옮겼다."""
     candidates = [
         _tiered(
             "ticker_concentration",
@@ -449,6 +484,28 @@ def _findings(
                 reverse=True,
             )
         )
+    # `w_growth ≥ 0.70` 또는 `≤ 0.15`. 양쪽으로 열린 유일한 항목이라 `_tiered`를 두 번
+    # 부른다. 두 구간이 겹치지 않아 동시에 걸릴 수 없고, 따라서 id가 중복되지 않는다.
+    # 성장으로 쏠린 것도 가치로 쏠린 것도 "한쪽에 몰렸다"는 같은 지적이라 id를 나누지
+    # 않는다 — 어느 쪽인지는 `value`와 `threshold`가 말한다.
+    if growth_weight is not None:
+        candidates += [
+            _tiered(
+                "style_tilt",
+                FindingCategory.STYLE_TILT,
+                "w_growth",
+                growth_weight,
+                ((0.70, Severity.INFO),),
+            ),
+            _tiered(
+                "style_tilt",
+                FindingCategory.STYLE_TILT,
+                "w_growth",
+                growth_weight,
+                ((0.15, Severity.INFO),),
+                reverse=True,
+            ),
+        ]
     if rate_exposure.level is RateSensitivity.HIGH:
         candidates.append(
             Finding(
@@ -475,6 +532,7 @@ def assess(
     previous_level: RiskLevel | None = None,
     benchmark: Mapping[date, float] | None = None,
     market_cap_ranks: Mapping[str, int] | None = None,
+    pbr_percentiles: Mapping[str, float] | None = None,
 ) -> RiskAssessment:
     """스냅샷 하나에 대한 위험 진단(§3.2–§3.7).
 
@@ -488,7 +546,9 @@ def assess(
     (`{날짜: 종가}`)이고 `index_daily`의 `index_code = 'KOSPI'` 행이 그대로 들어간다.
     `market_cap_ranks`는 §3.5 대형 판정용 시장 전체 시가총액 순위(`{종목코드: 순위}`,
     1위가 최대)다 — 순위를 받는 이유는 `_large_cap_weight` docstring에 있다.
-    둘 다 안 넘기면 해당 지표만 None이고 나머지 진단은 그대로 나온다.
+    `pbr_percentiles`는 §3.5 성장 판정용 시장 전체 PBR 백분위(`{종목코드: 0.0~1.0}`,
+    1.0이 최고가)다. 모집단 정의와 미수록 종목 처리는 `_growth_weight` docstring에 있다.
+    셋 다 안 넘기면 해당 지표만 None이고 나머지 진단은 그대로 나온다.
     """
     concentration = snapshot.concentration()
     symbols = tuple(h.symbol for h in snapshot.holdings)
@@ -536,6 +596,7 @@ def assess(
         )
 
     rate_exposure = _rate_exposure(snapshot)
+    growth_weight = _growth_weight(snapshot, pbr_percentiles or {})
 
     # 벤치마크를 안 넘겼으면 베타를 요구하지 않은 것이므로 이유도 남기지 않는다.
     # 보유가 없으면 r_p 자체가 없어서 계산 대상이 아니다.
@@ -579,6 +640,7 @@ def assess(
             volatility,
             diversification,
             rate_exposure,
+            growth_weight,
         ),
         volatility=volatility,
         diversification=diversification,
@@ -587,4 +649,5 @@ def assess(
         insufficient_history=" / ".join(reasons) or None,
         beta=beta,
         large_cap_weight=_large_cap_weight(snapshot, market_cap_ranks or {}),
+        growth_weight=growth_weight,
     )
