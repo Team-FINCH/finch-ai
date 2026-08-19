@@ -149,7 +149,10 @@ async def test_세_번째_논지도_UNIQUE에_걸리지_않는다(db: AsyncSessi
 
     assert [t.text for t in await list_theses(db, user_id)] == ["세 번째"]
     closed = await list_theses(db, user_id, status=ThesisStatus.CLOSED)
-    assert [t.text for t in closed] == ["첫 번째", "두 번째"], "첫 논지가 남아야 한다"
+    # 셋 다 같은 트랜잭션 시각을 갖는다. recorded_at DESC가 동점이 되면 Postgres는
+    # 물리적 저장 순서로 돌려주는데, 논지를 닫는 UPDATE가 튜플을 옮기므로 그 순서가
+    # 실행마다 달라진다. 여기서 확인할 것은 순서가 아니라 첫 논지의 생존이다.
+    assert {t.text for t in closed} == {"첫 번째", "두 번째"}, "첫 논지가 남아야 한다"
     assert third.status == ThesisStatus.ACTIVE
 
 
