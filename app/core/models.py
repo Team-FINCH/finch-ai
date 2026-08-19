@@ -19,7 +19,6 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
-    Date as SADate,
     DateTime,
     Float,
     ForeignKey,
@@ -30,7 +29,11 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy import (
+    Date as SADate,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from app.core.config import settings

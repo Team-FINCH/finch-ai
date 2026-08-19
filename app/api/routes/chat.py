@@ -14,7 +14,6 @@ from app.core.enums import Screen
 from app.core.errors import InsufficientData
 from app.core.schemas import Envelope
 
-
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Generic, TypeVar
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -161,10 +161,7 @@ class DataAsOf(BaseModel):
     macro: datetime | None = None
 
 
-ContentT = TypeVar("ContentT")
-
-
-class Envelope(BaseModel, Generic[ContentT]):
+class Envelope[ContentT](BaseModel):
     request_id: str = Field(default_factory=new_request_id)
     generated_at: datetime = Field(default_factory=now_kst)
     data_as_of: DataAsOf = Field(default_factory=DataAsOf)
