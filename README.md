@@ -108,6 +108,12 @@ uvicorn app.api.main:app --reload
 
 ---
 
+## 에이전트로 작업할 때
+
+`CLAUDE.md`가 모든 세션에 자동 로드되어 작업 규율(커밋 단위, 탐침 우선, 읽기 범위,
+완료 정의)을 담당한다. 태스크 지시문에 규율을 다시 적지 않는다 —
+형식은 [docs/worker-task-template.md](docs/worker-task-template.md) 참고.
+
 ## 브랜치 전략
 
 현재는 AI 파트 전용 임시 저장소이므로 `main` + 작업 브랜치로 운영합니다.

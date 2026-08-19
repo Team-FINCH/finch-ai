@@ -43,3 +43,6 @@ eval/runs/
 # 적재 캐시
 .cache/
 data/corpCode.xml
+
+# 워커 진행 메모 (세션 스크래치)
+.worker/

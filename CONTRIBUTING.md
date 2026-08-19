@@ -180,6 +180,9 @@ v0.3.0    Phase 3 — Attribution Engine
 
 HTML이 원본이고 Markdown은 파생물이다. 문서를 고치면 반드시 다시 생성한다.
 
+단, `.html` 짝이 없는 `.md`는 손으로 쓴 문서다(예: `worker-task-template.md`).
+변환 대상이 아니므로 직접 고친다.
+
 ```bash
 python scripts/html2md.py          # 재생성
 python scripts/html2md.py --check  # 최신 여부 확인 (CI용)
