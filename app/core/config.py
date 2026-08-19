@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     naver_client_id: str = ""
     naver_client_secret: str = ""
     ecos_api_key: str = ""
+    # KRX OpenAPI. 지수 시계열과 시가총액 스냅샷을 받는다.
+    # 키는 AUTH_KEY 헤더로만 보낸다 — httpx가 전체 URL을 로그에 남기므로
+    # 쿼리 파라미터에 실으면 로그로 샌다.
+    krx_api_key: str = ""
 
     # ── 백엔드 원장 (읽기 전용) ──────────────────────────
     # 권한이 열리기 전에는 시드 어댑터로 대체해 병렬 진행한다. API 명세 §11 참조.
