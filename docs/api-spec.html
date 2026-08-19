@@ -1,0 +1,1424 @@
+<title>AI 투자 비서 API</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@500;600;700&display=swap">
+
+<style>
+  :root {
+    --paper:      #ECEEEC;
+    --surface:    #FBFCFA;
+    --surface-2:  #E3E7E3;
+    --ink:        #1A1E1C;
+    --ink-2:      #565E59;
+    --ink-3:      #7D857F;
+    --rule:       #D2D8D3;
+    --rule-soft:  #DFE3DF;
+    --accent:     #1F5C4D;
+    --accent-ink: #14493C;
+    --accent-bg:  #DCE8E2;
+    --up:         #B93F32;
+    --down:       #245FA6;
+    --warn:       #8F6415;
+    --warn-bg:    #F0E6D0;
+    --shadow:     0 1px 2px rgba(26,30,28,.05), 0 8px 24px -16px rgba(26,30,28,.28);
+
+    --f-display: "Noto Serif KR", "Apple SD Gothic Neo", serif;
+    --f-body:    "IBM Plex Sans KR", "Apple SD Gothic Neo", system-ui, sans-serif;
+    --f-mono:    "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #141815;
+      --surface:    #1B211D;
+      --surface-2:  #232A25;
+      --ink:        #E3E8E4;
+      --ink-2:      #A2ADA6;
+      --ink-3:      #7B857E;
+      --rule:       #2E3731;
+      --rule-soft:  #262E29;
+      --accent:     #6BBFA3;
+      --accent-ink: #8CD4BA;
+      --accent-bg:  #1D2E28;
+      --up:         #E0705F;
+      --down:       #6EA3E0;
+      --warn:       #D2A24E;
+      --warn-bg:    #2C2618;
+      --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #141815;
+    --surface:    #1B211D;
+    --surface-2:  #232A25;
+    --ink:        #E3E8E4;
+    --ink-2:      #A2ADA6;
+    --ink-3:      #7B857E;
+    --rule:       #2E3731;
+    --rule-soft:  #262E29;
+    --accent:     #6BBFA3;
+    --accent-ink: #8CD4BA;
+    --accent-bg:  #1D2E28;
+    --up:         #E0705F;
+    --down:       #6EA3E0;
+    --warn:       #D2A24E;
+    --warn-bg:    #2C2618;
+    --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 15.5px;
+    line-height: 1.72;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell {
+    display: grid;
+    grid-template-columns: 258px minmax(0, 1fr);
+    gap: 0;
+    max-width: 1220px;
+    margin: 0 auto;
+  }
+
+  /* ── 목차 ───────────────────────────── */
+  .rail {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 44px 26px 44px 30px;
+    border-right: 1px solid var(--rule);
+  }
+  .rail-mark {
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+  .rail-title {
+    font-family: var(--f-display);
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.4;
+    margin: 0 0 26px;
+    letter-spacing: -.01em;
+  }
+  .rail nav { display: flex; flex-direction: column; gap: 1px; }
+  .rail a {
+    display: block;
+    padding: 4px 10px 4px 11px;
+    color: var(--ink-2);
+    text-decoration: none;
+    font-size: 13.2px;
+    line-height: 1.5;
+    border-left: 2px solid transparent;
+    border-radius: 0 3px 3px 0;
+    transition: color .13s, background .13s, border-color .13s;
+  }
+  .rail a:hover { color: var(--ink); background: var(--rule-soft); }
+  .rail a.sub { padding-left: 24px; font-size: 12.6px; color: var(--ink-3); }
+  .rail a.active {
+    color: var(--accent-ink);
+    border-left-color: var(--accent);
+    background: var(--accent-bg);
+    font-weight: 500;
+  }
+  .rail-group {
+    font-family: var(--f-mono);
+    font-size: 9.8px;
+    font-weight: 600;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 20px 0 6px 11px;
+  }
+  .rail a:focus-visible, main a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* ── 본문 ───────────────────────────── */
+  main {
+    padding: 44px 52px 140px;
+    min-width: 0;
+  }
+  .wrap { max-width: 800px; }
+
+  .masthead { padding-bottom: 30px; border-bottom: 2px solid var(--ink); margin-bottom: 38px; }
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 14px;
+  }
+  h1 {
+    font-family: var(--f-display);
+    font-size: clamp(30px, 4.4vw, 42px);
+    font-weight: 700;
+    line-height: 1.24;
+    letter-spacing: -.025em;
+    margin: 0 0 16px;
+    text-wrap: balance;
+  }
+  .standfirst {
+    font-size: 16.5px;
+    line-height: 1.68;
+    color: var(--ink-2);
+    margin: 0;
+    max-width: 62ch;
+  }
+  .meta-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 26px;
+    margin-top: 24px;
+    font-family: var(--f-mono);
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+  .meta-strip b { color: var(--ink-2); font-weight: 500; }
+
+  h2 {
+    font-family: var(--f-display);
+    font-size: 25px;
+    font-weight: 700;
+    letter-spacing: -.02em;
+    line-height: 1.34;
+    margin: 68px 0 8px;
+    padding-top: 22px;
+    border-top: 1px solid var(--rule);
+    text-wrap: balance;
+    scroll-margin-top: 24px;
+  }
+  h2 .num {
+    font-family: var(--f-mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-right: 12px;
+    letter-spacing: 0;
+  }
+  h3 {
+    font-family: var(--f-display);
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -.012em;
+    margin: 42px 0 10px;
+    scroll-margin-top: 24px;
+    text-wrap: balance;
+  }
+  h4 {
+    font-family: var(--f-body);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 26px 0 9px;
+  }
+  p { margin: 0 0 15px; max-width: 68ch; }
+  main a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
+  strong { font-weight: 600; }
+  ul, ol { margin: 0 0 15px; padding-left: 20px; max-width: 68ch; }
+  li { margin-bottom: 5px; }
+  li::marker { color: var(--ink-3); }
+
+  code {
+    font-family: var(--f-mono);
+    font-size: .875em;
+    background: var(--surface-2);
+    padding: 1.5px 5px;
+    border-radius: 3px;
+    color: var(--accent-ink);
+  }
+
+  /* ── 엔드포인트 블록 ─────────────────── */
+  .ep {
+    border: 1px solid var(--rule);
+    border-radius: 7px;
+    background: var(--surface);
+    padding: 0;
+    margin: 18px 0 30px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+  .ep-head {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    flex-wrap: wrap;
+    padding: 13px 18px;
+    border-bottom: 1px solid var(--rule-soft);
+    background: var(--surface-2);
+  }
+  .verb {
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: .09em;
+    padding: 3px 8px;
+    border-radius: 3px;
+    color: #FBFCFA;
+    flex-shrink: 0;
+  }
+  .verb.get    { background: #2F6B5A; }
+  .verb.post   { background: #8A5A14; }
+  .verb.put    { background: #2A5A94; }
+  .verb.delete { background: #96382C; }
+  .path {
+    color: var(--ink);
+    font-family: var(--f-mono);
+    font-size: 13.4px;
+    font-weight: 500;
+    word-break: break-all;
+  }
+  .path .var { color: var(--accent); }
+  .ep-body { padding: 16px 18px 18px; }
+  .ep-body > :first-child { margin-top: 0; }
+  .ep-body > :last-child { margin-bottom: 0; }
+  .ep-note {
+    font-size: 13.6px;
+    color: var(--ink-2);
+    margin: 0 0 4px;
+    max-width: none;
+  }
+  .tag {
+    font-family: var(--f-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: .06em;
+    padding: 2px 7px;
+    border-radius: 3px;
+    border: 1px solid var(--rule);
+    color: var(--ink-3);
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+  .tag.p1 { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-bg); }
+  .tag.sse { color: var(--warn); border-color: var(--warn); background: var(--warn-bg); }
+
+  /* ── 코드 ───────────────────────────── */
+  pre {
+    font-family: var(--f-mono);
+    font-size: 12.6px;
+    line-height: 1.68;
+    background: var(--surface-2);
+    border: 1px solid var(--rule-soft);
+    border-radius: 5px;
+    padding: 13px 15px;
+    overflow-x: auto;
+    margin: 0 0 14px;
+    tab-size: 2;
+  }
+  pre code { background: none; padding: 0; color: var(--ink); font-size: inherit; }
+  .j-key { color: var(--accent-ink); }
+  .j-str { color: var(--down); }
+  .j-num { color: var(--up); }
+  .j-lit { color: var(--warn); font-style: italic; }
+  .j-cmt { color: var(--ink-3); font-style: italic; }
+
+  /* ── 표 ─────────────────────────────── */
+  .t-wrap { overflow-x: auto; margin: 0 0 18px; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 13.6px;
+    min-width: 460px;
+  }
+  th {
+    text-align: left;
+    font-family: var(--f-body);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    border-bottom: 1.5px solid var(--rule);
+    padding: 0 14px 7px 0;
+    white-space: nowrap;
+  }
+  td {
+    border-bottom: 1px solid var(--rule-soft);
+    padding: 9px 14px 9px 0;
+    vertical-align: top;
+    line-height: 1.6;
+  }
+  td:last-child, th:last-child { padding-right: 0; }
+  tbody tr:last-child td { border-bottom: none; }
+  td code { font-size: 12.4px; white-space: nowrap; }
+  .num-col { font-variant-numeric: tabular-nums; }
+
+  /* ── 강조 박스 ──────────────────────── */
+  .rule-box {
+    border: 1px solid var(--accent);
+    border-left-width: 3px;
+    background: var(--accent-bg);
+    border-radius: 0 5px 5px 0;
+    padding: 15px 18px;
+    margin: 20px 0;
+  }
+  .rule-box.warn { border-color: var(--warn); background: var(--warn-bg); }
+  .rule-box > :first-child { margin-top: 0; }
+  .rule-box > :last-child { margin-bottom: 0; }
+  .rule-box .label {
+    font-family: var(--f-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    display: block;
+    margin-bottom: 7px;
+  }
+  .rule-box.warn .label { color: var(--warn); }
+  .rule-box p { max-width: none; font-size: 14.2px; }
+
+  .figure {
+    font-family: var(--f-mono);
+    font-size: 12.4px;
+    line-height: 1.75;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    padding: 18px 20px;
+    overflow-x: auto;
+    margin: 0 0 18px;
+    color: var(--ink-2);
+    white-space: pre;
+  }
+
+  footer {
+    margin-top: 76px;
+    padding-top: 22px;
+    border-top: 2px solid var(--ink);
+    font-size: 13px;
+    color: var(--ink-3);
+  }
+
+  @media (max-width: 940px) {
+    .shell { grid-template-columns: 1fr; }
+    .rail {
+      position: static;
+      height: auto;
+      border-right: none;
+      border-bottom: 1px solid var(--rule);
+      padding: 30px 26px 26px;
+    }
+    .rail nav { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 0 12px; }
+    .rail-group { grid-column: 1 / -1; }
+    main { padding: 34px 26px 100px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-mark">Spec v0.1</div>
+    <div class="rail-title">AI 투자 비서<br>API 명세</div>
+    <nav id="toc">
+      <a href="#overview">개요와 전제</a>
+      <a href="#surface">기능 · 엔드포인트 대응</a>
+
+      <div class="rail-group">공통 규약</div>
+      <a href="#conv" class="sub">기본 규약</a>
+      <a href="#envelope" class="sub">응답 봉투</a>
+      <a href="#narrative" class="sub">narrative / metrics</a>
+      <a href="#citations" class="sub">citations</a>
+      <a href="#stream" class="sub">SSE 스트리밍</a>
+      <a href="#errors" class="sub">에러 · 캐시 · 한도</a>
+
+      <div class="rail-group">엔드포인트</div>
+      <a href="#ep-analysis" class="sub">종목 AI 분석</a>
+      <a href="#ep-chat" class="sub">AI 대화</a>
+      <a href="#ep-diagnosis" class="sub">포트폴리오 진단</a>
+      <a href="#ep-attribution" class="sub">수익률 원인 분석</a>
+      <a href="#ep-preview" class="sub">주문 전 점검</a>
+      <a href="#ep-briefing" class="sub">데일리 브리핑</a>
+      <a href="#ep-wiki" class="sub">투자 논지 · Wiki</a>
+      <a href="#ep-feedback" class="sub">응답 피드백</a>
+
+      <div class="rail-group">계약</div>
+      <a href="#internal" class="sub">외부 의존과 자체 조달</a>
+      <a href="#types" class="sub">공통 타입</a>
+      <a href="#phases" class="sub">단계별 인도 범위</a>
+    </nav>
+  </aside>
+
+  <main>
+    <div class="wrap">
+
+      <header class="masthead">
+        <div class="eyebrow">AI Part · Interface Contract</div>
+        <h1>AI 투자 비서 API 명세</h1>
+        <p class="standfirst">
+          AI 파트가 프론트엔드에 제공하는 6개 기능의 인터페이스, 그리고 그 기능들이 성립하기 위해 백엔드에 요구하는 데이터 계약을 함께 정의한다.
+          국내 주식 전용, 앱 내 가상 포트폴리오를 전제로 한다.
+        </p>
+        <div class="meta-strip">
+          <span><b>Base</b> /api/ai/v1</span>
+          <span><b>Auth</b> Bearer JWT</span>
+          <span><b>Format</b> JSON · UTF-8</span>
+          <span><b>Runtime</b> FastAPI (별도 서비스)</span>
+        </div>
+      </header>
+
+      <h2 id="overview"><span class="num">§1</span>개요와 전제</h2>
+      <p>
+        AI 서비스는 백엔드와 분리된 독립 서버로 동작한다. 포트폴리오·거래 원장은 백엔드가 소유하고 AI 서비스는 이를 읽기만 하며,
+        계산·검색·생성·검증은 전부 AI 파트 안에서 끝난다.
+      </p>
+
+      <div class="rule-box">
+        <span class="label">분리 원칙</span>
+        <p><strong>AI 기능의 구현은 AI 파트가 전부 소유한다.</strong> 다른 파트에 계산이나 조립 로직을 요구하지 않고, 신규 화면 개발도 요청하지 않는다. 프론트는 완성된 응답을 그대로 출력하고, 백엔드는 기존 원장을 읽게 해줄 뿐이다. 이 원칙은 편의가 아니라 <strong>책임 소재</strong>의 문제다 — 숫자가 틀리거나 근거가 어긋났을 때 원인이 AI 파트 밖에 있으면 품질을 통제할 수 없다.</p>
+      </div>
+
+      <h4>확정 전제</h4>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>항목</th><th>확정 내용</th></tr></thead>
+          <tbody>
+            <tr><td>시장 범위</td><td>국내 주식 전용 (KOSPI · KOSDAQ). 해외 종목 요청은 <code>UNSUPPORTED_MARKET</code></td></tr>
+            <tr><td>포트폴리오</td><td>앱 내 가상 포트폴리오. 실계좌·마이데이터 연동 없음</td></tr>
+            <tr><td>계산 주체</td><td>Attribution · Risk 엔진 모두 AI 파트가 구현</td></tr>
+            <tr><td>통화</td><td>KRW 단일. 환율·국가 노출 분석 없음</td></tr>
+            <tr><td>데이터 원천</td><td>KIS OpenAPI(시세) · pykrx(히스토리) · DART(공시·재무) · ECOS(거시)</td></tr>
+            <tr><td>제외 항목</td><td>애널리스트 컨센서스, 목표주가 — 무료 소스 부재 및 규제 리스크</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="rule-box">
+        <span class="label">설계 원칙</span>
+        <p>LLM이 생성한 문장에는 수치가 직접 들어가지 않는다. 엔진이 계산한 값을 <strong>서버에서 치환하고 대조 검증까지 마친 뒤</strong> 완성된 문장을 반환한다. 숫자 정확도를 프롬프트가 아니라 파이프라인 수준에서 보장하며, 클라이언트는 어떤 조립도 하지 않는다. 상세는 <a href="#narrative">§2.3</a>.</p>
+      </div>
+
+      <h2 id="surface"><span class="num">§1.1</span>기능 · 엔드포인트 대응</h2>
+      <p>사용자 대면 기능은 6개이고, 그 아래에 계산 엔진 3종과 단일 설명 레이어가 있다. 기능은 엔진의 조합을 특정 화면에서 특정 프롬프트로 호출한 결과다.</p>
+
+      <div class="figure">                    ┌──────────────────────┐
+                    │  Explanation Layer   │   프롬프트만 다른 단일 생성기
+                    └──────────┬───────────┘
+           ┌───────────────────┼───────────────────┐
+    ┌──────┴──────┐    ┌───────┴──────┐    ┌───────┴───────┐
+    │ Attribution │    │ Risk Engine  │    │  Event / RAG  │
+    │   Engine    │    │              │    │    Engine     │
+    └─────────────┘    └──────────────┘    └───────────────┘
+           └───────────────────┼───────────────────┘
+                    ┌──────────┴───────────┐
+                    │   User Context Layer │   Portfolio · Trades · Wiki
+                    └──────────────────────┘</div>
+
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>기능</th><th>화면</th><th>엔드포인트</th><th>호출 엔진</th></tr></thead>
+          <tbody>
+            <tr><td>AI 종목 분석</td><td>종목 상세</td><td><code>POST /stocks/{ticker}/analysis</code></td><td>Event/RAG + Wiki</td></tr>
+            <tr><td>Ask My Portfolio</td><td>채팅</td><td><code>POST /chat</code></td><td>전부 (Tool)</td></tr>
+            <tr><td>포트폴리오 진단</td><td>포트폴리오</td><td><code>POST /portfolio/diagnosis</code></td><td>Risk</td></tr>
+            <tr><td>수익률 원인 분석</td><td>홈 · 포트폴리오</td><td><code>POST /portfolio/attribution</code></td><td>Attribution + Event</td></tr>
+            <tr><td>주문 전 점검</td><td>주문</td><td><code>POST /orders/preview</code></td><td>Risk × 2 diff</td></tr>
+            <tr><td>데일리 브리핑</td><td>홈</td><td><code>GET /briefing</code></td><td>전부</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        <strong>투자 논지 점검(Thesis Check)은 독립 엔드포인트가 아니다.</strong> 동일 종목·동일 RAG를 쓰므로
+        종목 분석의 <code>thesis_check</code> 섹션으로 흡수했다. 마찬가지로 주문 전 점검은 진단 엔진을 두 번 호출한 차분이므로 별도 시뮬레이션 엔진을 두지 않는다.
+      </p>
+
+      <h2 id="conv"><span class="num">§2</span>공통 규약</h2>
+
+      <h3 id="conv-basic">2.1 기본 규약</h3>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>항목</th><th>규약</th></tr></thead>
+          <tbody>
+            <tr><td>Base URL</td><td><code>/api/ai/v1</code></td></tr>
+            <tr><td>인증</td><td><code>Authorization: Bearer &lt;JWT&gt;</code> — 사용자 식별자는 토큰에서 추출하며 <strong>경로·본문에 넣지 않는다</strong></td></tr>
+            <tr><td>시각</td><td>ISO 8601, KST 오프셋 명시 (<code>2026-08-19T14:32:09+09:00</code>)</td></tr>
+            <tr><td>비율</td><td><strong>0~1 사이 소수</strong>로 전달 (<code>0.4168</code>). 백분율 변환은 <code>metrics.display</code>가 담당</td></tr>
+            <tr><td>금액</td><td>원 단위 정수. 소수점 없음</td></tr>
+            <tr><td>종목코드</td><td>6자리 문자열 (<code>"005930"</code>). 선행 0 유실 방지를 위해 정수 금지</td></tr>
+            <tr><td>언어</td><td><code>Accept-Language: ko-KR</code> 고정. 다국어 미지원</td></tr>
+            <tr><td>멱등성</td><td>생성형 POST는 멱등하지 않음. 재시도 시 <code>Idempotency-Key</code> 헤더 권장</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="envelope">2.2 공통 응답 봉투</h3>
+      <p>모든 성공 응답은 아래 봉투를 공유한다. <code>content</code>만 엔드포인트별로 달라진다.</p>
+      <pre><code>{
+  "request_id": "req_01JQZ8M3T7K2",
+  "generated_at": "2026-08-19T14:32:11+09:00",
+  "data_as_of": {
+    "price":     "2026-08-19T14:30:00+09:00",
+    "portfolio": "2026-08-19T14:32:09+09:00",
+    "filings":   "2026-08-19T09:00:00+09:00",
+    "news":      "2026-08-19T13:50:00+09:00"
+  },
+  "model": "claude-opus-5",
+  "cached": false,
+  "content": { },
+  "citations": [ ],
+  "disclaimer": "본 정보는 투자 판단을 돕기 위한 참고 자료이며 투자 권유가 아닙니다."
+}</code></pre>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>필드</th><th>타입</th><th>설명</th></tr></thead>
+          <tbody>
+            <tr><td><code>request_id</code></td><td>string</td><td>피드백·로그 추적 키. 프론트는 이 값을 <code>POST /feedback</code>에 그대로 전달</td></tr>
+            <tr><td><code>data_as_of</code></td><td>object</td><td><strong>데이터 원천별 기준 시각.</strong> UI에 반드시 노출한다. 시세는 지연될 수 있으므로 생성 시각과 별도로 관리</td></tr>
+            <tr><td><code>cached</code></td><td>boolean</td><td>응답 전체 또는 일부가 캐시에서 왔는지</td></tr>
+            <tr><td><code>disclaimer</code></td><td>string</td><td>고지 문구. 하드코딩하지 말고 응답 값을 표시할 것 (규제 문구 변경 대응)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="narrative">2.3 서술과 수치의 분리 — 핵심 규약</h3>
+      <p>
+        LLM은 계산을 시키지 않아도 <em>주어진 숫자를 반올림하거나 바꾼다.</em>
+        <code>18.3%</code>를 "약 18%"로, <code>+0.87%p</code>를 "+0.9%p"로 바꾸는 일은 흔하게 발생한다.
+        AI 서비스는 내부적으로 LLM에게 자리표시자만 쓰게 한 뒤 엔진 계산값으로 치환하고, 원본과 대조 검증한 문장을 반환한다.
+        <strong>치환과 검증이 서버에서 끝나므로 클라이언트는 받은 문자열을 그대로 출력하면 된다.</strong>
+      </p>
+      <pre><code>{
+  "text": "반도체 관련 자산이 포트폴리오의 42.3%를 차지합니다. 종목은 3개로 나뉘어 있으나 동일한 업황 사이클에 함께 노출되어 있어 분산 효과는 제한적입니다.",
+  "segments": [
+    { "type": "text",   "value": "반도체 관련 자산이 포트폴리오의 " },
+    { "type": "metric", "value": "42.3%", "raw": 0.423, "unit": "ratio",
+      "source": "risk_engine", "direction": null },
+    { "type": "text",   "value": "를 차지합니다. 종목은 " },
+    { "type": "metric", "value": "3개", "raw": 3, "unit": "count",
+      "source": "portfolio_engine", "direction": null },
+    { "type": "text",   "value": "로 나뉘어 있으나 동일한 업황 사이클에 …" }
+  ]
+}</code></pre>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>필드</th><th>용도</th></tr></thead>
+          <tbody>
+            <tr><td><code>text</code></td><td><strong>완성된 문장.</strong> 이것만 출력해도 정상 동작한다. 기본 렌더링 경로</td></tr>
+            <tr><td><code>segments</code></td><td>선택 사항. 등락 색·강조·툴팁 등 수치 스타일링이 필요할 때만 순회한다</td></tr>
+            <tr><td><code>segments[].raw</code></td><td>원시 값. 차트·정렬 등 2차 가공이 필요할 때 사용</td></tr>
+            <tr><td><code>segments[].direction</code></td><td><code>up</code> / <code>down</code>. 국내 관례에 따라 각각 적색·청색</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        <code>segments</code>는 <code>text</code>를 잘라 놓은 것일 뿐 다른 정보가 아니다. 이어 붙이면 <code>text</code>와 정확히 일치한다.
+        프론트가 <code>segments</code>를 무시해도 표시 내용은 동일하며, <strong>숫자 정확도는 어느 쪽을 쓰든 서버가 보장한다.</strong>
+      </p>
+
+      <h4>서버 내부 검증 — 클라이언트와 무관</h4>
+      <p>치환 직후 AI 서비스가 자체 검사한다. 위반 시 응답을 내보내지 않고 재생성하며, 재시도 후에도 실패하면 <code>GUARDRAIL_BLOCKED</code>로 처리한다.</p>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>검사</th><th>기준</th></tr></thead>
+          <tbody>
+            <tr><td>미치환 자리표시자</td><td><code>{{ }}</code>가 남아 있으면 차단</td></tr>
+            <tr><td>비율 · 금액 · 수량 · 배수</td><td>엔진이 내보내지 않은 수치가 문장에 있으면 차단 (<code>42.3%</code>, <code>1,200만 원</code>, <code>2배</code>)</td></tr>
+            <tr><td>연도 · 분기 · 서수 · 종목코드</td><td>허용 (<code>2026년</code>, <code>3분기</code>, <code>첫 번째</code>, <code>005930</code>)</td></tr>
+            <tr><td>엔진 값 대조</td><td><code>segments[].raw</code>가 엔진 출력과 부동소수점 오차 내에서 일치하는지 확인</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="citations">2.4 citations</h3>
+      <p><code>narrative</code> 안에서 <code>[^cit_2]</code> 형태로 참조한다. 사실 주장에는 근거를 붙이고, 엔진 계산값은 <code>type: "engine"</code>으로 표기한다.</p>
+      <pre><code>"citations": [
+  {
+    "id": "cit_2",
+    "type": "filing",
+    "title": "단일판매·공급계약 체결",
+    "source": "DART",
+    "publisher": "삼성전자",
+    "url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260814000342",
+    "published_at": "2026-08-14T16:12:00+09:00",
+    "snippet": "계약금액은 최근 매출액 대비 …",
+    "relevance": 0.87
+  }
+]</code></pre>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th><code>type</code></th><th>의미</th></tr></thead>
+          <tbody>
+            <tr><td><code>filing</code></td><td>DART 공시 원문</td></tr>
+            <tr><td><code>financial</code></td><td>재무제표 항목</td></tr>
+            <tr><td><code>news</code></td><td>언론 기사</td></tr>
+            <tr><td><code>price</code></td><td>시세 · 거래 데이터</td></tr>
+            <tr><td><code>macro</code></td><td>ECOS 거시지표</td></tr>
+            <tr><td><code>engine</code></td><td>자체 계산 결과 (외부 URL 없음)</td></tr>
+            <tr><td><code>wiki</code></td><td>사용자가 기록한 투자 논지</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="stream">2.5 SSE 스트리밍</h3>
+      <p><code>Accept: text/event-stream</code>을 보내면 스트리밍으로 응답한다. 대화와 종목 분석이 지원한다.</p>
+      <pre><code>event: meta
+data: {"request_id":"req_01JQZ8M3T7K2","data_as_of":{...}}
+
+event: tool_call
+data: {"tool":"calc_risk_metrics","status":"running","label":"포트폴리오 위험도 계산 중"}
+
+event: tool_call
+data: {"tool":"calc_risk_metrics","status":"done","duration_ms":412}
+
+event: delta
+data: {"text":"반도체 관련 자산이 포트폴리오의 "}
+
+event: delta
+data: {"text":"42.3%","segment":{"type":"metric","raw":0.423,"unit":"ratio",
+       "source":"risk_engine","direction":null}}
+
+event: delta
+data: {"text":"를 차지합니다."}
+
+event: citations
+data: [{"id":"cit_1","type":"engine","title":"섹터 집중도 계산"}]
+
+event: done
+data: {"finish_reason":"stop","tokens":{"input":8412,"output":623}}</code></pre>
+      <p>
+        <code>tool_call</code>을 노출하는 이유는 대기 구간의 UX 때문이다. 도구 호출에 수 초가 걸리므로
+        <code>label</code>을 그대로 로딩 문구로 표시한다.
+        <strong><code>delta</code>는 이미 치환이 끝난 문자열</strong>이므로 클라이언트는 이어 붙이기만 하면 된다.
+        수치가 포함된 조각에는 <code>segment</code>가 함께 실려 오며 스타일링이 필요할 때만 쓴다.
+        서버는 자리표시자가 열려 있는 동안 출력을 보류했다가 치환 후 내보내므로 <code>{{ }}</code>가 클라이언트에 노출되지 않는다.
+      </p>
+
+      <h3 id="errors">2.6 에러 · 캐시 · 호출 한도</h3>
+      <pre><code>{
+  "error": {
+    "code": "INSUFFICIENT_DATA",
+    "message": "위험 지표를 계산하기에 가격 히스토리가 부족합니다.",
+    "detail": { "required_days": 60, "available_days": 23, "ticker": "462870" }
+  },
+  "request_id": "req_01JQZ8M3T7K2"
+}</code></pre>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>HTTP</th><th>code</th><th>발생 조건</th><th>프론트 처리</th></tr></thead>
+          <tbody>
+            <tr><td class="num-col">400</td><td><code>INVALID_REQUEST</code></td><td>스키마 위반</td><td>개발 오류. 사용자 노출 금지</td></tr>
+            <tr><td class="num-col">400</td><td><code>UNSUPPORTED_MARKET</code></td><td>해외 종목 요청</td><td>"현재 국내 종목만 지원합니다"</td></tr>
+            <tr><td class="num-col">401</td><td><code>UNAUTHORIZED</code></td><td>토큰 만료·누락</td><td>재로그인</td></tr>
+            <tr><td class="num-col">404</td><td><code>INSTRUMENT_NOT_FOUND</code></td><td>미상장·폐지 종목</td><td>종목 페이지 자체 처리</td></tr>
+            <tr><td class="num-col">409</td><td><code>INSUFFICIENT_DATA</code></td><td>보유 종목 0개, 가격 히스토리 60거래일 미만</td><td><strong>AI 영역만 대체 문구로 숨김.</strong> 화면 전체 실패 아님</td></tr>
+            <tr><td class="num-col">422</td><td><code>GUARDRAIL_BLOCKED</code></td><td>투자 권유·가격 예측 요구, 수치 검증 실패</td><td>차단 사유 문구 표시</td></tr>
+            <tr><td class="num-col">429</td><td><code>RATE_LIMITED</code></td><td>호출 한도 초과</td><td><code>Retry-After</code> 헤더만큼 대기</td></tr>
+            <tr><td class="num-col">502</td><td><code>RETRIEVAL_FAILED</code></td><td>DART·뉴스 검색 실패</td><td>재시도 버튼</td></tr>
+            <tr><td class="num-col">504</td><td><code>LLM_TIMEOUT</code></td><td>생성 시간 초과 (30초)</td><td>재시도 버튼</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="rule-box">
+        <span class="label">중요</span>
+        <p><code>INSUFFICIENT_DATA</code>는 정상 상황이다. 신규 가입자는 보유 종목이 없고, 신규 상장 종목은 히스토리가 짧다. <strong>AI 영역만 비활성 상태로 표시하고 기존 화면 기능은 그대로 동작해야 한다.</strong></p>
+      </div>
+
+      <h4>캐시 및 호출 한도</h4>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>엔드포인트</th><th>캐시</th><th>한도 (사용자당)</th></tr></thead>
+          <tbody>
+            <tr><td><code>/stocks/{ticker}/analysis</code></td><td>공통 섹션 종목 단위 6시간 · 개인화 섹션 없음</td><td>10회 / 분</td></tr>
+            <tr><td><code>/chat</code></td><td>없음</td><td>20회 / 분</td></tr>
+            <tr><td><code>/portfolio/diagnosis</code></td><td>사용자 단위 15분</td><td>10회 / 분</td></tr>
+            <tr><td><code>/portfolio/attribution</code></td><td>사용자 · 기간 단위 15분</td><td>10회 / 분</td></tr>
+            <tr><td><code>/orders/preview</code></td><td>없음</td><td>30회 / 분</td></tr>
+            <tr><td><code>/briefing</code></td><td>일 1회 배치 생성</td><td>60회 / 분</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="ep-analysis"><span class="num">§3</span>종목 AI 분석</h2>
+
+      <div class="ep">
+        <div class="ep-head">
+          <span class="verb post">POST</span>
+          <span class="path">/api/ai/v1/stocks/<span class="var">{ticker}</span>/analysis</span>
+          <span class="tag p1">Phase 1</span>
+        </div>
+        <div class="ep-body">
+          <p class="ep-note">종목 상세 화면의 AI 분석. 투자 논지 점검을 섹션으로 포함한다. SSE 지원.</p>
+        </div>
+      </div>
+
+      <h4>Request</h4>
+      <pre><code>{
+  "sections": ["current", "changes", "attention", "risks",
+               "my_impact", "thesis_check", "next_events"],
+  "personalize": true
+}</code></pre>
+      <p>
+        <code>sections</code>를 생략하면 전체를 반환한다. 비보유 종목에서 <code>my_impact</code>·<code>thesis_check</code>를
+        요청하면 해당 섹션은 <code>null</code>로 반환되며 에러가 아니다.
+      </p>
+
+      <h4>Response — content</h4>
+      <pre><code>{
+  "ticker": "005930",
+  "name": "삼성전자",
+  "sections": {
+    "current": {
+      "title": "현재 상황",
+      "text": "메모리 업황 회복 국면에서 …",
+      "segments": [ ],
+      "cached": true,
+      "cached_at": "2026-08-19T09:00:00+09:00"
+    },
+    "changes":   { "title": "최근 변화" },
+    "attention": { "title": "시장이 주목하는 요인" },
+    "risks":     { "title": "확인된 위험 요인" },
+    "my_impact": {
+      "title": "내 포트폴리오 영향",
+      "text": "이 종목은 포트폴리오의 41.7%를 차지하며 평균 매입가 대비 +10.1% 상태입니다.",
+      "segments": [
+        { "type": "text",   "value": "이 종목은 포트폴리오의 " },
+        { "type": "metric", "value": "41.7%", "raw": 0.4168, "unit": "ratio",
+          "source": "portfolio_engine", "direction": null },
+        { "type": "text",   "value": "를 차지하며 평균 매입가 대비 " },
+        { "type": "metric", "value": "+10.1%", "raw": 0.1011, "unit": "ratio",
+          "source": "portfolio_engine", "direction": "up" },
+        { "type": "text",   "value": " 상태입니다." }
+      ],
+      "cached": false
+    },
+    "thesis_check": {
+      "title": "투자 논지 점검",
+      "thesis": {
+        "text": "HBM 구조적 성장에 베팅",
+        "recorded_at": "2026-03-11T10:22:00+09:00",
+        "source": "user_stated"
+      },
+      "supporting": [
+        { "summary": "3분기 HBM 매출 비중 확대", "citation_id": "cit_1" }
+      ],
+      "challenging": [
+        { "summary": "파운드리 부문 적자 지속", "citation_id": "cit_3" }
+      ],
+      "text": "매수 시점에 언급하신 근거와 관련해 …",
+      "segments": [ ]
+    },
+    "next_events": {
+      "title": "다음에 확인할 일정",
+      "events": [
+        { "type": "earnings", "label": "3분기 실적 발표", "date": "2026-10-08", "confirmed": false },
+        { "type": "dividend", "label": "분기 배당 기준일", "date": "2026-09-30", "confirmed": true }
+      ]
+    }
+  }
+}</code></pre>
+
+      <div class="rule-box">
+        <span class="label">비용 설계</span>
+        <p><code>current</code>·<code>changes</code>·<code>attention</code>·<code>risks</code>·<code>next_events</code>는 사용자와 무관하므로 <strong>종목 단위로 캐시</strong>한다(TTL 6시간). <code>my_impact</code>·<code>thesis_check</code>만 사용자별로 생성한다. 이 분리가 없으면 인기 종목에서 동일 분석을 수천 번 재생성한다.</p>
+      </div>
+
+      <p><code>attention</code>·<code>risks</code>의 명칭은 규제 대응이다. "긍정 요인 / 부정 요인"은 의견 제시로 읽힐 수 있어
+      <strong>시장이 주목하는 요인 / 공시·실적에서 확인된 위험 요인</strong>이라는 출처 귀속형으로 고정한다.
+      목표주가와 투자의견은 어떤 섹션에서도 생성하지 않는다.</p>
+
+      <h2 id="ep-chat"><span class="num">§4</span>AI 대화</h2>
+
+      <div class="ep">
+        <div class="ep-head">
+          <span class="verb post">POST</span>
+          <span class="path">/api/ai/v1/chat</span>
+          <span class="tag sse">SSE</span>
+          <span class="tag p1">Phase 1</span>
+        </div>
+        <div class="ep-body">
+          <p class="ep-note">유일한 도구 호출 에이전트. 나머지 기능의 파이프라인을 Tool로 노출해 재사용한다.</p>
+        </div>
+      </div>
+
+      <h4>Request</h4>
+      <pre><code>{
+  "conversation_id": "conv_01JQZ7X4M9",
+  "message": "엔비디아 말고 삼성전자 비중이 너무 높은 거 아냐?",
+  "context": {
+    "screen": "stock_detail",
+    "ticker": "005930"
+  }
+}</code></pre>
+      <p>
+        <code>conversation_id</code>를 생략하면 새 대화를 시작하고 응답 <code>meta</code> 이벤트로 발급한다.
+        <code>context</code>는 화면 맥락으로, 사용자가 "이거 어때?"처럼 대명사로 물을 때 지시 대상을 해소한다.
+        <code>screen</code>은 <code>home · portfolio · stock_detail · order · chat</code> 중 하나.
+      </p>
+
+      <h4>에이전트 Tool 목록</h4>
+      <p>여섯 기능이 공유하는 도구다. 각 기능의 파이프라인을 그대로 Tool 시그니처로 노출했다.</p>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>Tool</th><th>반환</th><th>Phase</th></tr></thead>
+          <tbody>
+            <tr><td><code>get_portfolio</code></td><td>보유 종목·비중·현금·평가손익</td><td class="num-col">1</td></tr>
+            <tr><td><code>get_price_history</code></td><td>일별 종가·거래량 시계열</td><td class="num-col">1</td></tr>
+            <tr><td><code>search_filings</code></td><td>DART 공시 검색 결과</td><td class="num-col">1</td></tr>
+            <tr><td><code>search_news</code></td><td>뉴스 검색 결과</td><td class="num-col">1</td></tr>
+            <tr><td><code>get_financials</code></td><td>재무제표 항목</td><td class="num-col">1</td></tr>
+            <tr><td><code>get_wiki</code></td><td>투자 성향·논지</td><td class="num-col">1</td></tr>
+            <tr><td><code>calc_risk_metrics</code></td><td>집중도·변동성·상관관계</td><td class="num-col">2</td></tr>
+            <tr><td><code>simulate_order</code></td><td>주문 전후 지표 차분</td><td class="num-col">2</td></tr>
+            <tr><td><code>calc_attribution</code></td><td>수익 기여도 분해</td><td class="num-col">3</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="rule-box">
+        <span class="label">구현 순서</span>
+        <p>각 기능을 만들 때 <strong>내부 로직을 처음부터 Tool 시그니처로 작성</strong>하면 대화 기능은 별도 개발 없이 완성된다. 기능을 먼저 만들고 나중에 Tool로 감싸면 같은 로직을 두 번 만들게 된다.</p>
+      </div>
+
+      <h2 id="ep-diagnosis"><span class="num">§5</span>포트폴리오 진단</h2>
+
+      <div class="ep">
+        <div class="ep-head">
+          <span class="verb post">POST</span>
+          <span class="path">/api/ai/v1/portfolio/diagnosis</span>
+          <span class="tag">Phase 2</span>
+        </div>
+        <div class="ep-body">
+          <p class="ep-note">위험 지표를 계산하고 상위 항목을 설명한다. 지표 계산은 Risk Engine이, 문장은 LLM이 담당한다.</p>
+        </div>
+      </div>
+
+      <h4>Response — content</h4>
+      <pre><code>{
+  "risk_level": "high",
+  "risk_score": 72,
+  "summary": {
+    "text": "가장 큰 위험은 반도체 업종 집중도입니다. …",
+    "segments": [ ]
+  },
+  "findings": [
+    {
+      "id": "sector_concentration",
+      "category": "concentration",
+      "severity": "high",
+      "title": "반도체 업종 집중",
+      "text": "삼성전자, SK하이닉스, 한미반도체를 합산하면 42.3%입니다. …",
+      "segments": [
+        { "type": "text",   "value": "삼성전자, SK하이닉스, 한미반도체를 합산하면 " },
+        { "type": "metric", "value": "42.3%", "raw": 0.423, "unit": "ratio",
+          "source": "risk_engine", "direction": null },
+        { "type": "text",   "value": "입니다. …" }
+      ],
+      "evidence": {
+        "tickers": ["005930", "000660", "042700"],
+        "hhi": 0.2841,
+        "avg_pairwise_corr": 0.78
+      }
+    }
+  ],
+  "indicators": {
+    "hhi": 0.2841,
+    "top1_weight": 0.4168,
+    "top3_weight": 0.7204,
+    "annualized_volatility": 0.2837,
+    "max_drawdown_1y": -0.2214,
+    "cash_ratio": 0.081,
+    "rate_sensitivity": "high"
+  }
+}</code></pre>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>필드</th><th>값</th><th>설명</th></tr></thead>
+          <tbody>
+            <tr><td><code>risk_level</code></td><td><code>low · moderate · high</code></td><td>규칙 엔진 판정. LLM이 정하지 않는다</td></tr>
+            <tr><td><code>risk_score</code></td><td>0–100 정수</td><td>구성 지표 가중합. 산식은 별도 문서</td></tr>
+            <tr><td><code>findings[].severity</code></td><td><code>info · medium · high</code></td><td>정렬 순서가 곧 중요도 순위</td></tr>
+            <tr><td><code>evidence</code></td><td>object</td><td>LLM 입력으로 쓰인 원시 지표. 디버깅·평가용으로 응답에 포함</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><code>findings[].category</code>는 <code>concentration · volatility · correlation · style_tilt · macro_exposure · liquidity</code>
+      중 하나다. 국가 집중도와 통화 노출은 국내 단일 시장이므로 정의하지 않는다.</p>
+
+      <h2 id="ep-attribution"><span class="num">§6</span>수익률 원인 분석</h2>
+
+      <div class="ep">
+        <div class="ep-head">
+          <span class="verb post">POST</span>
+          <span class="path">/api/ai/v1/portfolio/attribution</span>
+          <span class="tag">Phase 3</span>
+        </div>
+        <div class="ep-body">
+          <p class="ep-note">수익률을 시장·섹터·종목 선택으로 분해하고 주요 기여 종목에 이벤트를 연결한다.</p>
+        </div>
+      </div>
+
+      <h4>Request</h4>
+      <pre><code>{ "period": "1d", "benchmark": "KOSPI" }</code></pre>
+      <p><code>period</code>는 <code>1d · 1w · 1m · 3m · ytd</code>. <code>benchmark</code>는 <code>KOSPI · KOSDAQ</code>이며 생략 시 보유 비중 가중으로 자동 결정한다.</p>
+
+      <h4>Response — content</h4>
+      <pre><code>{
+  "period": "1d",
+  "total_return": 0.0213,
+  "benchmark_return": 0.0140,
+  "excess_return": 0.0073,
+  "breakdown": {
+    "market":    0.0140,
+    "sector":    0.0031,
+    "selection": 0.0042
+  },
+  "contributors": [
+    {
+      "ticker": "000660",
+      "name": "SK하이닉스",
+      "weight": 0.1820,
+      "return": 0.0512,
+      "contribution": 0.0093,
+      "events": [
+        { "citation_id": "cit_1", "type": "news",
+          "summary": "HBM 공급 계약 관련 보도", "matched_confidence": 0.72 }
+      ]
+    }
+  ],
+  "detractors": [ ],
+  "text": "오늘 상승분의 상당 부분은 시장 전체 상승에서 왔습니다. …",
+  "segments": [ ]
+}</code></pre>
+
+      <div class="rule-box warn">
+        <span class="label">기획서 대비 변경</span>
+        <p>원안의 <strong>환율(FX) 기여도 항목을 제거</strong>했다. 국내 단일 시장에서는 성립하지 않는다. 대신 <code>market</code> / <code>selection</code> 분해를 넣어 "장이 좋았던 것인지, 종목 선택이 좋았던 것인지"에 답한다. 국내 사용자에게 체감 가치가 더 크다.</p>
+      </div>
+
+      <p>
+        <code>matched_confidence</code>는 가격 변동과 이벤트의 연결 강도다. <strong>0.6 미만이면 인과 표현을 쓰지 않는다.</strong>
+        LLM 프롬프트에서 "때문입니다" 대신 "같은 날 다음 소식이 있었습니다" 형태로 강제한다.
+      </p>
+
+      <h2 id="ep-preview"><span class="num">§7</span>주문 전 점검</h2>
+
+      <div class="ep">
+        <div class="ep-head">
+          <span class="verb post">POST</span>
+          <span class="path">/api/ai/v1/orders/preview</span>
+          <span class="tag">Phase 2</span>
+        </div>
+        <div class="ep-body">
+          <p class="ep-note">주문 체결을 가정한 포트폴리오에 진단 엔진을 재실행하고 차분을 반환한다. 승인·거절 판단은 하지 않는다.</p>
+        </div>
+      </div>
+
+      <h4>Request</h4>
+      <pre><code>{
+  "orders": [
+    { "ticker": "000660", "side": "buy", "quantity": 40, "price": 214000 }
+  ]
+}</code></pre>
+      <p>배열로 받아 리밸런싱 시나리오(동시 매수·매도)를 지원한다. <code>price</code>를 생략하면 현재가로 계산한다.</p>
+
+      <h4>Response — content</h4>
+      <pre><code>{
+  "orders_value": 8560000,
+  "feasible": true,
+  "changes": [
+    {
+      "key": "ticker_weight",
+      "label": "SK하이닉스 비중",
+      "before": 0.1820, "after": 0.2634, "delta": 0.0814,
+      "significance": "high"
+    },
+    {
+      "key": "sector_weight_semiconductor",
+      "label": "반도체 업종 비중",
+      "before": 0.4230, "after": 0.5044, "delta": 0.0814,
+      "significance": "high"
+    },
+    { "key": "cash_ratio", "label": "현금 비중",
+      "before": 0.0810, "after": 0.0593, "delta": -0.0217, "significance": "medium" },
+    { "key": "hhi", "label": "집중도",
+      "before": 0.2841, "after": 0.3392, "delta": 0.0551, "significance": "high" },
+    { "key": "annualized_volatility", "label": "예상 변동성",
+      "before": 0.2837, "after": 0.3105, "delta": 0.0268, "significance": "medium" }
+  ],
+  "wiki_conflicts": [
+    {
+      "fact": "분산 투자를 중시하며 단일 업종 40% 이상을 피하고 싶다고 하셨습니다",
+      "source": "user_stated",
+      "recorded_at": "2026-04-02T20:11:00+09:00",
+      "conflict": "이 주문은 반도체 업종 비중을 해당 기준 위로 올립니다"
+    }
+  ],
+  "text": "이 주문을 실행하면 …",
+  "segments": [ ]
+}</code></pre>
+      <p>
+        <code>feasible</code>이 <code>false</code>면 현금 부족이며 <code>detail.shortfall</code>에 부족액이 담긴다.
+        <code>wiki_conflicts</code>는 <strong>사용자가 직접 진술한 항목(<code>user_stated</code>)만</strong> 사용한다.
+        AI가 추론한 성향으로 주문에 이의를 제기하면 근거 없는 참견이 된다.
+      </p>
+
+      <h2 id="ep-briefing"><span class="num">§8</span>데일리 브리핑</h2>
+
+      <div class="ep">
+        <div class="ep-head">
+          <span class="verb get">GET</span>
+          <span class="path">/api/ai/v1/briefing?date=<span class="var">2026-08-19</span></span>
+          <span class="tag">Phase 3</span>
+        </div>
+        <div class="ep-body">
+          <p class="ep-note">배치 생성 결과 조회. 생성 트리거가 아니므로 GET이다. <code>date</code> 생략 시 당일.</p>
+        </div>
+      </div>
+
+      <h4>Response — content</h4>
+      <pre><code>{
+  "date": "2026-08-19",
+  "status": "ready",
+  "generated_at": "2026-08-19T07:30:00+09:00",
+  "items": [
+    {
+      "rank": 1,
+      "category": "holding_move",
+      "relevance_score": 0.91,
+      "title": "SK하이닉스 강세",
+      "text": "포트폴리오에서 18.2%를 차지하는 SK하이닉스가 +5.12% 상승했습니다. …",
+      "segments": [
+        { "type": "text",   "value": "포트폴리오에서 " },
+        { "type": "metric", "value": "18.2%", "raw": 0.1820, "unit": "ratio",
+          "source": "portfolio_engine", "direction": null },
+        { "type": "text",   "value": "를 차지하는 SK하이닉스가 " },
+        { "type": "metric", "value": "+5.12%", "raw": 0.0512, "unit": "ratio",
+          "source": "price", "direction": "up" },
+        { "type": "text",   "value": " 상승했습니다. …" }
+      ],
+      "related_tickers": ["000660"],
+      "deeplink": "/stocks/000660?tab=ai",
+      "citations": ["cit_1"]
+    }
+  ]
+}</code></pre>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th><code>status</code></th><th>의미</th><th>프론트 처리</th></tr></thead>
+          <tbody>
+            <tr><td><code>ready</code></td><td>생성 완료</td><td>정상 표시</td></tr>
+            <tr><td><code>generating</code></td><td>배치 진행 중</td><td>스켈레톤 표시 후 30초 뒤 재조회</td></tr>
+            <tr><td><code>empty</code></td><td>보유 종목 없음 또는 유의미한 이벤트 없음</td><td>영역 숨김</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><code>category</code>는 <code>holding_move · earnings · filing · macro_event · portfolio_shift</code> 중 하나이며 최대 4건을 반환한다.</p>
+
+      <div class="rule-box">
+        <span class="label">비용 설계</span>
+        <p><code>relevance_score</code> 산출은 <strong>LLM이 아니라 규칙 엔진</strong>이 한다(보유 여부 × 비중 × 이벤트 중요도). LLM은 상위 4건의 문장만 생성한다. 랭킹까지 LLM에 맡기면 사용자 수에 비례해 비용이 선형 증가한다.</p>
+      </div>
+
+      <h2 id="ep-wiki"><span class="num">§9</span>투자 논지 · Wiki</h2>
+      <p>계산으로 얻을 수 없는 사용자 맥락을 누적한다. <strong>비중·수익률 같은 수치는 절대 저장하지 않는다.</strong> 즉시 낡기 때문이다.</p>
+
+      <h4>수집 경로 — AI가 직접 묻는다</h4>
+      <p>
+        논지 입력 화면을 다른 파트에 요청하지 않는다. AI 서비스가 거래 이력을 폴링하다 신규 매수를 발견하면
+        <strong>대화 안에서 AI가 먼저 질문해</strong> 수집한다. 별도 UI 없이 기존 AI 표면만으로 완결된다.
+      </p>
+      <div class="figure">신규 매수 감지 (거래 이력 폴링, 5분 주기)
+   │
+   ├─ 대화 진입 시  →  "SK하이닉스를 새로 담으셨네요. 어떤 점을 보고 결정하셨나요?"
+   │                    사용자 답변 → 논지 기록 (source: user_stated)
+   │
+   └─ 미응답 시     →  종목 분석의 thesis_check 섹션에 입력 유도 카드 노출
+                        건너뛰어도 나머지 기능은 그대로 동작</div>
+      <p>
+        논지가 없는 종목은 <code>thesis_check</code>가 <code>null</code>로 반환될 뿐 오류가 아니다.
+        수집률이 낮아도 다른 기능이 무너지지 않도록 <strong>선택 정보로만 취급한다.</strong>
+      </p>
+
+      <div class="ep">
+        <div class="ep-head">
+          <span class="verb post">POST</span>
+          <span class="path">/api/ai/v1/wiki/theses</span>
+          <span class="tag p1">Phase 1</span>
+        </div>
+        <div class="ep-body">
+          <p class="ep-note">논지 기록. 위 대화 흐름에서 AI 서비스가 스스로 호출하며, 클라이언트가 직접 부를 일은 없다.</p>
+        </div>
+      </div>
+      <pre><code>{
+  "ticker": "000660",
+  "text": "HBM 구조적 성장에 베팅",
+  "horizon": "long",
+  "linked_trade_id": "trd_01JQZ6P2K8"
+}</code></pre>
+
+      <div class="ep">
+        <div class="ep-head">
+          <span class="verb get">GET</span>
+          <span class="path">/api/ai/v1/wiki</span>
+          <span class="tag p1">Phase 1</span>
+        </div>
+        <div class="ep-body">
+          <p class="ep-note">"AI가 이해한 나" 화면. 사용자가 자신의 맥락을 열람하고 수정한다.</p>
+        </div>
+      </div>
+      <pre><code>{
+  "profile": [
+    {
+      "fact_id": "fct_01JQ...",
+      "text": "분산 투자를 중시하며 단일 업종 40% 이상을 피하고자 함",
+      "source": "user_stated",
+      "confidence": "high",
+      "as_of": "2026-04-02T20:11:00+09:00",
+      "evidence": { "type": "conversation", "ref": "conv_01JQZ3M1" },
+      "editable": true
+    }
+  ],
+  "theses": [
+    { "ticker": "000660", "name": "SK하이닉스",
+      "text": "HBM 구조적 성장에 베팅", "horizon": "long",
+      "source": "user_stated", "recorded_at": "2026-03-11T10:22:00+09:00",
+      "status": "active" }
+  ]
+}</code></pre>
+
+      <div class="ep">
+        <div class="ep-head">
+          <span class="verb put">PUT</span>
+          <span class="path">/api/ai/v1/wiki/theses/<span class="var">{ticker}</span></span>
+          <span class="tag p1">Phase 1</span>
+        </div>
+        <div class="ep-body"><p class="ep-note">논지 수정. 수정 시 <code>source</code>는 자동으로 <code>user_stated</code>가 된다.</p></div>
+      </div>
+
+      <div class="ep">
+        <div class="ep-head">
+          <span class="verb delete">DELETE</span>
+          <span class="path">/api/ai/v1/wiki/facts/<span class="var">{factId}</span></span>
+          <span class="tag p1">Phase 1</span>
+        </div>
+        <div class="ep-body"><p class="ep-note">항목 삭제. 즉시 이후 모든 응답에서 제외된다.</p></div>
+      </div>
+
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th><code>source</code></th><th>의미</th><th>응답에서의 취급</th></tr></thead>
+          <tbody>
+            <tr><td><code>user_stated</code></td><td>사용자가 직접 진술</td><td>사실로 인용 가능</td></tr>
+            <tr><td><code>derived_from_trades</code></td><td>거래 이력에서 도출</td><td>사실로 인용 가능</td></tr>
+            <tr><td><code>ai_inferred</code></td><td>AI가 대화에서 추론</td><td><strong>단정 금지.</strong> "~하신 것으로 보이는데 맞나요?" 형태만 허용</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Wiki 갱신은 <strong>대화 종료 후 비동기 배치</strong>로만 수행한다. 응답 경로에서 동기적으로 쓰면 지연이 그대로 사용자에게 전가된다. 동시 세션 충돌은 사용자당 단일 writer 큐로 직렬화한다.</p>
+
+      <h2 id="ep-feedback"><span class="num">§10</span>응답 피드백</h2>
+      <div class="ep">
+        <div class="ep-head">
+          <span class="verb post">POST</span>
+          <span class="path">/api/ai/v1/feedback</span>
+          <span class="tag p1">Phase 1</span>
+        </div>
+        <div class="ep-body"><p class="ep-note">AI 품질 지표 수집. 모든 AI 응답 영역에 노출한다.</p></div>
+      </div>
+      <pre><code>{
+  "request_id": "req_01JQZ8M3T7K2",
+  "rating": "down",
+  "reasons": ["wrong_number", "not_relevant"],
+  "comment": "비중이 실제와 다릅니다"
+}</code></pre>
+      <p><code>reasons</code>는 <code>wrong_number · not_relevant · outdated · too_generic · unclear · wrong_citation</code> 중 복수 선택.
+      이 분포가 곧 평가 체계의 우선순위가 된다.</p>
+
+      <h2 id="internal"><span class="num">§11</span>외부 의존과 자체 조달</h2>
+      <p>
+        분리 원칙에 따라 <strong>다른 파트에 신규 개발을 요청하지 않는다.</strong>
+        AI 기능이 필요로 하는 데이터는 이미 존재하는 것을 읽거나, AI 파트가 직접 조달한다.
+      </p>
+
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>필요 데이터</th><th>조달 방식</th><th>타 파트 작업</th></tr></thead>
+          <tbody>
+            <tr><td>보유 종목 · 현금 · 평균매입가</td><td>기존 포트폴리오 조회 API를 서버 간 호출로 소비</td><td>없음 — 읽기 권한만</td></tr>
+            <tr><td>거래 이력</td><td>기존 거래 조회 API 소비 + 주기 폴링</td><td>없음 — 읽기 권한만</td></tr>
+            <tr><td>종목 마스터 · 섹터</td><td><strong>자체 구축</strong> — pykrx + KRX 업종분류, 일 1회 동기화</td><td>없음</td></tr>
+            <tr><td>DART 고유번호</td><td><strong>자체 구축</strong> — DART <code>corpCode.xml</code> 직접 수집</td><td>없음</td></tr>
+            <tr><td>시세 · 가격 히스토리</td><td><strong>자체 적재</strong> — KIS OpenAPI · pykrx</td><td>없음</td></tr>
+            <tr><td>공시 · 뉴스 · 거시지표</td><td><strong>자체 적재</strong> — DART · 네이버 · ECOS</td><td>없음</td></tr>
+            <tr><td>투자 논지</td><td><strong>자체 수집</strong> — 대화로 직접 질문 (<a href="#ep-wiki">§9</a>)</td><td>없음</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="rule-box">
+        <span class="label">타 파트에 요청하는 것</span>
+        <p>딱 두 가지다. <strong>①</strong> 기존 포트폴리오·거래 조회 API에 대한 서버 간 인증 수단 — 서비스 토큰 또는 읽기 전용 DB 계정. <strong>②</strong> 화면에서 AI 응답이 들어갈 <strong>빈 슬롯</strong>. 슬롯 내부의 로직·상태·에러 처리는 전부 AI 파트가 책임진다.</p>
+      </div>
+
+      <h4>AI 파트가 소유하는 저장소</h4>
+      <p>원장은 백엔드가 소유하고 AI는 읽기만 한다. 반대로 아래는 AI 파트가 온전히 소유하며 다른 파트가 알 필요가 없다.</p>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>저장소</th><th>내용</th></tr></thead>
+          <tbody>
+            <tr><td><code>instruments</code></td><td>종목 마스터 — 종목코드, 종목명, 시장, 섹터, DART 고유번호</td></tr>
+            <tr><td><code>price_daily</code></td><td>일별 시세 — 변동성·상관관계 계산 기반 (최소 60거래일)</td></tr>
+            <tr><td><code>documents</code> · <code>embeddings</code></td><td>공시·뉴스 원문과 벡터 (pgvector)</td></tr>
+            <tr><td><code>events</code></td><td>실적·공시·거시 일정과 중요도 점수</td></tr>
+            <tr><td><code>wiki</code></td><td>사용자 투자 논지·성향</td></tr>
+            <tr><td><code>ai_responses</code></td><td>응답 로그 · 피드백 · 평가 데이터셋</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="rule-box warn">
+        <span class="label">경계선</span>
+        <p>백엔드가 <strong>파생 지표를 계산해 주겠다고 해도 받지 않는다.</strong> 비중·수익률·집중도를 양쪽이 각각 계산하면 화면마다 값이 어긋나고 정확도의 책임 소재가 사라진다. AI 응답에 등장하는 모든 수치는 AI 파트 엔진에서만 나온다. 원장 조회 응답에 <code>weight</code>·<code>pnl_pct</code> 같은 파생 필드가 있어도 <strong>무시하고 다시 계산한다.</strong></p>
+      </div>
+
+      <h4>거래 감지 — 폴링으로 자체 해결</h4>
+      <p>
+        논지 수집과 브리핑에는 신규 거래 시점을 알아야 한다. 웹훅 개발을 요청하는 대신
+        거래 조회 API를 주기 폴링하고 <code>trade_id</code> 워터마크로 신규 건을 판별한다.
+        가상 포트폴리오라 거래 빈도가 낮아 5분 주기로 충분하며, <strong>백엔드는 폴링당하는 사실조차 알 필요가 없다.</strong>
+      </p>
+
+      <h4>병렬 진행 장치</h4>
+      <p>
+        읽기 권한이 늦어져도 AI 파트가 멈추지 않도록, 포트폴리오 조회를 어댑터 한 겹 뒤에 둔다.
+        초기에는 시드 데이터 어댑터로 개발하고 권한이 열리면 실제 어댑터로 교체한다.
+        <strong>다른 파트의 일정이 AI 파트의 임계 경로에 들어오지 않게 하는 것이 분리 원칙의 실질적 목적이다.</strong>
+      </p>
+
+      <h2 id="types"><span class="num">§12</span>공통 타입</h2>
+      <h4>Segment</h4>
+      <pre><code>{
+  "type":      "text | metric",
+  "value":     "41.7%",
+  "raw":       0.4168,
+  "unit":      "ratio | krw | count | days | score",
+  "source":    "portfolio_engine | risk_engine | attribution_engine | price | filing",
+  "direction": "up | down | null"
+}</code></pre>
+      <p><code>type: "text"</code>인 조각은 <code>value</code>만 가진다. 나머지 필드는 <code>metric</code>에서만 채워진다.</p>
+      <h4>Section</h4>
+      <pre><code>{
+  "title":     "string",
+  "text":      "string",
+  "segments":  [ ],
+  "cached":    false,
+  "cached_at": "string | null"
+}</code></pre>
+      <h4>Citation</h4>
+      <pre><code>{
+  "id":           "cit_1",
+  "type":         "filing | financial | news | price | macro | engine | wiki",
+  "title":        "string",
+  "source":       "string",
+  "url":          "string | null",
+  "published_at": "string | null",
+  "snippet":      "string | null",
+  "relevance":    0.87
+}</code></pre>
+
+      <h2 id="phases"><span class="num">§13</span>단계별 인도 범위</h2>
+      <p>엔진 하나가 완성될 때마다 기능이 쌍으로 나온다. 따라서 단계는 기능이 아니라 엔진 단위로 끊는다.</p>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>단계</th><th>완성 엔진</th><th>인도 엔드포인트</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Phase 1</strong><br><span style="color:var(--ink-3)">Event/RAG + Wiki</span></td>
+              <td>Portfolio Engine<br>Event/RAG Engine<br>User Wiki</td>
+              <td><code>/stocks/{ticker}/analysis</code><br><code>/chat</code> (Tool 6종)<br><code>/wiki/*</code><br><code>/feedback</code></td>
+            </tr>
+            <tr>
+              <td><strong>Phase 2</strong><br><span style="color:var(--ink-3)">Risk</span></td>
+              <td>Risk Engine</td>
+              <td><code>/portfolio/diagnosis</code><br><code>/orders/preview</code><br><code>/chat</code> Tool 2종 추가</td>
+            </tr>
+            <tr>
+              <td><strong>Phase 3</strong><br><span style="color:var(--ink-3)">Attribution</span></td>
+              <td>Attribution Engine<br>Event Ranking</td>
+              <td><code>/portfolio/attribution</code><br><code>/briefing</code><br><code>/chat</code> Tool 1종 추가</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        주문 전 점검이 Phase 2에 있는 것은 진단 엔진의 차분 계산이라 추가 비용이 거의 없기 때문이다.
+        브리핑은 세 엔진을 모두 소비하므로 마지막이지만, 필요하면 Phase 1에서 공시·실적 일정만 다루는 축소판을 먼저 낼 수 있다.
+      </p>
+
+      <div class="rule-box">
+        <span class="label">착수 조건</span>
+        <p>타 파트 의존은 <a href="#internal">기존 조회 API의 서버 간 접근 권한</a> 하나뿐이고, 그마저 시드 데이터 어댑터로 대체해 병렬 진행할 수 있다. 종목 마스터·시세·공시·뉴스는 전부 AI 파트가 직접 적재하므로 <strong>다른 파트의 일정에 막히는 지점이 없다.</strong> 오늘 바로 착수 가능하다.</p>
+      </div>
+
+      <footer>
+        AI 투자 비서 · AI 파트 인터페이스 계약 v0.1 — 국내 주식 전용, 앱 내 가상 포트폴리오 기준.
+        엔진 산식과 프롬프트 정책은 별도 문서로 분리한다.
+      </footer>
+
+    </div>
+  </main>
+</div>
+
+<script>
+  // JSON 코드 블록 하이라이트
+  document.querySelectorAll('pre code').forEach(function (block) {
+    var src = block.textContent;
+    var html = src
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"([^"\\]*(?:\\.[^"\\]*)*)"(\s*:)/g, '<span class="j-key">"$1"</span>$2')
+      .replace(/:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/g, ': <span class="j-str">"$1"</span>')
+      .replace(/:\s*(-?\d+\.?\d*)/g, ': <span class="j-num">$1</span>')
+      .replace(/\b(true|false|null)\b/g, '<span class="j-lit">$1</span>')
+      .replace(/(\/\/[^\n]*)/g, '<span class="j-cmt">$1</span>');
+    block.innerHTML = html;
+  });
+
+  // 목차 스크롤 추적
+  var links = Array.prototype.slice.call(document.querySelectorAll('#toc a'));
+  var targets = links
+    .map(function (a) { return document.getElementById(a.getAttribute('href').slice(1)); })
+    .filter(Boolean);
+
+  if ('IntersectionObserver' in window && targets.length) {
+    var visible = new Set();
+    var obs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) visible.add(e.target.id);
+        else visible.delete(e.target.id);
+      });
+      var firstId = null;
+      for (var i = 0; i < targets.length; i++) {
+        if (visible.has(targets[i].id)) { firstId = targets[i].id; break; }
+      }
+      if (!firstId) return;
+      links.forEach(function (a) {
+        a.classList.toggle('active', a.getAttribute('href') === '#' + firstId);
+      });
+    }, { rootMargin: '-8% 0px -72% 0px', threshold: 0 });
+    targets.forEach(function (t) { obs.observe(t); });
+  }
+</script>
