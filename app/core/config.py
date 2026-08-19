@@ -27,6 +27,8 @@ class Settings(BaseSettings):
 
     # ── LLM ──────────────────────────────────────────────
     anthropic_api_key: str = ""
+    # 어느 공급자로 붙을지. 고른 쪽 키가 비어 있으면 다른 쪽으로 넘어간다.
+    llm_provider: str = "openai"
     llm_model: str = "claude-opus-5"
     llm_max_tokens: int = 16_000
     llm_timeout_s: int = 30
@@ -45,6 +47,8 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     # 사내 게이트웨이를 쓰면 여기를 바꾼다. 비우면 순정 OpenAI로 붙는다.
     openai_base_url: str = ""
+    # ANTHROPIC_API_KEY가 없는 동안 설명 생성을 대신 맡는 모델. 임시다.
+    openai_llm_model: str = "gpt-5.4-mini"
 
     # ── 외부 데이터 ──────────────────────────────────────
     kis_app_key: str = ""
