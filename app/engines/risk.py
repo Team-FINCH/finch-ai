@@ -8,18 +8,18 @@
 결과를 소비하고, 문서 §3.7의 `sector_concentration`이 요구하는 *단일 섹터 최대 비중*만
 따로 구한다(`HHI_sec`는 합산 지표라 "어느 섹터가 몇 %인가"에 답하지 못한다).
 
-## 데이터가 없어서 비워 둔 자리
+벤치마크 시계열(§3.4 베타)과 시가총액 순위(§3.5 대형주 비중)도 DB가 아니라 인자로
+받는다. 이유는 위와 같다 — 엔진이 조회를 시작하는 순간 골든 픽스처가 무의미해진다.
+둘 다 선택 인자라서 안 넘기면 해당 지표만 `None`이 되고 나머지 진단은 그대로 나온다.
 
-- **베타(§3.4).** `index_daily` 테이블이 비어 있고 채울 소스가 없다. pykrx의 지수
-  엔드포인트는 KRX 로그인 없이는 전부 실패하고 `ECOS_API_KEY`도 미설정이다. 베타는
-  §3.6 risk_score의 구성요소가 아니라서 다른 지표가 막히지는 않는다. 그래서 필드는
-  `None`으로 노출하고, 벤치마크 수익률이 생기는 날 `Cov(r_p, r_m)/Var(r_m)`만 채우면
-  되도록 자리를 남겼다.
-- **스타일 편중(§3.5 성장·대형).** 시가총액이 필요한데 `Instrument.market_cap`과
-  `listed_shares`가 전 종목 NULL이고, 횡단면 pykrx 엔드포인트도 KRX 로그인 없이는
-  실패한다. 오늘 유도할 방법이 없으므로 `w_growth`/`w_large`와 `style_tilt` finding은
-  아예 만들지 않았다. 0.0으로 채운 필드를 두면 "성장주 비중 0%"라는 거짓을 API가
-  그대로 내보내게 된다.
+## 아직 데이터가 없어서 비워 둔 자리
+
+- **성장주 비중(§3.5 `w_growth`)과 `style_tilt` finding.** 성장 판정이 PBR =
+  시가총액 / 자본총계인데 자본총계가 없다. 재무제표 테이블도, DART 인제스터도 아직
+  없다(`app/llm/tools.py`의 `get_financials`는 공시 본문 RAG 질의의 별칭이지 DART
+  수치가 아니다). 대형주 비중만으로 `style_tilt`를 내면 문서 §3.7이 요구하는 판정과
+  다른 것을 같은 이름으로 내보내게 되므로, 재무 인제스트가 붙을 때까지 미룬다.
+  0.0으로 채운 `w_growth`를 두면 "성장주 비중 0%"라는 거짓이 API로 그대로 나간다.
 
 같은 §3.5의 금리민감도는 섹터 규칙 기반이라 데이터가 필요 없고, 여기서 계산한다.
 """
@@ -74,6 +74,13 @@ _RATE_SENSITIVITY: Mapping[str, float] = {
     "보험": -0.5,
     "증권": -0.5,
 }
+
+# ── §3.5 대형 판정 ──────────────────────────────────────────
+_LARGE_CAP_RANK = 100  # "시가총액 순위 ≤ 100위"
+
+# 벤치마크를 보유 종목 하나처럼 끼워 넣어 정렬할 때 쓰는 자리표. 종목코드는 6자리
+# 숫자라 겹칠 일이 없다.
+_BENCHMARK = "__benchmark__"
 
 # ── §3.6 risk_score 구성요소 ────────────────────────────────
 # (지표 이름, lo, hi, 가중). 역방향 지표는 `lo > hi`로 둔다 — `_normalize`가 같은 식
@@ -163,9 +170,13 @@ class RiskAssessment:
     risk_score: float | None
     risk_level: RiskLevel | None
     insufficient_history: str | None = None
-    # 벤치마크 시계열이 없어 계산 불가. 모듈 docstring 참고. 채울 때는
-    # β = Cov(r_p, r_m) / Var(r_m), 60거래일.
+    # §3.4 β = Cov(r_p, r_m) / Var(r_m). `benchmark`를 안 넘겼거나 벤치마크까지 포함한
+    # 공통 거래일이 짧으면 None이다. §3.6 risk_score에는 들어가지 않는 보고용 지표다.
     beta: float | None = None
+    # §3.5 w_large. `market_cap_ranks`를 안 넘기면 None — 0.0과 구분해야 한다
+    # ("대형주 없음"과 "안 세어 봤음"은 다른 말이다). 짝인 w_growth는 자본총계가
+    # 없어서 아직 필드조차 만들지 않았다(모듈 docstring 참고).
+    large_cap_weight: float | None = None
 
 
 # ── 정규화 ──────────────────────────────────────────────────
@@ -257,6 +268,61 @@ def _diversification_ratio(weighted_sigma: float, sigma_p: float) -> float:
     if weighted_sigma <= 0.0:
         return 1.0
     return weighted_sigma / sigma_p if sigma_p > 0.0 else math.inf
+
+
+def _beta(
+    symbols: Sequence[str],
+    weights: np.ndarray,
+    prices: Mapping[str, Mapping[date, float]],
+    benchmark: Mapping[date, float],
+) -> tuple[float | None, str | None]:
+    """§3.4 `β = Cov(r_p, r_m) / Var(r_m)`. 반환은 `(β, 계산 못 한 이유)`.
+
+    벤치마크를 *보유 종목 하나처럼* 취급해 `_aligned_returns`에 함께 넘긴다. 지수는
+    거래일이 길고 종목은 상장·편입 시점 때문에 짧다. r_p와 r_m을 각자의 날짜 축에서
+    뽑으면 공분산이 서로 다른 날을 짝지어 버리므로, 정렬 규칙을 두 벌 만드는 대신
+    기존 교집합 로직을 그대로 쓴다. 벤치마크가 섞인 교집합은 §3.2·§3.3이 쓰는
+    교집합보다 짧을 수 있어서 호출도 따로 한다 — 베타 때문에 변동성 표본이 줄면
+    안 된다.
+
+    표본 규칙은 §3.2 변동성과 같다(공통 거래일 전체, `min_history_days` 이상).
+    문서가 말하는 "60거래일"이 곧 `settings.min_history_days`다.
+    """
+    _, joint = _aligned_returns((*symbols, _BENCHMARK), {**prices, _BENCHMARK: benchmark})
+    observed = len(joint)
+    if observed < settings.min_history_days:
+        return None, (
+            f"벤치마크 포함 공통 거래일 {observed}일 — {settings.min_history_days}일 "
+            f"미만이라 베타를 추정하지 않는다"
+        )
+    market = joint[:, -1]
+    variance = float(market.var(ddof=1))
+    if variance <= 0.0:
+        # 지수가 전 구간 보합. 분모가 0이면 β는 정의되지 않는다 — inf로 두면 "시장보다
+        # 무한히 민감"이라는 읽을 수 없는 값이 API로 나간다.
+        return None, "벤치마크 수익률의 분산이 0이라 베타가 정의되지 않는다"
+    portfolio = joint[:, :-1] @ weights
+    return float(np.cov(portfolio, market, ddof=1)[0, 1] / variance), None
+
+
+def _large_cap_weight(snapshot: PortfolioSnapshot, ranks: Mapping[str, int]) -> float | None:
+    """§3.5 `w_large = Σ_{시가총액 순위 ≤ 100} ŵ_i`.
+
+    시가총액이 아니라 *순위*를 받는다. 100위는 시장 전체 횡단면에서만 정해지는 값인데
+    엔진은 포트폴리오만 본다 — 보유 종목의 시가총액을 전부 줘도 그게 시장에서 몇 위인지
+    는 알 수 없다. 순위는 전 종목이 보이는 곳에서 한 번 매겨(`ORDER BY market_cap DESC`)
+    넘기는 것이 맞고, 그러면 종목 수와 무관하게 인자도 작아진다.
+
+    빈 매핑은 "호출자가 순위를 안 줬다"로 본다 → None. 매핑이 있는데 특정 종목이
+    빠져 있으면 100위 밖으로 본다 — 전 종목 순위표에 없다는 건 그런 뜻이다.
+    """
+    if not ranks:
+        return None
+    return sum(
+        h.stock_weight
+        for h in snapshot.holdings
+        if ranks.get(h.symbol, _LARGE_CAP_RANK + 1) <= _LARGE_CAP_RANK
+    )
 
 
 def _drawdown(value_series: Sequence[tuple[date, float]]) -> Drawdown:
@@ -407,6 +473,8 @@ def assess(
     *,
     value_series: Sequence[tuple[date, float]] = (),
     previous_level: RiskLevel | None = None,
+    benchmark: Mapping[date, float] | None = None,
+    market_cap_ranks: Mapping[str, int] | None = None,
 ) -> RiskAssessment:
     """스냅샷 하나에 대한 위험 진단(§3.2–§3.7).
 
@@ -415,6 +483,12 @@ def assess(
     비워 두면 MDD가 0이 된다.
 
     `previous_level`은 히스테리시스용 직전 등급이다(`_level` docstring 참고).
+
+    `benchmark`는 §3.4 베타용 벤치마크 지수 종가다. `prices`의 한 종목과 같은 모양
+    (`{날짜: 종가}`)이고 `index_daily`의 `index_code = 'KOSPI'` 행이 그대로 들어간다.
+    `market_cap_ranks`는 §3.5 대형 판정용 시장 전체 시가총액 순위(`{종목코드: 순위}`,
+    1위가 최대)다 — 순위를 받는 이유는 `_large_cap_weight` docstring에 있다.
+    둘 다 안 넘기면 해당 지표만 None이고 나머지 진단은 그대로 나온다.
     """
     concentration = snapshot.concentration()
     symbols = tuple(h.symbol for h in snapshot.holdings)
@@ -429,13 +503,15 @@ def assess(
 
     volatility: Volatility | None = None
     diversification: Diversification | None = None
-    insufficient: str | None = None
+    # 지표마다 막히는 이유가 다르다(변동성은 종목 히스토리, 베타는 벤치마크와의 교집합).
+    # 하나만 담을 수 있는 문자열로 두면 나중에 온 이유가 먼저 온 이유를 덮는다.
+    reasons: list[str] = []
 
     _, returns = _aligned_returns(symbols, prices)
     observed = len(returns)
     if observed < settings.min_history_days:
         # 추정하지 않고 거절한다. 20일 표본으로 뽑은 연율 변동성은 숫자만 그럴듯하다.
-        insufficient = (
+        reasons.append(
             f"공통 거래일 {observed}일 — {settings.min_history_days}일 미만이라 "
             f"변동성·상관을 추정하지 않는다 (보유 {len(symbols)}종목)"
         )
@@ -460,6 +536,14 @@ def assess(
         )
 
     rate_exposure = _rate_exposure(snapshot)
+
+    # 벤치마크를 안 넘겼으면 베타를 요구하지 않은 것이므로 이유도 남기지 않는다.
+    # 보유가 없으면 r_p 자체가 없어서 계산 대상이 아니다.
+    beta: float | None = None
+    if benchmark and symbols:
+        beta, beta_reason = _beta(symbols, weights, prices, benchmark)
+        if beta_reason is not None:
+            reasons.append(beta_reason)
 
     risk_score: float | None = None
     risk_level: RiskLevel | None = None
@@ -500,5 +584,7 @@ def assess(
         diversification=diversification,
         risk_score=risk_score,
         risk_level=risk_level,
-        insufficient_history=insufficient,
+        insufficient_history=" / ".join(reasons) or None,
+        beta=beta,
+        large_cap_weight=_large_cap_weight(snapshot, market_cap_ranks or {}),
     )

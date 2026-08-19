@@ -392,18 +392,148 @@ def test_기간을_알_수_있게_표본_일수를_같이_준다() -> None:
     assert result.drawdown.observed_days == 0
 
 
-# ── 베타·스타일 편중: 데이터 없음 ───────────────────────────
-def test_베타는_None으로_남는다() -> None:
-    """`index_daily`가 비어 있어 계산할 수 없다. 0.0으로 채우면 "시장과 무관"이라는
-    거짓 진단이 API로 그대로 나간다.
-    """
-    result = assess(_snapshot(_holding("A", 1.0)), {"A": _series(*_zigzag(N, 0.01))})
+# ── §3.4 베타 ───────────────────────────────────────────────
+MARKET = _zigzag(N, 0.01)  # 벤치마크 일별 수익률 — 분산이 0이 아니어야 β 분모가 산다
+
+
+def _scaled(returns: list[float], k: float) -> list[float]:
+    """벤치마크를 k배로 따라가는 종목. 정확히 선형이라 β는 정의상 k다."""
+    return [k * r for r in returns]
+
+
+def test_시장을_그대로_따라가면_베타가_1이다() -> None:
+    result = assess(
+        _snapshot(_holding("A", 1.0)),
+        {"A": _series(*MARKET)},
+        benchmark=_series(*MARKET),
+    )
+    assert result.beta == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("k", [2.0, 0.5, -1.0])
+def test_베타는_벤치마크_대비_배율이다(k: float) -> None:
+    """역방향(k<0)까지 본다. 절댓값만 쓰면 −1이 +1로 나온다."""
+    result = assess(
+        _snapshot(_holding("A", 1.0)),
+        {"A": _series(*_scaled(MARKET, k))},
+        benchmark=_series(*MARKET),
+    )
+    assert result.beta == pytest.approx(k)
+
+
+def test_베타는_비중가중이지_단순평균이_아니다() -> None:
+    """β=2와 β=0.5를 8:2로 담으면 1.7이지 1.25가 아니다. 가중치를 빼먹으면 1.25가 나온다."""
+    result = assess(
+        _snapshot(_holding("A", 0.8), _holding("B", 0.2)),
+        {"A": _series(*_scaled(MARKET, 2.0)), "B": _series(*_scaled(MARKET, 0.5))},
+        benchmark=_series(*MARKET),
+    )
+    assert result.beta == pytest.approx(0.8 * 2.0 + 0.2 * 0.5)
+
+
+def test_벤치마크를_안_넘기면_베타는_None이고_사유도_남기지_않는다() -> None:
+    """베타를 요구하지 않은 호출까지 `insufficient_history`로 잔소리하면 안 된다."""
+    result = assess(_snapshot(_holding("A", 1.0)), {"A": _series(*MARKET)})
     assert result.beta is None
+    assert result.insufficient_history is None
 
 
-def test_style_tilt_finding은_만들지_않는다() -> None:
-    """시가총액이 전 종목 NULL이라 w_growth를 계산할 수 없다."""
-    result = assess(_snapshot(_holding("A", 1.0)), {"A": _series(*_zigzag(N, 0.01))})
+def test_벤치마크_히스토리가_짧으면_베타를_추정하지_않는다() -> None:
+    short = settings.min_history_days - 2
+    result = assess(
+        _snapshot(_holding("A", 1.0)),
+        {"A": _series(*MARKET)},
+        benchmark=_series(*_zigzag(short, 0.01)),
+    )
+    assert result.beta is None
+    assert "베타" in (result.insufficient_history or "")
+
+
+def test_짧은_벤치마크가_변동성_표본까지_줄이지는_않는다() -> None:
+    """베타용 교집합은 따로 뽑는다. 한 축을 같이 쓰면 지수가 짧은 날 변동성까지 죽는다."""
+    result = assess(
+        _snapshot(_holding("A", 0.5), _holding("B", 0.5)),
+        {"A": _series(*MARKET), "B": _series(*_zigzag(N, 0.01, flip=True))},
+        benchmark=_series(*_zigzag(5, 0.01)),
+    )
+    assert result.volatility is not None and result.risk_score is not None
+    assert result.beta is None
+    assert "변동성" not in (result.insufficient_history or "")
+
+
+def test_보합인_벤치마크는_베타가_정의되지_않는다() -> None:
+    """Var(r_m) = 0. 0으로 나눠 inf를 내보내면 "무한히 민감"이라는 읽을 수 없는 값이 된다."""
+    result = assess(
+        _snapshot(_holding("A", 1.0)),
+        {"A": _series(*MARKET)},
+        benchmark=_series(*[0.0] * N),
+    )
+    assert result.beta is None
+    assert "분산이 0" in (result.insufficient_history or "")
+
+
+def test_베타는_risk_score에_들어가지_않는다() -> None:
+    """§3.6 가중 항목 다섯에 베타는 없다. 점수에 섞으면 기존 점수가 전부 바뀐다."""
+    snapshot = _snapshot(_holding("A", 1.0))
+    prices = {"A": _series(*_scaled(MARKET, 3.0))}
+    assert assess(snapshot, prices).risk_score == assess(
+        snapshot, prices, benchmark=_series(*MARKET)
+    ).risk_score
+
+
+# ── §3.5 대형주 비중 ────────────────────────────────────────
+def test_순위를_안_넘기면_대형주_비중은_None이다() -> None:
+    """0.0으로 채우면 "대형주 한 주도 없음"이라는 거짓이 API로 나간다."""
+    result = assess(_snapshot(_holding("A", 1.0)), {"A": _series(*MARKET)})
+    assert result.large_cap_weight is None
+
+
+def test_대형주_비중은_100위_이내_비중의_합이다() -> None:
+    result = assess(
+        _snapshot(_holding("A", 0.6), _holding("B", 0.3), _holding("C", 0.1)),
+        {},
+        market_cap_ranks={"A": 1, "B": 250, "C": 40},
+    )
+    assert result.large_cap_weight == pytest.approx(0.7)
+
+
+@pytest.mark.parametrize(("rank", "expected"), [(100, 1.0), (101, 0.0)])
+def test_100위는_포함하고_101위는_제외한다(rank: int, expected: float) -> None:
+    """`≤ 100`이 경계다. 부등호가 밀리면 딱 100위인 종목이 통째로 사라진다."""
+    result = assess(_snapshot(_holding("A", 1.0)), {}, market_cap_ranks={"A": rank})
+    assert result.large_cap_weight == pytest.approx(expected)
+
+
+def test_순위표에_없는_종목은_대형이_아니다() -> None:
+    """전 종목 순위표에 없다는 건 100위 밖이라는 뜻이다. 빠졌다고 대형으로 세면 안 된다."""
+    result = assess(
+        _snapshot(_holding("A", 0.5), _holding("B", 0.5)),
+        {},
+        market_cap_ranks={"A": 3},
+    )
+    assert result.large_cap_weight == pytest.approx(0.5)
+
+
+def test_보유하지_않은_대형주는_비중에_섞이지_않는다() -> None:
+    """시장 전체 순위표를 통째로 넘겨도 세는 대상은 보유 종목뿐이다."""
+    result = assess(
+        _snapshot(_holding("Z", 1.0)),
+        {},
+        market_cap_ranks={"A": 1, "B": 2, "C": 3, "Z": 900},
+    )
+    assert result.large_cap_weight == pytest.approx(0.0)
+
+
+def test_style_tilt_finding은_아직_만들지_않는다() -> None:
+    """대형 비중은 생겼지만 성장 판정(PBR = 시가총액/자본총계)의 자본총계가 없다.
+    절반만 보고 §3.7 `style_tilt`를 내면 문서와 다른 판정을 같은 이름으로 내보내게 된다.
+    """
+    result = assess(
+        _snapshot(_holding("A", 1.0)),
+        {"A": _series(*MARKET)},
+        benchmark=_series(*MARKET),
+        market_cap_ranks={"A": 1},
+    )
     assert all(f.category is not FindingCategory.STYLE_TILT for f in result.findings)
 
 
