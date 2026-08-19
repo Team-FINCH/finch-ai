@@ -28,6 +28,7 @@ from app.core.config import settings
 from app.core.enums import MetricSource, Period
 from app.core.errors import InsufficientData, InvalidRequest
 from app.core.models import Event, IndexDaily, Instrument, PriceDaily
+from app.core.response_log import last_risk_level, record
 from app.core.schemas import DataAsOf, Envelope, Segment
 from app.engines.attribution import (
     AttributionResult,
@@ -245,12 +246,9 @@ async def diagnosis(user_id: CurrentUser, db: DbSession) -> Envelope[dict]:
         snapshot,
         ledger.prices,
         value_series=[(day, engine.snapshot(day).total_value) for day in ledger.trading_days],
-        # §3.6 히스테리시스는 직전 *등급*을 필요로 하는데 그것을 남기는 저장소가 아직
-        # 없다. `AIResponse`가 유일한 후보지만 이 커밋 시점에 그 테이블에 행을 쓰는 코드가
-        # 없어(`grep AIResponse app/` → 모델 정의뿐) 조회해도 항상 None이다. 응답 로그
-        # 적재가 붙으면 여기서 마지막 진단의 `risk_level`을 읽어 넘긴다. 그때까지는 경계
-        # 근처에서 등급이 한 점 차로 흔들릴 수 있다 — 빠뜨린 게 아니라 미룬 것이다.
-        previous_level=None,
+        # §3.6 히스테리시스. 직전 진단의 등급을 응답 로그에서 읽어 넘긴다.
+        # 처음 진단하는 사용자는 None이고, 그때는 등급이 점수 그대로 정해진다.
+        previous_level=await last_risk_level(db, user_id),
         benchmark=await _benchmark(db),
         market_cap_ranks=await _market_cap_ranks(db, symbols),
     )
@@ -298,7 +296,7 @@ async def diagnosis(user_id: CurrentUser, db: DbSession) -> Envelope[dict]:
             continue
         sections[outcome.key] = outcome.section.model_dump(mode="json")
 
-    return Envelope[dict](
+    envelope = Envelope[dict](
         content={
             "risk_level": result.risk_level.value if result.risk_level is not None else None,
             "risk_score": round(result.risk_score) if result.risk_score is not None else None,
@@ -315,6 +313,9 @@ async def diagnosis(user_id: CurrentUser, db: DbSession) -> Envelope[dict]:
             portfolio=_as_datetime(snapshot),
         ),
     )
+    # 다음 진단의 히스테리시스 기준이 되고, 피드백이 참조할 행이 된다.
+    await record(db, envelope, user_id=user_id, endpoint="portfolio.diagnosis")
+    return envelope
 
 
 @router.post("/attribution")

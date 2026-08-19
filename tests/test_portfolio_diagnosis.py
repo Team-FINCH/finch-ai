@@ -75,16 +75,26 @@ class StubResult:
 
 
 class StubSession:
-    """`index_daily`와 `instruments` 조회만 답하는 최소 세션.
+    """`index_daily`·`instruments` 조회와 응답 로그에 답하는 최소 세션.
 
     쿼리 문자열로 갈라 낸다 — 호출 순서에 기대면 인자 평가 순서가 바뀌는 순간
     조용히 엉뚱한 값을 넘긴다.
     """
 
-    def __init__(self, *, benchmark: list[tuple] | None = None, ranks: list[tuple] | None = None):
+    def __init__(
+        self,
+        *,
+        benchmark: list[tuple] | None = None,
+        ranks: list[tuple] | None = None,
+        last_payload: dict | None = None,
+    ):
         self.benchmark = benchmark if benchmark is not None else []
         self.ranks = ranks if ranks is not None else []
+        # 직전 진단의 봉투. None이면 첫 진단이라 히스테리시스 기준이 없다.
+        self.last_payload = last_payload
         self.seen: list[str] = []
+        self.added: list[Any] = []
+        self.commits = 0
 
     async def execute(self, statement: Any) -> StubResult:
         sql = str(statement)
@@ -92,6 +102,22 @@ class StubSession:
         if "index_daily" in sql:
             return StubResult(self.benchmark)
         return StubResult(self.ranks)
+
+    async def scalar(self, statement: Any) -> Any:
+        sql = str(statement)
+        self.seen.append(sql)
+        if "ai_responses" in sql:
+            return self.last_payload
+        return None
+
+    def add(self, obj: Any) -> None:
+        self.added.append(obj)
+
+    async def commit(self) -> None:
+        self.commits += 1
+
+    async def rollback(self) -> None:
+        return None
 
 
 def _make_client(monkeypatch: pytest.MonkeyPatch, session: Any) -> TestClient:

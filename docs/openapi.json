@@ -662,6 +662,7 @@
     },
     "/api/ai/v1/feedback": {
       "post": {
+        "description": "평가를 기록한다.\n\n남의 응답에 평가를 달 수 없도록 `user_id`까지 함께 대조한다. 존재하지 않는\n`request_id`와 남의 `request_id`를 같은 오류로 돌려주는 것은 의도한 것이다 —\n구분해 주면 남의 request_id를 하나씩 찔러 존재 여부를 알아낼 수 있다.",
         "operationId": "submit_feedback_api_ai_v1_feedback_post",
         "requestBody": {
           "content": {
