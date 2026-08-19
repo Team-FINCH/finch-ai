@@ -169,7 +169,52 @@ v0.3.0    Phase 3 — Attribution Engine
 
 ---
 
-## 6. 팀 저장소 이관 절차
+## 6. 병렬 작업 — worktree
+
+여러 트랙을 동시에 진행할 때는 브랜치를 갈아타지 않고 **worktree**를 쓴다.
+트랙마다 자기 디렉토리에서 자기 브랜치를 체크아웃하므로 파일이 충돌하지 않는다.
+
+```bash
+git worktree add ../wt-ingest -b feat/ingest-instruments main
+cd ../wt-ingest && ./scripts/bootstrap.sh
+```
+
+### 부트스트랩이 필요한 이유
+
+새 worktree에는 **추적 파일만** 복제된다. `.env`와 `.venv`는 git에 없으므로
+비어 있고, 그대로 두면 작업 시작과 동시에 "키가 없다"로 멈춘다.
+
+`scripts/bootstrap.sh`가 이를 처리한다. 여러 번 실행해도 안전하다.
+
+| 항목 | 처리 |
+|---|---|
+| `.env` | 메인 워크트리에서 **심볼릭 링크**. 키를 한 번만 갱신하면 전체에 반영된다 |
+| `.venv` | worktree마다 **별도 생성**. 공유하면 한쪽 `pip install`이 다른 쪽을 오염시킨다 |
+| DB | 띄우지 않고 확인만. 컨테이너는 **호스트에 하나**만 둔다 — worktree마다 띄우면 5432가 충돌한다 |
+| 마이그레이션 | DB가 떠 있으면 `alembic upgrade head` |
+
+### Orca를 쓰는 경우
+
+Orca의 repo 설정에서 setup 훅 스크립트를 아래로 지정한다.
+CLI로는 바꿀 수 없고 앱 UI에서 설정해야 한다.
+
+```
+./scripts/bootstrap.sh
+```
+
+기본값이 `pnpm install`로 남아 있으면 이 저장소에서는 매번 실패한다.
+훅을 고치지 못하는 상황이라면 워커의 첫 지시에 부트스트랩 실행을 넣는다.
+
+### 정리
+
+```bash
+git worktree remove ../wt-ingest
+git worktree prune
+```
+
+---
+
+## 7. 팀 저장소 이관 절차
 
 서비스 저장소가 만들어지면 아래 중 하나를 선택합니다.
 
