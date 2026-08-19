@@ -1,0 +1,41 @@
+# ── Python ────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# ── 환경변수 · 자격증명 ──────────────────
+# KIS·DART·네이버·ECOS·Anthropic 키가 들어간다. 절대 커밋 금지.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ── 적재 데이터 (용량) ───────────────────
+data/
+*.db
+*.sqlite3
+*.parquet
+corpCode.xml
+
+# ── 로그 · 산출물 ────────────────────────
+logs/
+*.log
+eval/runs/
+
+# ── OS · IDE ─────────────────────────────
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# ── 도구 ─────────────────────────────────
+.serena/
+.claude/settings.local.json
