@@ -1,0 +1,25 @@
+# ── API ──────────────────────────────────
+fastapi>=0.115
+uvicorn[standard]>=0.32
+pydantic>=2.9
+pydantic-settings>=2.6
+
+# ── DB ───────────────────────────────────
+sqlalchemy[asyncio]>=2.0.36
+asyncpg>=0.30
+alembic>=1.14
+pgvector>=0.3.6
+
+# ── LLM · HTTP ───────────────────────────
+anthropic>=0.69
+httpx>=0.28
+
+# ── 계산 · 데이터 ────────────────────────
+numpy>=2.0
+pandas>=2.2
+pykrx>=1.0.45
+
+# ── 개발 ─────────────────────────────────
+pytest>=8.3
+pytest-asyncio>=0.24
+ruff>=0.8

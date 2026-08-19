@@ -80,13 +80,28 @@ docs/          설계 문서
 ## 시작하기
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
+# 1. 파이썬 환경
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env        # 키 채우기
+cp .env.example .env                 # 키 채우기
+
+# 2. DB — Postgres + pgvector (podman)
+podman machine start                 # 최초 1회는 podman machine init 필요
+podman-compose up -d
+
+# 3. 스키마 적용
+alembic upgrade head
+
+# 4. 실행
 uvicorn app.api.main:app --reload
 ```
 
+`http://localhost:8000/docs`에서 OpenAPI 문서를 확인할 수 있습니다.
+
 필요한 외부 키는 `.env.example`를 참고하세요. **키는 절대 커밋하지 않습니다.**
+
+> 컨테이너 런타임은 **podman**을 씁니다. `compose.yaml`은 표준 Compose 규격이라
+> Docker를 쓰는 팀원은 `docker compose up -d`로 그대로 사용할 수 있습니다.
 
 ---
 
