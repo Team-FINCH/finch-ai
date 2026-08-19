@@ -37,7 +37,10 @@ class Settings(BaseSettings):
     # 기본 1536 대신 1024를 요청한다. 스키마를 건드리지 않기 위해서다.
     embedding_dim: int = 1024
     embedding_model: str = "text-embedding-3-small"
-    embedding_batch_size: int = 128
+    # 한 요청이 분당 토큰 한도를 넘으면 즉시 429가 난다. 청크가 약 1,100토큰이라
+    # 30건이면 33K로 Tier 1의 여유 안에 들어온다. 128로 두었더니 한 요청이
+    # 14만 토큰이 되어 매번 거부당했다.
+    embedding_batch_size: int = 30
 
     openai_api_key: str = ""
     # 사내 게이트웨이를 쓰면 여기를 바꾼다. 비우면 순정 OpenAI로 붙는다.

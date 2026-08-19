@@ -14,6 +14,7 @@ from app.rag.embedding import (
     Embedder,
     NullEmbedder,
     OpenAIEmbedder,
+    _seconds,
 )
 
 DIM = 4
@@ -146,3 +147,68 @@ def test_count_mismatch_is_rejected() -> None:
 def test_is_an_embedder() -> None:
     assert isinstance(OpenAIEmbedder("k"), Embedder)
     assert isinstance(NullEmbedder(), Embedder)
+
+
+# ── 분당 토큰 한도 대응 ───────────────────────────────────
+@pytest.mark.parametrize(
+    ("raw", "want"),
+    [
+        ("35.161s", 35.161),        # x-ratelimit-reset-tokens
+        ("23h59m48.732s", 86388.732),
+        ("161ms", 0.161),
+        ("1", 1.0),                 # Retry-After는 맨숫자로 온다
+        (None, 0.0),
+        ("알 수 없음", 0.0),
+    ],
+)
+def test_한도_리셋_시간을_초로_읽는다(raw: str | None, want: float) -> None:
+    assert _seconds(raw) == pytest.approx(want)
+
+
+def test_429를_맞으면_리셋만큼_쉬고_재시도한다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """429도 일당 요청 한도를 깎는다. 그냥 실패시키면 재실행 때 또 깎는다."""
+    slept: list[float] = []
+    monkeypatch.setattr("app.rag.embedding.time.sleep", slept.append)
+
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(429, headers={"x-ratelimit-reset-tokens": "12s"})
+        return _ok(request)
+
+    emb = OpenAIEmbedder("k", dim=DIM, client=_client(handler))
+    assert emb.embed(["가"])[0] is not None
+    assert slept == [12.0]
+
+
+def test_잔량이_모자라면_미리_쉰다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """429를 맞고 물러나는 것보다 헤더를 보고 먼저 쉬는 편이 싸다."""
+    slept: list[float] = []
+    monkeypatch.setattr("app.rag.embedding.time.sleep", slept.append)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        res = _ok(request)
+        return httpx.Response(
+            200,
+            json=res.json() | {"usage": {"prompt_tokens": 100}},
+            headers={"x-ratelimit-remaining-tokens": "5", "x-ratelimit-reset-tokens": "9s"},
+        )
+
+    emb = OpenAIEmbedder("k", dim=DIM, batch_size=1, client=_client(handler))
+    emb.embed(["가" * 50, "나" * 50])
+    # 첫 배치는 잔량을 모르니 그냥 보내고, 두 번째부터 5토큰 잔량을 보고 쉰다.
+    assert slept == [10.0]
+
+
+def test_실제_사용량으로_문자당_토큰을_학습한다() -> None:
+    """문자 수를 그대로 토큰으로 세면 과대평가라 필요 이상으로 쉰다."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        res = _ok(request)
+        return httpx.Response(200, json=res.json() | {"usage": {"prompt_tokens": 7}})
+
+    emb = OpenAIEmbedder("k", dim=DIM, client=_client(handler))
+    emb.embed(["가" * 10])
+    assert emb._per_char == pytest.approx(0.7)

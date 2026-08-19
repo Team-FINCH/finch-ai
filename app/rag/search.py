@@ -52,13 +52,24 @@ async def backfill(limit: int | None = None) -> tuple[int, int]:
                 break
 
             vectors = await asyncio.to_thread(embedder.embed, [r.text for r in rows])
+            filled = 0
             for row, vec in zip(rows, vectors, strict=True):
                 tried += 1
                 if vec is not None:
                     row.embedding = vec
                     done += 1
+                    filled += 1
             await session.commit()
             log.info("백필 %d건 시도 · %d건 성공", tried, done)
+
+            if filled == 0:
+                # 한 묶음도 못 채웠다는 건 임베딩 쪽이 계속 실패한다는 뜻이다.
+                # 다음 회차는 embedding이 NULL인 같은 행을 다시 집으므로
+                # 여기서 끊지 않으면 무한 루프가 된다. 실제로 한 번 돌았고,
+                # 2,280건짜리 백필이 20,000건 시도를 찍으며 일당 요청 한도를
+                # 전부 태웠다.
+                log.error("이번 묶음을 하나도 채우지 못해 중단한다")
+                break
 
     return tried, done
 
