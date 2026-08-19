@@ -235,7 +235,10 @@ async def test_논지_이력은_전부_남는다(db, user_id) -> None:
     texts = ["HBM 구조적 성장", "파운드리 턴어라운드", "메모리 사이클 회복", "AI 서버 수요"]
     for t in texts:
         await record_thesis(db, user_id, "005930", t)
-    await db.commit()
+        # 건마다 커밋한다. recorded_at의 기본값 now()는 트랜잭션 시작 시각이라
+        # 한 트랜잭션에서 만든 행이 모두 같은 시각을 갖고 정렬이 임의가 된다.
+        # 실서비스에서는 논지 기록이 요청마다 별도 트랜잭션이므로 이쪽이 실제에 가깝다.
+        await db.commit()
 
     rows = (
         await db.scalars(
