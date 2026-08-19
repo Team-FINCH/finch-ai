@@ -12,11 +12,14 @@
 
 작업 전에 해당 문서를 먼저 확인하세요. 세 문서는 서로 물려 있습니다.
 
-| 문서 | 내용 | 소스 |
-|---|---|---|
-| [API 명세](https://claude.ai/code/artifact/84ddb8b2-2e3b-4d90-90bf-e56af4459aad) | 프론트 계약, 외부 의존과 자체 조달 범위 | `docs/api-spec.html` |
-| [엔진 산식](https://claude.ai/code/artifact/d03728c6-e9a9-470b-b6a4-93ec26fa71c5) | Portfolio · Risk · Attribution 계산식, 검증 항등식 | `docs/engine-formulas.html` |
-| [응답 정책](https://claude.ai/code/artifact/8e53d1f6-4067-49f8-8304-d2bbd6368036) | 프롬프트 계층, 답변 구조, Guardrail, 모델 라우팅 | `docs/prompt-policy.html` |
+**에이전트는 `.md`를 읽으세요.** 같은 내용이지만 HTML은 절반 이상이 CSS와 태그라
+컨텍스트를 낭비합니다. HTML은 사람이 읽고 공유하는 용도로 유지합니다.
+
+| 문서 | 내용 | 에이전트용 | 사람용 |
+|---|---|---|---|
+| [API 명세](https://claude.ai/code/artifact/84ddb8b2-2e3b-4d90-90bf-e56af4459aad) | 프론트 계약, 외부 의존과 자체 조달 범위 | `docs/api-spec.md` | `docs/api-spec.html` |
+| [엔진 산식](https://claude.ai/code/artifact/d03728c6-e9a9-470b-b6a4-93ec26fa71c5) | Portfolio · Risk · Attribution 계산식, 검증 항등식 | `docs/engine-formulas.md` | `docs/engine-formulas.html` |
+| [응답 정책](https://claude.ai/code/artifact/8e53d1f6-4067-49f8-8304-d2bbd6368036) | 프롬프트 계층, 답변 구조, Guardrail, 모델 라우팅 | `docs/prompt-policy.md` | `docs/prompt-policy.html` |
 
 ---
 
