@@ -50,3 +50,36 @@ W4를 관찰하니 컴팩션 직후 같은 파일 넷(`instruments.py`, `models.
 
 `CLAUDE.md`의 진행 메모 규칙이 이 루프를 끊는다. 500바이트짜리 메모 하나를
 읽는 것이 소스 넷을 다시 읽는 것보다 싸다.
+
+## 워커를 띄울 때 — 모델·effort를 지정하지 말 것
+
+```bash
+orca orchestration worker-start --run <run> --task <task> \
+  --worktree new-top-level --agent claude \
+  --repo <repo> --base-branch main --name feat/... --setup run
+```
+
+`--model`과 `--effort`를 **넘기지 않는다.** 전역 설정(`~/.claude/settings.json`)에
+이미 `"model": "opus[1m]"`, `"effortLevel": "xhigh"`가 있고, 인자를 주면 그것을
+덮어쓴다.
+
+W1~W5를 `--model claude-opus-5 --effort high`로 띄웠다가 **컨텍스트 창이
+1M에서 200K로 떨어졌다.** 워커들이 4~8회씩 컴팩션한 원인이 이것이었다.
+요약이 계단식으로 커지는 현상도, 컴팩션 후 같은 파일을 다시 읽는 루프도
+전부 여기서 파생된 증상이었다.
+
+실측 비교:
+
+| 워커 | 창 | 컴팩션 | 읽기 |
+|---|---|---|---|
+| W3 | 200K | 8 | 34 |
+| W1 | 200K | 6 | 13 |
+| W2b | 200K | 4 | 20 |
+| W4 | 200K | 4 | 2 |
+| W5b | **1M** | **0** | **1** |
+
+W5는 167,973 토큰에서 컴팩션됐고, W5b는 171,123 토큰에서 컴팩션이 없었다.
+같은 구간을 넘긴 것이 창 차이의 직접 증거다.
+
+`--effort`는 `--model` 없이 쓸 수 없으므로, 둘 다 생략하는 것이 유일하게
+전역 설정을 온전히 상속하는 방법이다.
