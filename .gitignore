@@ -39,3 +39,7 @@ eval/runs/
 # ── 도구 ─────────────────────────────────
 .serena/
 .claude/settings.local.json
+
+# 적재 캐시
+.cache/
+data/corpCode.xml
