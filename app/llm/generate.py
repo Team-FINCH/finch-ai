@@ -51,6 +51,7 @@ __all__ = [
     "documents_block",
     "ratio_segment",
     "count_segment",
+    "krw_segment",
     "generate_section",
 ]
 
@@ -130,6 +131,21 @@ def count_segment(raw: float, source: MetricSource, *, digits: int = 1) -> Segme
     )
 
 
+def krw_segment(raw: float, source: MetricSource, *, signed: bool = False) -> Segment:
+    """원화 금액. 국내 관례대로 천 단위 쉼표를 넣고 소수점은 버린다."""
+    sign = "+" if signed and raw > 0 else ""
+    direction = None
+    if signed:
+        direction = Direction.UP if raw > 0 else Direction.DOWN if raw < 0 else None
+    return Segment.metric(
+        f"{sign}{raw:,.0f}원",
+        raw=raw,
+        source=source,
+        unit=Unit.KRW,
+        direction=direction,
+    )
+
+
 def segments_from_narrative(
     narrative: str, values: Mapping[str, Segment]
 ) -> list[Segment]:
@@ -195,9 +211,14 @@ def build_user_turn(
     documents: str = "",
     wiki: str = "",
     now: datetime | None = None,
+    request: str | None = None,
 ) -> str:
-    """매 요청 바뀌는 구간. 자리표시자 목록을 정렬해 순서를 고정한다."""
-    parts = [f"[요청]\n{key} 섹션을 작성하십시오."]
+    """매 요청 바뀌는 구간. 자리표시자 목록을 정렬해 순서를 고정한다.
+
+    `request`는 섹션이 아닌 기능 — Ask My Portfolio의 사용자 질문 — 을 위한
+    출구다. 넘기지 않으면 지금까지와 똑같이 섹션 요청 문구를 쓴다.
+    """
+    parts = [f"[요청]\n{request or f'{key} 섹션을 작성하십시오.'}"]
     parts.append(f"[기준 시각]\n{(now or now_kst()).isoformat()}")
 
     if wiki:
@@ -276,6 +297,7 @@ async def generate_section(
     wiki: str = "",
     wiki_source: WikiSource | None = None,
     now: datetime | None = None,
+    request: str | None = None,
 ) -> SectionOutcome:
     """섹션 하나를 만든다. 검사를 통과한 것만 `Section`으로 돌아온다."""
     values = dict(engine_values or {})
@@ -289,6 +311,7 @@ async def generate_section(
         documents=documents,
         wiki=wiki,
         now=now,
+        request=request,
     )
 
     reasons: tuple[str, ...] = ()

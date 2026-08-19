@@ -25,6 +25,8 @@ log = logging.getLogger("app.llm.client")
 
 __all__ = [
     "LlmResult",
+    "ToolUse",
+    "ToolTurn",
     "LlmClient",
     "AnthropicClient",
     "NullLlmClient",
@@ -37,6 +39,32 @@ class LlmResult:
     """호출 한 번의 결과. `payload`는 구조화 출력 JSON을 파싱한 것이다."""
 
     payload: dict[str, Any]
+    cache_read_tokens: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class ToolUse:
+    """모델이 부른 도구 한 건."""
+
+    id: str
+    name: str
+    input: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class ToolTurn:
+    """도구 사용 루프의 한 턴.
+
+    `content`는 응답 블록을 그대로 담는다. 다음 요청의 assistant 턴으로 손대지 않고
+    되돌려 보내야 한다 — thinking 블록의 서명이 함께 실려 있어 한 글자만 바뀌어도
+    거부된다.
+    """
+
+    stop_reason: str
+    content: list[dict[str, Any]]
+    tool_uses: tuple[ToolUse, ...] = ()
     cache_read_tokens: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
@@ -56,6 +84,15 @@ class LlmClient(Protocol):
         max_tokens: int | None = None,
     ) -> LlmResult: ...
 
+    async def converse(
+        self,
+        *,
+        system: list[dict[str, Any]],
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        max_tokens: int | None = None,
+    ) -> ToolTurn: ...
+
 
 class NullLlmClient:
     """키가 없을 때의 기본값.
@@ -65,6 +102,9 @@ class NullLlmClient:
     """
 
     async def generate(self, **_: Any) -> LlmResult:
+        raise InsufficientData("ANTHROPIC_API_KEY가 없어 설명을 생성할 수 없습니다.")
+
+    async def converse(self, **_: Any) -> ToolTurn:
         raise InsufficientData("ANTHROPIC_API_KEY가 없어 설명을 생성할 수 없습니다.")
 
 
@@ -161,6 +201,76 @@ class AnthropicClient:
             result.output_tokens,
         )
         return result
+
+    async def converse(
+        self,
+        *,
+        system: list[dict[str, Any]],
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        max_tokens: int | None = None,
+    ) -> ToolTurn:
+        """도구 목록을 함께 넘기는 대화 호출. 구조화 출력은 쓰지 않는다.
+
+        이 턴의 일은 도구를 고르는 것뿐이고, 본문은 `generate`가 자리표시자
+        규약(§3) 아래에서 따로 쓴다.
+        """
+        import anthropic
+
+        try:
+            message = await self._sdk().messages.create(
+                model=self.model,
+                max_tokens=max_tokens or settings.llm_max_tokens,
+                system=system,
+                messages=messages,
+                tools=tools,
+                thinking={"type": "adaptive"},
+            )
+        except anthropic.APITimeoutError as exc:
+            raise LLMTimeout("LLM 응답이 지연되어 중단했습니다.") from exc
+
+        turn = _to_turn(message)
+        log.info(
+            "llm 도구 턴 · model=%s stop=%s tools=%d cache_read=%d in=%d out=%d",
+            self.model,
+            turn.stop_reason,
+            len(turn.tool_uses),
+            turn.cache_read_tokens,
+            turn.input_tokens,
+            turn.output_tokens,
+        )
+        return turn
+
+
+def _blocks(message: Any) -> list[dict[str, Any]]:
+    """응답 블록을 되돌려 보낼 수 있는 dict로 바꾼다. 내용은 손대지 않는다."""
+    out: list[dict[str, Any]] = []
+    for block in getattr(message, "content", ()):
+        dump = getattr(block, "model_dump", None)
+        out.append(dump(exclude_none=True) if callable(dump) else dict(block))
+    return out
+
+
+def _to_turn(message: Any) -> ToolTurn:
+    """도구 사용 응답을 루프가 쓰는 형태로 정리한다."""
+    content = _blocks(message)
+    usage = getattr(message, "usage", None)
+    return ToolTurn(
+        stop_reason=str(getattr(message, "stop_reason", "") or ""),
+        content=content,
+        tool_uses=tuple(
+            ToolUse(
+                id=str(block.get("id") or ""),
+                name=str(block.get("name") or ""),
+                input=dict(block.get("input") or {}),
+            )
+            for block in content
+            if block.get("type") == "tool_use"
+        ),
+        cache_read_tokens=int(getattr(usage, "cache_read_input_tokens", 0) or 0),
+        input_tokens=int(getattr(usage, "input_tokens", 0) or 0),
+        output_tokens=int(getattr(usage, "output_tokens", 0) or 0),
+    )
 
 
 @lru_cache
