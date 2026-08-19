@@ -16,7 +16,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import Confidence, ThesisHorizon, ThesisStatus, WikiSource
@@ -111,18 +111,9 @@ async def record_thesis(
 ) -> WikiThesis:
     """새 논지를 활성으로 남기고 이전 활성 논지는 닫는다. 실패시키지 않는다.
 
-    UNIQUE(user_id, ticker, status)는 활성 1건 + 닫힌 1건까지만 허용한다. 그래서
-    닫기 전에 이전에 닫아둔 논지를 먼저 지운다 — 직전 논지 한 건만 남는 게 이 스키마가
-    허용하는 최대 이력이다. 더 긴 이력이 필요해지면 스키마부터 바꿔야 한다.
+    유니크 제약이 활성 논지에만 걸리므로 닫힌 논지는 얼마든지 쌓인다.
+    Thesis Check가 매수 시점의 생각과 지금을 대조하려면 과거 논지가 남아야 한다.
     """
-    await db.execute(
-        delete(WikiThesis).where(
-            WikiThesis.user_id == user_id,
-            WikiThesis.ticker == ticker,
-            WikiThesis.status == ThesisStatus.CLOSED,
-        ),
-        execution_options={"synchronize_session": "fetch"},
-    )
     await db.execute(
         update(WikiThesis)
         .where(

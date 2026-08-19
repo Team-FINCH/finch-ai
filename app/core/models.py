@@ -32,6 +32,9 @@ from sqlalchemy import (
 from sqlalchemy import (
     Date as SADate,
 )
+
+# WikiThesis에 text 컬럼이 있어 클래스 본문에서 이름이 가려진다.
+from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -229,7 +232,16 @@ class WikiThesis(Base):
     recorded_at: Mapped[datetime] = mapped_column(TS, server_default=func.now())
 
     __table_args__ = (
-        UniqueConstraint("user_id", "ticker", "status", name="uq_thesis_user_ticker_active"),
+        # 활성 논지만 종목당 하나로 묶는다. status를 제약에 넣으면 닫힌 논지도
+        # 하나만 남아 이력이 사라진다 — Thesis Check는 매수 시점의 생각과 지금을
+        # 대조하는 기능이라 과거 논지가 남아야 한다.
+        Index(
+            "uq_thesis_active_per_ticker",
+            "user_id",
+            "ticker",
+            unique=True,
+            postgresql_where=sa_text("status = 'active'"),
+        ),
         Index("ix_wiki_theses_user", "user_id"),
     )
 

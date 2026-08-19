@@ -13,13 +13,14 @@ import uuid
 from collections.abc import AsyncIterator
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 from app.core.enums import Confidence, ThesisHorizon, ThesisStatus, WikiSource
 from app.core.errors import InvalidRequest
+from app.core.models import WikiThesis
 from app.wiki.store import (
     add_fact,
     fact_payload,
@@ -136,9 +137,10 @@ async def test_같은_종목_두_번째_논지는_이전_것을_닫는다(db: As
 
 
 async def test_세_번째_논지도_UNIQUE에_걸리지_않는다(db: AsyncSession, user_id: str) -> None:
-    """UNIQUE(user_id, ticker, status)는 닫힌 논지도 한 건까지다.
+    """유니크 제약이 활성 건에만 걸리므로 닫힌 논지는 얼마든지 쌓인다.
 
-    이전 닫힌 논지를 먼저 치우지 않으면 세 번째 기록에서 제약 위반이 난다.
+    제약을 (user_id, ticker, status)로 두면 닫힌 논지도 한 건뿐이라
+    세 번째 기록에서 첫 논지가 사라진다.
     """
     await record_thesis(db, user_id, TICKER, "첫 번째")
     await record_thesis(db, user_id, TICKER, "두 번째")
@@ -147,7 +149,7 @@ async def test_세_번째_논지도_UNIQUE에_걸리지_않는다(db: AsyncSessi
 
     assert [t.text for t in await list_theses(db, user_id)] == ["세 번째"]
     closed = await list_theses(db, user_id, status=ThesisStatus.CLOSED)
-    assert [t.text for t in closed] == ["두 번째"]
+    assert [t.text for t in closed] == ["첫 번째", "두 번째"], "첫 논지가 남아야 한다"
     assert third.status == ThesisStatus.ACTIVE
 
 
@@ -221,3 +223,28 @@ async def test_위키는_사용자별로_격리된다(db: AsyncSession, user_id:
 
     assert await list_facts(db, other) == []
     assert await list_theses(db, other) == []
+
+
+async def test_논지_이력은_전부_남는다(db, user_id) -> None:
+    """유니크 제약이 활성 건에만 걸리므로 닫힌 논지가 쌓인다.
+
+    Thesis Check는 매수 시점의 생각과 지금을 대조하는 기능이라 과거 논지가
+    남아야 한다. 제약을 (user_id, ticker, status)로 두면 닫힌 논지도 하나만
+    남아 직전 것 말고는 사라진다.
+    """
+    texts = ["HBM 구조적 성장", "파운드리 턴어라운드", "메모리 사이클 회복", "AI 서버 수요"]
+    for t in texts:
+        await record_thesis(db, user_id, "005930", t)
+    await db.commit()
+
+    rows = (
+        await db.scalars(
+            select(WikiThesis)
+            .where(WikiThesis.user_id == user_id, WikiThesis.ticker == "005930")
+            .order_by(WikiThesis.recorded_at)
+        )
+    ).all()
+
+    assert [r.text for r in rows] == texts, "네 건이 모두 남아야 한다"
+    assert [r.status for r in rows].count(ThesisStatus.ACTIVE) == 1
+    assert rows[-1].status == ThesisStatus.ACTIVE
