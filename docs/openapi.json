@@ -703,6 +703,7 @@
     },
     "/api/ai/v1/orders/preview": {
       "post": {
+        "description": "주문 체결을 가정하고 진단을 다시 돌려 차분을 돌려준다(§7).\n\n승인·거절 판단은 하지 않는다. `feasible`은 현금이 모자라는지만 알리는 사실이다.\n\n히스토리가 짧으면 진단과 마찬가지로 409로 끊지 않는다. 변동성·상관만 전·후 모두\nnull이 되고 집중도·현금 차분은 그대로 유효하다.",
         "operationId": "preview_api_ai_v1_orders_preview_post",
         "requestBody": {
           "content": {
