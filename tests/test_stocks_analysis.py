@@ -251,4 +251,4 @@ def test_키가_없으면_지어내지_않고_실패한다(monkeypatch):
         response = _post(test_client, {"sections": ["current"]})
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "INSUFFICIENT_DATA"
-    assert "ANTHROPIC_API_KEY" in response.json()["error"]["message"]
+    assert "LLM 키" in response.json()["error"]["message"]

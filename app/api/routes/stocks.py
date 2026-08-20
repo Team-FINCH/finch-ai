@@ -131,7 +131,7 @@ async def create_analysis(
     if isinstance(client, NullLlmClient):
         # 키가 없으면 전 섹션이 같은 이유로 실패한다. 섹션별 null로 흩뿌리지 않고
         # 한 번에 알린다. `app.rag.search`가 NullEmbedder를 다루는 방식과 같다.
-        raise InsufficientData("ANTHROPIC_API_KEY가 없어 분석을 생성할 수 없습니다.")
+        raise InsufficientData("LLM 키가 없어 분석을 생성할 수 없습니다.")
 
     hits = await search(f"{ticker} 최근 실적 공시 위험 요인", top_k=_RAG_TOP_K, ticker=ticker)
     citations = citations_from_hits(hits)

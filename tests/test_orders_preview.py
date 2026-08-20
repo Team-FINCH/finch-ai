@@ -461,7 +461,7 @@ def test_LLM_키가_없으면_409(monkeypatch: pytest.MonkeyPatch) -> None:
     with TestClient(app) as client:
         response = _post(client, HOLDER, [_buy(price=214000)])
     assert response.status_code == 409
-    assert "ANTHROPIC_API_KEY" in response.json()["error"]["message"]
+    assert "LLM 키" in response.json()["error"]["message"]
 
 
 def test_주문이_비면_400(client: TestClient) -> None:

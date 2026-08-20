@@ -388,7 +388,7 @@ async def preview(body: PreviewRequest, user_id: CurrentUser, db: DbSession) -> 
 
     client = get_llm_client()
     if isinstance(client, NullLlmClient):
-        raise InsufficientData("ANTHROPIC_API_KEY가 없어 점검 문장을 생성할 수 없습니다.")
+        raise InsufficientData("LLM 키가 없어 점검 문장을 생성할 수 없습니다.")
 
     theses, facts = await _stated_context(db, user_id, {line.ticker for line in body.orders})
     before_measures, after_measures = _measures(before), _measures(after)
