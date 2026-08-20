@@ -256,7 +256,7 @@ async def diagnosis(user_id: CurrentUser, db: DbSession) -> Envelope[dict]:
     client = get_llm_client()
     if isinstance(client, NullLlmClient):
         # 키가 없으면 전 항목이 같은 이유로 실패한다. 항목마다 null로 흩뿌리지 않는다.
-        raise InsufficientData("ANTHROPIC_API_KEY가 없어 진단을 생성할 수 없습니다.")
+        raise InsufficientData("LLM 키가 없어 진단을 생성할 수 없습니다.")
 
     indicators = _indicator_segments(result)
     ordered = list(result.findings)
@@ -369,7 +369,7 @@ async def attribution(
 
     client = get_llm_client()
     if isinstance(client, NullLlmClient):
-        raise InsufficientData("ANTHROPIC_API_KEY가 없어 요약을 생성할 수 없습니다.")
+        raise InsufficientData("LLM 키가 없어 요약을 생성할 수 없습니다.")
 
     outcome = await generate_section(
         _SUMMARY_KEY,
@@ -385,7 +385,7 @@ async def attribution(
     summary = outcome.section.model_dump(mode="json") if outcome.section else None
 
     last = PortfolioEngine(ledger).snapshot(days[-1])
-    return Envelope[dict](
+    envelope = Envelope[dict](
         content={
             "period": body.period.value,
             "start": days[0].isoformat(),
@@ -426,6 +426,8 @@ async def attribution(
         },
         data_as_of=DataAsOf(price=_as_datetime(last), portfolio=_as_datetime(last)),
     )
+    await record(db, envelope, user_id=user_id, endpoint="portfolio.attribution")
+    return envelope
 
 
 # ── §6 성과 요인 ──────────────────────────────────────────────────────────────

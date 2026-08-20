@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 
 from app.api.deps import get_session
 from app.api.main import create_app
+from app.core.models import AIFeedback, AIResponse
 from app.engines.attribution import (
     BenchmarkDay,
     EventRecord,
@@ -320,6 +321,7 @@ class StubSession:
         self.instruments = instruments if instruments is not None else _default_instruments()
         self.prices = prices if prices is not None else _default_prices()
         self.events = events if events is not None else []
+        self.added: list[Any] = []
 
     async def execute(self, statement: Any) -> StubResult:
         sql = str(statement)
@@ -330,6 +332,21 @@ class StubSession:
         if "instruments" in sql:
             return StubResult(self.instruments)
         return StubResult([])
+
+    async def scalar(self, statement: Any) -> Any:
+        if "ai_responses" in str(statement):
+            row = next((row for row in self.added if isinstance(row, AIResponse)), None)
+            return row.user_id if row else None
+        return next((row for row in self.added if isinstance(row, AIFeedback)), None)
+
+    def add(self, obj: Any) -> None:
+        self.added.append(obj)
+
+    async def commit(self) -> None:
+        return None
+
+    async def rollback(self) -> None:
+        return None
 
 
 def _default_instruments() -> list[tuple]:
@@ -370,6 +387,7 @@ def _make_client(monkeypatch: pytest.MonkeyPatch, session: Any) -> TestClient:
     app.dependency_overrides[get_session] = lambda: session
     test_client = TestClient(app)
     test_client.llm = fake  # type: ignore[attr-defined]
+    test_client.db = session  # type: ignore[attr-defined]
     return test_client
 
 
@@ -391,6 +409,21 @@ def test_계약대로_돌려준다(client: TestClient) -> None:
     assert content["summary"]["text"]
     assert content["text"] == content["summary"]["text"]
     assert body["data_as_of"]["price"]
+
+
+def test_응답을_저장해_피드백을_받는다(client: TestClient) -> None:
+    response = _post(client, HOLDER)
+    request_id = response.json()["request_id"]
+
+    row = next(row for row in client.db.added if isinstance(row, AIResponse))
+    assert row.request_id == request_id
+    assert row.endpoint == "portfolio.attribution"
+    feedback = client.post(
+        "/api/ai/v1/feedback",
+        headers={"Authorization": f"Bearer {HOLDER}"},
+        json={"request_id": request_id, "rating": "up", "reasons": []},
+    )
+    assert feedback.status_code == 200
 
 
 def test_응답에서도_항등식이_성립한다(client: TestClient) -> None:

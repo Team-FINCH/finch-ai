@@ -121,7 +121,7 @@ async def get_briefing(
     client = get_llm_client()
     if isinstance(client, NullLlmClient):
         # 키가 없으면 네 건이 같은 이유로 실패한다. 항목마다 null로 흩뿌리지 않는다.
-        raise InsufficientData("ANTHROPIC_API_KEY가 없어 브리핑을 생성할 수 없습니다.")
+        raise InsufficientData("LLM 키가 없어 브리핑을 생성할 수 없습니다.")
 
     outcomes = await asyncio.gather(
         *(

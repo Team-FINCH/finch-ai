@@ -16,9 +16,12 @@ from app.core.schemas import Envelope
 
 
 class _Session:
-    def __init__(self, payload: Any = None, *, fail: bool = False) -> None:
+    def __init__(
+        self, payload: Any = None, *, fail: bool = False, rollback_fail: bool = False
+    ) -> None:
         self.payload = payload
         self.fail = fail
+        self.rollback_fail = rollback_fail
         self.added: list[Any] = []
         self.commits = 0
         self.rollbacks = 0
@@ -33,6 +36,8 @@ class _Session:
 
     async def rollback(self) -> None:
         self.rollbacks += 1
+        if self.rollback_fail:
+            raise RuntimeError("롤백도 죽었다")
 
     async def scalar(self, _stmt: Any) -> Any:
         return self.payload
@@ -61,6 +66,15 @@ async def test_봉투를_통째로_남긴다() -> None:
 async def test_기록에_실패해도_예외를_올리지_않는다() -> None:
     """응답은 이미 만들어졌다. 로그를 못 남긴 것이 답을 못 준 것이 되면 안 된다."""
     s = _Session(fail=True)
+    await record(s, _envelope(), user_id="u1", endpoint="x")
+    assert s.rollbacks == 1
+    assert s.commits == 0
+
+
+@pytest.mark.asyncio
+async def test_기록과_롤백이_모두_실패해도_예외를_올리지_않는다() -> None:
+    """망가진 세션을 정리하지 못해도 이미 만든 응답까지 잃어서는 안 된다."""
+    s = _Session(fail=True, rollback_fail=True)
     await record(s, _envelope(), user_id="u1", endpoint="x")
     assert s.rollbacks == 1
     assert s.commits == 0
