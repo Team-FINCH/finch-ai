@@ -309,7 +309,6 @@
     flex-shrink: 0;
   }
   .tag.p1 { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-bg); }
-  .tag.sse { color: var(--warn); border-color: var(--warn); background: var(--warn-bg); }
 
   /* ── 코드 ───────────────────────────── */
   pre {
@@ -440,7 +439,7 @@
       <a href="#envelope" class="sub">응답 봉투</a>
       <a href="#narrative" class="sub">narrative / metrics</a>
       <a href="#citations" class="sub">citations</a>
-      <a href="#stream" class="sub">SSE 스트리밍</a>
+      <a href="#stream" class="sub">스트리밍 &mdash; 범위 밖</a>
       <a href="#errors" class="sub">에러 · 캐시 · 한도</a>
 
       <div class="rail-group">엔드포인트</div>
@@ -670,43 +669,18 @@
         </table>
       </div>
 
-      <h3 id="stream">2.5 SSE 스트리밍</h3>
+      <h3 id="stream">2.5 스트리밍 &mdash; MVP 범위 밖</h3>
       <div class="rule-box">
-        <span class="label">미구현</span>
-        <p><strong>스트리밍은 아직 구현되지 않았다.</strong> 대화와 종목 분석은 <code>Accept</code>와 무관하게 <a href="#envelope">§2.2</a>의 JSON 봉투를 한 번에 돌려준다. 아래는 스트리밍을 붙일 때의 목표 형태이며 <code>docs/openapi.json</code>에는 실려 있지 않다. <strong>프론트는 이 절을 보고 구현하지 않는다</strong> — 계약의 기준은 openapi.json이다.</p>
+        <span class="label">결정</span>
+        <p><strong>SSE 스트리밍은 MVP 에서 하지 않는다.</strong> 모든 응답은
+        <a href="#envelope">&sect;2.2</a>의 JSON 봉투를 한 번에 돌려준다. <code>Accept</code> 값은 보지 않는다.</p>
+        <p>이 절에는 <code>meta</code>/<code>tool_call</code>/<code>delta</code>/<code>citations</code>/<code>done</code>
+        이벤트 규약이 있었다. 걷어낸 이유는 셋이다. 팀 featureSpec &sect;10.2 의 MVP 3종(종목 분석 &middot; 용어 설명 &middot;
+        보유 종목 요약) 어디에도 스트리밍 요구가 없고, 백엔드 명세에도 스트리밍 설계가 없다. 그리고 호출 경로가
+        프론트 &rarr; 백엔드 &rarr; AI 로 확정되어 <strong>스트리밍을 하려면 백엔드가 스트리밍 프록시를 먼저 만들어야 한다</strong> &mdash;
+        계획에 없는 작업이다. 아무도 만들지 않을 기능을 문서가 약속하고 있었고, 실제로 프론트가 붙였다가 동작하지 않았다.</p>
+        <p>다시 논의한다면 순서는 <strong>백엔드 스트리밍 프록시가 먼저</strong>다. 그 전에는 AI 쪽만 구현해도 프론트까지 닿지 않는다.</p>
       </div>
-      <p><code>Accept: text/event-stream</code>을 보내면 스트리밍으로 응답한다. 대화와 종목 분석이 지원한다.</p>
-      <pre><code>event: meta
-data: {"request_id":"req_01JQZ8M3T7K2","data_as_of":{...}}
-
-event: tool_call
-data: {"tool":"calc_risk_metrics","status":"running","label":"포트폴리오 위험도 계산 중"}
-
-event: tool_call
-data: {"tool":"calc_risk_metrics","status":"done","duration_ms":412}
-
-event: delta
-data: {"text":"반도체 관련 자산이 포트폴리오의 "}
-
-event: delta
-data: {"text":"42.3%","segment":{"type":"metric","raw":0.423,"unit":"ratio",
-       "source":"risk_engine","direction":null}}
-
-event: delta
-data: {"text":"를 차지합니다."}
-
-event: citations
-data: [{"id":"cit_1","type":"engine","title":"섹터 집중도 계산"}]
-
-event: done
-data: {"finish_reason":"stop","tokens":{"input":8412,"output":623}}</code></pre>
-      <p>
-        <code>tool_call</code>을 노출하는 이유는 대기 구간의 UX 때문이다. 도구 호출에 수 초가 걸리므로
-        <code>label</code>을 그대로 로딩 문구로 표시한다.
-        <strong><code>delta</code>는 이미 치환이 끝난 문자열</strong>이므로 클라이언트는 이어 붙이기만 하면 된다.
-        수치가 포함된 조각에는 <code>segment</code>가 함께 실려 오며 스타일링이 필요할 때만 쓴다.
-        서버는 자리표시자가 열려 있는 동안 출력을 보류했다가 치환 후 내보내므로 <code>{{ }}</code>가 클라이언트에 노출되지 않는다.
-      </p>
 
       <h3 id="errors">2.6 에러 · 캐시 · 호출 한도</h3>
       <pre><code>{
@@ -778,7 +752,7 @@ data: {"finish_reason":"stop","tokens":{"input":8412,"output":623}}</code></pre>
           <span class="tag p1">Phase 1</span>
         </div>
         <div class="ep-body">
-          <p class="ep-note">종목 상세 화면의 AI 분석. 투자 논지 점검을 섹션으로 포함한다. SSE 는 <a href="#stream">§2.5</a> 참조 — 아직 JSON 봉투만 돌려준다.</p>
+          <p class="ep-note">종목 상세 화면의 AI 분석. 투자 논지 점검을 섹션으로 포함한다.</p>
         </div>
       </div>
 
@@ -863,7 +837,6 @@ data: {"finish_reason":"stop","tokens":{"input":8412,"output":623}}</code></pre>
         <div class="ep-head">
           <span class="verb post">POST</span>
           <span class="path">/api/ai/v1/chat</span>
-          <span class="tag sse">SSE (미구현)</span>
           <span class="tag p1">Phase 1</span>
         </div>
         <div class="ep-body">

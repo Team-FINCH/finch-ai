@@ -170,41 +170,12 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 | `engine` | 자체 계산 결과 (외부 URL 없음) |
 | `wiki` | 사용자가 기록한 투자 논지 |
 
-### 2.5 SSE 스트리밍
+### 2.5 스트리밍 — MVP 범위 밖
 
-> **미구현**
-> **스트리밍은 아직 구현되지 않았다.** 대화와 종목 분석은 `Accept`와 무관하게 [§2.2](#envelope)의 JSON 봉투를 한 번에 돌려준다. 아래는 스트리밍을 붙일 때의 목표 형태이며 `docs/openapi.json`에는 실려 있지 않다. **프론트는 이 절을 보고 구현하지 않는다** — 계약의 기준은 openapi.json이다.
-
-`Accept: text/event-stream`을 보내면 스트리밍으로 응답한다. 대화와 종목 분석이 지원한다.
-
-```
-event: meta
-data: {"request_id":"req_01JQZ8M3T7K2","data_as_of":{...}}
-
-event: tool_call
-data: {"tool":"calc_risk_metrics","status":"running","label":"포트폴리오 위험도 계산 중"}
-
-event: tool_call
-data: {"tool":"calc_risk_metrics","status":"done","duration_ms":412}
-
-event: delta
-data: {"text":"반도체 관련 자산이 포트폴리오의 "}
-
-event: delta
-data: {"text":"42.3%","segment":{"type":"metric","raw":0.423,"unit":"ratio",
-       "source":"risk_engine","direction":null}}
-
-event: delta
-data: {"text":"를 차지합니다."}
-
-event: citations
-data: [{"id":"cit_1","type":"engine","title":"섹터 집중도 계산"}]
-
-event: done
-data: {"finish_reason":"stop","tokens":{"input":8412,"output":623}}
-```
-
-`tool_call`을 노출하는 이유는 대기 구간의 UX 때문이다. 도구 호출에 수 초가 걸리므로 `label`을 그대로 로딩 문구로 표시한다. **`delta`는 이미 치환이 끝난 문자열**이므로 클라이언트는 이어 붙이기만 하면 된다. 수치가 포함된 조각에는 `segment`가 함께 실려 오며 스타일링이 필요할 때만 쓴다. 서버는 자리표시자가 열려 있는 동안 출력을 보류했다가 치환 후 내보내므로 `{{ }}`가 클라이언트에 노출되지 않는다.
+> **결정**
+> **SSE 스트리밍은 MVP 에서 하지 않는다.** 모든 응답은 [§2.2](#envelope)의 JSON 봉투를 한 번에 돌려준다. `Accept` 값은 보지 않는다.
+> 이 절에는 `meta`/`tool_call`/`delta`/`citations`/`done` 이벤트 규약이 있었다. 걷어낸 이유는 셋이다. 팀 featureSpec §10.2 의 MVP 3종(종목 분석 · 용어 설명 · 보유 종목 요약) 어디에도 스트리밍 요구가 없고, 백엔드 명세에도 스트리밍 설계가 없다. 그리고 호출 경로가 프론트 → 백엔드 → AI 로 확정되어 **스트리밍을 하려면 백엔드가 스트리밍 프록시를 먼저 만들어야 한다** — 계획에 없는 작업이다. 아무도 만들지 않을 기능을 문서가 약속하고 있었고, 실제로 프론트가 붙였다가 동작하지 않았다.
+> 다시 논의한다면 순서는 **백엔드 스트리밍 프록시가 먼저**다. 그 전에는 AI 쪽만 구현해도 프론트까지 닿지 않는다.
 
 ### 2.6 에러 · 캐시 · 호출 한도
 
@@ -253,7 +224,7 @@ data: {"finish_reason":"stop","tokens":{"input":8412,"output":623}}
 
 **POST** `/api/ai/v1/stocks/{ticker}/analysis`  —  Phase 1
 
-종목 상세 화면의 AI 분석. 투자 논지 점검을 섹션으로 포함한다. SSE 는 [§2.5](#stream) 참조 — 아직 JSON 봉투만 돌려준다.
+종목 상세 화면의 AI 분석. 투자 논지 점검을 섹션으로 포함한다.
 
 #### Request
 
@@ -332,7 +303,7 @@ data: {"finish_reason":"stop","tokens":{"input":8412,"output":623}}
 
 ## §4 AI 대화
 
-**POST** `/api/ai/v1/chat`  —  SSE (미구현) · Phase 1
+**POST** `/api/ai/v1/chat`  —  Phase 1
 
 유일한 도구 호출 에이전트. 나머지 기능의 파이프라인을 Tool로 노출해 재사용한다.
 
