@@ -150,8 +150,6 @@ DB 나 의존성이 준비되지 않았으면 무엇을 실행해야 하는지 �
 
 작업 규율(커밋 단위, 탐침 우선, 읽기 범위, 완료 정의)은 개인 에이전트 설정에 두고
 저장소에는 두지 않는다. 팀 저장소로 이관하면서 개인 설정 문서는 제외했다.
-태스크 지시문 형식은 [docs/worker-task-template.md](docs/worker-task-template.md) 참고.
-
 AI 파트는 `ai/` 안에서만 작업한다. `backend/`, `frontend/`, `infra/`, `docs/` 와
 저장소 루트는 읽기 전용이다.
 
