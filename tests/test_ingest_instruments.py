@@ -278,6 +278,27 @@ def test_semiconductor_cluster_groups_together() -> None:
     assert sectors == {"반도체"}
 
 
+@pytest.mark.parametrize(
+    ("induty_code", "expected"),
+    [
+        ("31321", "기계/장비"),
+        ("64992", "기타"),
+        ("64991", "은행"),
+    ],
+)
+def test_항공기와_지주회사_ksic를_구체적인_prefix로_분류한다(
+    induty_code: str, expected: str
+) -> None:
+    """항공기 제조와 기타 지주회사를 조선·은행 상위 prefix로 뭉개지 않는다."""
+    assert ing.resolve(induty_code)[0] == expected
+
+
+def test_hd한국조선해양은_지주회사_prefix보다_종목_override가_우선한다() -> None:
+    row = ing.build_row("009540", _company("Y", "64992", "HD한국조선해양"))
+    assert row.sector_code == "64992"
+    assert row.sector == "조선"
+
+
 def test_build_row_without_induty_code_falls_back() -> None:
     row = ing.build_row("999999", _company("Y", ""))
     assert row.sector == "기타"
