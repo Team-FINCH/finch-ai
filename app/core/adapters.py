@@ -11,7 +11,7 @@ import asyncio
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import Protocol
@@ -20,6 +20,7 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.enums import OrderSide
+from app.core.errors import InsufficientData
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,10 +83,32 @@ class Ledger:
         return self._flow_by_day.get(day, 0.0)
 
     def price(self, symbol: str, day: date) -> float:
-        try:
-            return self.prices[symbol][day]
-        except KeyError:
-            raise KeyError(f"{self.user_id}: {symbol}의 {day} 종가가 원장에 없다") from None
+        """`day`의 종가. 없으면 직전 거래일 종가로 거슬러 올라간다(as-of).
+
+        휴장일·거래정지로 그날 종가가 빠지는 것은 정상인데, 그동안에도 보유는
+        그대로 남아 있어 평가금액(§2.1)에는 값이 있어야 한다. 직전가를 그대로 쓰면
+        `V_t`와 `r_{i,t}`가 같은 가격을 보므로 그 종목의 당일 수익률이 0이 되고
+        항등식 3(`Σc = r_p`)은 그대로 성립한다. 결측일을 빼거나 0을 넣으면 깨진다.
+
+        변동성·상관은 이 경로를 타지 않는다. `risk._aligned_returns`가 날짜
+        교집합으로 따로 다루며, §6.1대로 그쪽은 결측일을 메우지 않고 제외한다.
+
+        무한정 거슬러 올라가면 상장폐지·장기 거래정지 종목이 영원히 살아 있는
+        평가액을 갖는다. `price_asof_max_days`를 넘거나 그 종목 종가가 아예 없으면
+        0이나 None을 흘리지 않고 끊는다 — 금액이 0으로 섞이면 수익률이 조용히 틀린다.
+        """
+        series = self.prices.get(symbol) or {}
+        close = series.get(day)
+        if close is not None:
+            return close
+        limit = settings.price_asof_max_days
+        recent = [d for d in series if day - timedelta(days=limit) <= d < day]
+        if recent:
+            return series[max(recent)]
+        raise InsufficientData(
+            f"{symbol}의 {day} 종가가 없고 직전 {limit}일 안에도 없습니다.",
+            detail={"user_id": self.user_id, "symbol": symbol, "date": day.isoformat()},
+        )
 
     def instrument(self, symbol: str) -> Instrument:
         return self.instruments.get(symbol) or Instrument(symbol, symbol, "미분류")
@@ -336,9 +359,10 @@ async def _market_data(
 def _common_days(prices: Mapping[str, Mapping[date, float]]) -> tuple[date, ...]:
     """모든 종목에 종가가 있는 날만 거래일로 친다.
 
-    엔진은 거래일마다 보유 종목 전부의 종가를 찾고, 없으면 KeyError 로 죽는다.
-    한 종목이라도 빠진 날을 넣으면 신규 상장·거래정지에서 터진다. 교집합이
-    비면 `trading_days` 가 비고, 호출부는 이미 그것을 데이터 부족으로 다룬다.
+    엔진은 거래일마다 보유 종목 전부의 종가를 찾는다. 빠진 날은 `Ledger.price`
+    가 상한 안에서 직전 종가로 메우지만, 여기서 교집합을 쓰면 메울 일 자체가
+    없어 실제 종가만으로 계산한다. 교집합이 비면 `trading_days` 가 비고,
+    호출부는 이미 그것을 데이터 부족으로 다룬다.
     """
     series = [set(days) for days in prices.values() if days]
     if not series or len(series) != len(prices):
