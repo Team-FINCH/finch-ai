@@ -4,6 +4,7 @@
 **그 태스크 고유의 함정**만 쓴다. 규율을 다시 적지 않는다.
 
 에이전트만 읽으므로 **영어로 쓴다.**
+진단과 설계 태스크는 claude에, 절차적 태스크(검증, push, MR)는 codex에 맡긴다.
 
 길이는 목표가 아니다. 줄여야 하는 것은 `CLAUDE.md`에 이미 있는 규율의 반복이지,
 확인된 사실이 아니다. 오늘 통한 지시문들은 80~120줄이었고 길어진 몫이 전부
@@ -35,6 +36,11 @@
 [SCOPE]
   Touch only: <dirs>
   Other tracks own: <dirs>
+
+[GATE]
+  List irreversible choices in this task and where the coordinator must gate
+  before the worker proceeds: schema, response format, data ingestion, outbound
+  sends. Write "none" when nothing is hard to undo.
 
 [DONE]
   Anything beyond the standard definition of done in CLAUDE.md.
