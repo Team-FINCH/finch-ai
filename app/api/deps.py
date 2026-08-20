@@ -55,7 +55,7 @@ async def get_current_user_id(
     백엔드임을 확인하고, `X-User-Id`로 누구의 데이터인지 정한다. 뒤쪽 값은
     검증하지 않으므로 **AI 서버는 내부 네트워크에서만 접근 가능해야 한다** —
     토큰까지 새면 누구나 남의 위키와 포트폴리오를 읽는다.
-    docs/api-contract-proposal.md §4 참조.
+    docs/api/aiApiSpec.md §4 참조.
     """
     _check_internal_token(internal_token)
     if not user_id or not user_id.strip():

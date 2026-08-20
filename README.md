@@ -57,7 +57,7 @@ AI 기능의 구현은 AI 파트가 전부 소유합니다. 다른 파트에 계
 **`backend` 는 백엔드가 `/internal/v1` 을 구현하기 전에는 쓸 수 없습니다.** 지금 켜면
 원장을 못 읽어 위와 같은 비활성 경로를 탑니다. 시계열과 섹터는 백엔드가 주지 않고
 우리가 `price_daily` · `instruments` 에 적재한 것을 씁니다 — 자세한 분담은
-[`docs/api-contract-proposal.md`](docs/api-contract-proposal.md) §4.1 에 있습니다.
+[`docs/api/aiApiSpec.md`](../docs/api/aiApiSpec.md) §4.1 에 있습니다.
 
 ### ⚠️ 배포 조건 — AI 서버는 외부에 노출하지 않습니다
 
@@ -68,7 +68,7 @@ AI 기능의 구현은 AI 파트가 전부 소유합니다. 다른 파트에 계
 따라서 **AI 서버는 내부 네트워크에서만 접근 가능해야 합니다.** 외부에서 직접 닿을 수 있으면
 누구나 헤더를 위조해 남의 위키·포트폴리오를 읽습니다. 공인 IP·인그레스·포트 포워딩을 열지 말고,
 백엔드가 클라이언트발 `X-User-Id` 를 자기가 검증한 값으로 덮어쓰게 하세요.
-자세한 계약은 [`docs/api-contract-proposal.md`](docs/api-contract-proposal.md) §4 에 있습니다.
+자세한 계약은 [`docs/api/aiApiSpec.md`](../docs/api/aiApiSpec.md) §4 에 있습니다.
 
 ---
 

@@ -62,7 +62,7 @@ curl http://localhost:8000/api/ai/v1/wiki -H "X-User-Id: u_test"
 
 > **로컬이라 아무 값이나 통하는 게 아니라, 운영에서도 그렇다.** AI 서버는 이 헤더를
 > 검증하지 않는다. 그래서 AI 서버를 외부에 노출하면 안 된다 —
-> [`api-contract-proposal.md`](api-contract-proposal.md) §4 참조.
+> [`docs/api/aiApiSpec.md`](../../docs/api/aiApiSpec.md) §4 참조.
 
 ```json
 {"error": {"code": "UNAUTHORIZED", "message": "인증 토큰이 없습니다.", "detail": {}},
