@@ -350,6 +350,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)-7s %(name)s | %(message)s",
     )
+    # httpx는 요청 URL을 통째로 INFO로 남긴다. DART는 키를 쿼리로만 받으므로
+    # (KRX처럼 헤더에 실을 수 없다) 그대로 두면 crtfc_key가 로그에 찍힌다.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     return 0 if asyncio.run(run()) else 1
 
 
