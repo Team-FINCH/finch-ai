@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 from app.api.main import create_app
 from app.core.db import get_session
+from app.core.models import AIFeedback, AIResponse
 from app.llm.agent import MAX_TOOL_CALLS, MAX_TOOL_TURNS
 from app.llm.client import LlmResult, NullLlmClient, ToolTurn, ToolUse
 
@@ -67,11 +68,34 @@ class FakeClient:
         )
 
 
-def build(fake: FakeClient, monkeypatch) -> TestClient:
+class FeedbackSession:
+    def __init__(self) -> None:
+        self.added: list[Any] = []
+
+    def add(self, obj: Any) -> None:
+        self.added.append(obj)
+
+    async def commit(self) -> None:
+        return None
+
+    async def rollback(self) -> None:
+        return None
+
+    async def scalar(self, statement: Any) -> Any:
+        if "ai_responses" in str(statement):
+            row = next((row for row in self.added if isinstance(row, AIResponse)), None)
+            return row.user_id if row else None
+        return next((row for row in self.added if isinstance(row, AIFeedback)), None)
+
+
+def build(fake: FakeClient, monkeypatch, session: Any | None = None) -> TestClient:
     monkeypatch.setattr("app.api.routes.chat.get_llm_client", lambda: fake)
     app = create_app()
-    app.dependency_overrides[get_session] = lambda: None
-    return TestClient(app)
+    db = session or FeedbackSession()
+    app.dependency_overrides[get_session] = lambda: db
+    client = TestClient(app)
+    client.db = db
+    return client
 
 
 @pytest.fixture
@@ -102,6 +126,21 @@ def test_부른_도구를_응답에_남긴다(portfolio_client):
     body = _post(portfolio_client, {"message": "내 비중 얼마야?"}).json()
     assert body["content"]["tools_used"] == ["get_portfolio"]
     assert body["data_as_of"]["portfolio"] is not None
+
+
+def test_응답을_저장해_피드백을_받는다(portfolio_client):
+    response = _post(portfolio_client, {"message": "내 비중 얼마야?"})
+    request_id = response.json()["request_id"]
+
+    row = next(row for row in portfolio_client.db.added if isinstance(row, AIResponse))
+    assert row.request_id == request_id
+    assert row.endpoint == "chat"
+    feedback = portfolio_client.post(
+        "/api/ai/v1/feedback",
+        headers={"Authorization": f"Bearer {HOLDER}"},
+        json={"request_id": request_id, "rating": "up", "reasons": []},
+    )
+    assert feedback.status_code == 200
 
 
 def test_대화_id는_주면_따르고_없으면_만든다(portfolio_client):

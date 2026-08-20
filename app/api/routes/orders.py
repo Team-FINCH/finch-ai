@@ -37,6 +37,7 @@ from app.core.adapters import Ledger
 from app.core.enums import MetricSource, OrderSide, ThesisStatus, WikiSource
 from app.core.errors import InsufficientData, InvalidRequest
 from app.core.models import Instrument, PriceDaily
+from app.core.response_log import record
 from app.core.schemas import DataAsOf, Envelope, Segment
 from app.engines.portfolio import Holding, PortfolioEngine, PortfolioSnapshot
 from app.engines.risk import Finding, RiskAssessment, assess
@@ -444,7 +445,7 @@ async def preview(body: PreviewRequest, user_id: CurrentUser, db: DbSession) -> 
             continue
         sections[outcome.key] = outcome.section.model_dump(mode="json")
 
-    return Envelope[dict](
+    envelope = Envelope[dict](
         content={
             "order_summary": order_summary,
             "orders_value": round(orders_value),
@@ -489,6 +490,8 @@ async def preview(body: PreviewRequest, user_id: CurrentUser, db: DbSession) -> 
             portfolio=_as_datetime(before_snapshot),
         ),
     )
+    await record(db, envelope, user_id=user_id, endpoint="orders.preview")
+    return envelope
 
 
 # ── 요청 문구 ─────────────────────────────────────────────────────────────────

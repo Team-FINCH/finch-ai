@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from app.api.deps import CurrentUser, DbSession
 from app.core.enums import Screen
 from app.core.errors import GuardrailBlocked, InsufficientData, InvalidRequest
+from app.core.response_log import record
 from app.core.schemas import DataAsOf, Envelope
 from app.llm.agent import answer
 from app.llm.client import NullLlmClient, get_llm_client
@@ -75,7 +76,7 @@ async def chat(body: ChatRequest, user_id: CurrentUser, db: DbSession) -> Envelo
         log.warning("답변 차단 · %s", "; ".join(outcome.reasons))
         raise GuardrailBlocked("답변을 생성하지 못했습니다. 질문을 조금 더 구체적으로 적어 주세요.")
 
-    return Envelope[dict](
+    envelope = Envelope[dict](
         content={
             "conversation_id": body.conversation_id or f"conv_{uuid.uuid4().hex[:16]}",
             "answer": outcome.section.model_dump(mode="json"),
@@ -94,3 +95,5 @@ async def chat(body: ChatRequest, user_id: CurrentUser, db: DbSession) -> Envelo
             ),
         ),
     )
+    await record(db, envelope, user_id=user_id, endpoint="chat")
+    return envelope

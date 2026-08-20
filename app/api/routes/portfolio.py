@@ -385,7 +385,7 @@ async def attribution(
     summary = outcome.section.model_dump(mode="json") if outcome.section else None
 
     last = PortfolioEngine(ledger).snapshot(days[-1])
-    return Envelope[dict](
+    envelope = Envelope[dict](
         content={
             "period": body.period.value,
             "start": days[0].isoformat(),
@@ -426,6 +426,8 @@ async def attribution(
         },
         data_as_of=DataAsOf(price=_as_datetime(last), portfolio=_as_datetime(last)),
     )
+    await record(db, envelope, user_id=user_id, endpoint="portfolio.attribution")
+    return envelope
 
 
 # ── §6 성과 요인 ──────────────────────────────────────────────────────────────

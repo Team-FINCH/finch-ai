@@ -25,6 +25,7 @@ from app.core.adapters import SeedLedgerSource
 from app.core.config import settings
 from app.core.enums import MetricSource, WikiSource
 from app.core.errors import InsufficientData, InvalidRequest
+from app.core.response_log import record
 from app.core.schemas import DataAsOf, Envelope, Segment
 from app.engines.portfolio import Holding, PortfolioEngine, PortfolioSnapshot
 from app.llm.client import NullLlmClient, get_llm_client
@@ -199,7 +200,7 @@ async def create_analysis(
         # ponytail: 일정 캘린더 원천이 아직 없다. 수집기가 붙으면 여기를 채운다.
         sections["next_events"]["events"] = []
 
-    return Envelope[dict](
+    envelope = Envelope[dict](
         content={
             "ticker": ticker,
             "name": _display_name(snapshot, ticker),
@@ -211,6 +212,8 @@ async def create_analysis(
             filings=max((h["published_at"] for h in hits if h.get("published_at")), default=None),
         ),
     )
+    await record(db, envelope, user_id=user_id, endpoint="stocks.analysis")
+    return envelope
 
 
 def _display_name(snapshot: PortfolioSnapshot | None, ticker: str) -> str:

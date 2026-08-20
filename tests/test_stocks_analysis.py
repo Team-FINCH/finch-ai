@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from app.api.main import create_app
 from app.core.db import get_session
+from app.core.models import AIFeedback, AIResponse
 from app.llm.client import LlmResult, NullLlmClient
 
 URL = "/api/ai/v1/stocks/005930/analysis"
@@ -50,6 +51,26 @@ class FakeClient:
         )
 
 
+class FeedbackSession:
+    def __init__(self) -> None:
+        self.added: list[Any] = []
+
+    def add(self, obj: Any) -> None:
+        self.added.append(obj)
+
+    async def commit(self) -> None:
+        return None
+
+    async def rollback(self) -> None:
+        return None
+
+    async def scalar(self, statement: Any) -> Any:
+        if "ai_responses" in str(statement):
+            row = next((row for row in self.added if isinstance(row, AIResponse)), None)
+            return row.user_id if row else None
+        return next((row for row in self.added if isinstance(row, AIFeedback)), None)
+
+
 @pytest.fixture
 def client(monkeypatch):
     fake = FakeClient()
@@ -57,9 +78,11 @@ def client(monkeypatch):
     monkeypatch.setattr("app.api.routes.stocks.search", _no_hits)
     monkeypatch.setattr("app.api.routes.stocks.get_active_thesis", _no_thesis)
     app = create_app()
-    app.dependency_overrides[get_session] = lambda: None
+    session = FeedbackSession()
+    app.dependency_overrides[get_session] = lambda: session
     with TestClient(app) as test_client:
         test_client.llm = fake
+        test_client.db = session
         yield test_client
 
 
@@ -182,6 +205,21 @@ def test_면책_문구와_모델이_봉투에_들어간다(client):
     assert body["model"] == "claude-opus-5"
     assert body["disclaimer"]
     assert body["request_id"].startswith("req_")
+
+
+def test_응답을_저장해_피드백을_받는다(client):
+    response = _post(client, {"sections": ["current"]})
+    request_id = response.json()["request_id"]
+
+    row = next(row for row in client.db.added if isinstance(row, AIResponse))
+    assert row.request_id == request_id
+    assert row.endpoint == "stocks.analysis"
+    feedback = client.post(
+        "/api/ai/v1/feedback",
+        headers={"Authorization": f"Bearer {HOLDER}"},
+        json={"request_id": request_id, "rating": "up", "reasons": []},
+    )
+    assert feedback.status_code == 200
 
 
 # ── 거부 경로 ────────────────────────────────────────────

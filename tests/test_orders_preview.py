@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 from app.api.main import create_app
 from app.core.adapters import Instrument, Ledger
 from app.core.db import get_session
+from app.core.models import AIFeedback, AIResponse
 from app.llm.client import LlmResult, NullLlmClient
 
 URL = "/api/ai/v1/orders/preview"
@@ -139,6 +140,7 @@ class StubSession:
         self.theses = theses or []
         self.facts = facts or []
         self.seen: list[str] = []
+        self.added: list[Any] = []
 
     async def execute(self, statement: Any) -> StubResult:
         sql = str(statement)
@@ -155,6 +157,21 @@ class StubSession:
         sql = str(statement)
         self.seen.append(sql)
         return StubScalars(self.theses if "wiki_theses" in sql else self.facts)
+
+    async def scalar(self, statement: Any) -> Any:
+        if "ai_responses" in str(statement):
+            row = next((row for row in self.added if isinstance(row, AIResponse)), None)
+            return row.user_id if row else None
+        return next((row for row in self.added if isinstance(row, AIFeedback)), None)
+
+    def add(self, obj: Any) -> None:
+        self.added.append(obj)
+
+    async def commit(self) -> None:
+        return None
+
+    async def rollback(self) -> None:
+        return None
 
 
 def _make_client(
@@ -203,6 +220,21 @@ def test_전후와_차분을_함께_돌려준다(client: TestClient) -> None:
     assert 0.0 < content["before"]["hhi"] <= 1.0
     assert 0.0 < content["after"]["hhi"] <= 1.0
     assert content["summary"]["text"]
+
+
+def test_응답을_저장해_피드백을_받는다(client: TestClient) -> None:
+    response = _post(client, HOLDER, [_buy(price=214000)])
+    request_id = response.json()["request_id"]
+
+    row = next(row for row in client.db.added if isinstance(row, AIResponse))
+    assert row.request_id == request_id
+    assert row.endpoint == "orders.preview"
+    feedback = client.post(
+        "/api/ai/v1/feedback",
+        headers={"Authorization": f"Bearer {HOLDER}"},
+        json={"request_id": request_id, "rating": "up", "reasons": []},
+    )
+    assert feedback.status_code == 200
 
 
 def test_delta가_after_빼기_before다(client: TestClient) -> None:
