@@ -1,0 +1,879 @@
+<title>투자 엔진 산식</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@500;600;700&display=swap">
+
+<style>
+  :root {
+    --paper:      #ECEEEC;
+    --surface:    #FBFCFA;
+    --surface-2:  #E3E7E3;
+    --ink:        #1A1E1C;
+    --ink-2:      #565E59;
+    --ink-3:      #7D857F;
+    --rule:       #D2D8D3;
+    --rule-soft:  #DFE3DF;
+    --accent:     #1F5C4D;
+    --accent-ink: #14493C;
+    --accent-bg:  #DCE8E2;
+    --up:         #B93F32;
+    --down:       #245FA6;
+    --warn:       #8F6415;
+    --warn-bg:    #F0E6D0;
+    --shadow:     0 1px 2px rgba(26,30,28,.05), 0 8px 24px -16px rgba(26,30,28,.28);
+
+    --f-display: "Noto Serif KR", "Apple SD Gothic Neo", serif;
+    --f-body:    "IBM Plex Sans KR", "Apple SD Gothic Neo", system-ui, sans-serif;
+    --f-mono:    "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #141815;
+      --surface:    #1B211D;
+      --surface-2:  #232A25;
+      --ink:        #E3E8E4;
+      --ink-2:      #A2ADA6;
+      --ink-3:      #7B857E;
+      --rule:       #2E3731;
+      --rule-soft:  #262E29;
+      --accent:     #6BBFA3;
+      --accent-ink: #8CD4BA;
+      --accent-bg:  #1D2E28;
+      --up:         #E0705F;
+      --down:       #6EA3E0;
+      --warn:       #D2A24E;
+      --warn-bg:    #2C2618;
+      --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #141815;
+    --surface:    #1B211D;
+    --surface-2:  #232A25;
+    --ink:        #E3E8E4;
+    --ink-2:      #A2ADA6;
+    --ink-3:      #7B857E;
+    --rule:       #2E3731;
+    --rule-soft:  #262E29;
+    --accent:     #6BBFA3;
+    --accent-ink: #8CD4BA;
+    --accent-bg:  #1D2E28;
+    --up:         #E0705F;
+    --down:       #6EA3E0;
+    --warn:       #D2A24E;
+    --warn-bg:    #2C2618;
+    --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 15.5px;
+    line-height: 1.72;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell {
+    display: grid;
+    grid-template-columns: 258px minmax(0, 1fr);
+    max-width: 1220px;
+    margin: 0 auto;
+  }
+
+  .rail {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 44px 26px 44px 30px;
+    border-right: 1px solid var(--rule);
+  }
+  .rail-mark {
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+  .rail-title {
+    font-family: var(--f-display);
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.4;
+    margin: 0 0 26px;
+    letter-spacing: -.01em;
+  }
+  .rail nav { display: flex; flex-direction: column; gap: 1px; }
+  .rail a {
+    display: block;
+    padding: 4px 10px 4px 11px;
+    color: var(--ink-2);
+    text-decoration: none;
+    font-size: 13.2px;
+    line-height: 1.5;
+    border-left: 2px solid transparent;
+    border-radius: 0 3px 3px 0;
+    transition: color .13s, background .13s, border-color .13s;
+  }
+  .rail a:hover { color: var(--ink); background: var(--rule-soft); }
+  .rail a.sub { padding-left: 24px; font-size: 12.6px; color: var(--ink-3); }
+  .rail a.active {
+    color: var(--accent-ink);
+    border-left-color: var(--accent);
+    background: var(--accent-bg);
+    font-weight: 500;
+  }
+  .rail-group {
+    font-family: var(--f-mono);
+    font-size: 9.8px;
+    font-weight: 600;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 20px 0 6px 11px;
+  }
+  .rail a:focus-visible, main a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  main { padding: 44px 52px 140px; min-width: 0; }
+  .wrap { max-width: 800px; }
+
+  .masthead { padding-bottom: 30px; border-bottom: 2px solid var(--ink); margin-bottom: 38px; }
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 14px;
+  }
+  h1 {
+    font-family: var(--f-display);
+    font-size: clamp(30px, 4.4vw, 42px);
+    font-weight: 700;
+    line-height: 1.24;
+    letter-spacing: -.025em;
+    margin: 0 0 16px;
+    text-wrap: balance;
+  }
+  .standfirst {
+    font-size: 16.5px;
+    line-height: 1.68;
+    color: var(--ink-2);
+    margin: 0;
+    max-width: 62ch;
+  }
+  .meta-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 26px;
+    margin-top: 24px;
+    font-family: var(--f-mono);
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+  .meta-strip b { color: var(--ink-2); font-weight: 500; }
+
+  h2 {
+    font-family: var(--f-display);
+    font-size: 25px;
+    font-weight: 700;
+    letter-spacing: -.02em;
+    line-height: 1.34;
+    margin: 68px 0 8px;
+    padding-top: 22px;
+    border-top: 1px solid var(--rule);
+    text-wrap: balance;
+    scroll-margin-top: 24px;
+  }
+  h2 .num {
+    font-family: var(--f-mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-right: 12px;
+    letter-spacing: 0;
+  }
+  h3 {
+    font-family: var(--f-display);
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -.012em;
+    margin: 42px 0 10px;
+    scroll-margin-top: 24px;
+    text-wrap: balance;
+  }
+  h4 {
+    font-family: var(--f-body);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 26px 0 9px;
+  }
+  p { margin: 0 0 15px; max-width: 68ch; }
+  main a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
+  strong { font-weight: 600; }
+  ul, ol { margin: 0 0 15px; padding-left: 20px; max-width: 68ch; }
+  li { margin-bottom: 5px; }
+  li::marker { color: var(--ink-3); }
+
+  code {
+    font-family: var(--f-mono);
+    font-size: .875em;
+    background: var(--surface-2);
+    padding: 1.5px 5px;
+    border-radius: 3px;
+    color: var(--accent-ink);
+  }
+
+  /* ── 수식 블록 ──────────────────────── */
+  .eq {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 6px 6px 0;
+    padding: 15px 20px;
+    margin: 0 0 18px;
+    box-shadow: var(--shadow);
+  }
+  .eq-line {
+    font-family: var(--f-mono);
+    font-size: 14.2px;
+    line-height: 2;
+    color: var(--ink);
+    overflow-x: auto;
+    white-space: pre;
+    font-variant-numeric: tabular-nums;
+  }
+  .eq-name {
+    font-family: var(--f-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    display: block;
+    margin-bottom: 8px;
+  }
+  .eq-where {
+    margin-top: 11px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--rule);
+    font-size: 12.8px;
+    line-height: 1.85;
+    color: var(--ink-2);
+  }
+  .eq-where b {
+    font-family: var(--f-mono);
+    font-weight: 500;
+    color: var(--ink);
+  }
+
+  pre {
+    font-family: var(--f-mono);
+    font-size: 12.6px;
+    line-height: 1.68;
+    background: var(--surface-2);
+    border: 1px solid var(--rule-soft);
+    border-radius: 5px;
+    padding: 13px 15px;
+    overflow-x: auto;
+    margin: 0 0 14px;
+    tab-size: 4;
+  }
+  pre code { background: none; padding: 0; color: var(--ink); font-size: inherit; }
+
+  .t-wrap { overflow-x: auto; margin: 0 0 18px; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 13.6px;
+    min-width: 460px;
+  }
+  th {
+    text-align: left;
+    font-family: var(--f-body);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    border-bottom: 1.5px solid var(--rule);
+    padding: 0 14px 7px 0;
+    white-space: nowrap;
+  }
+  td {
+    border-bottom: 1px solid var(--rule-soft);
+    padding: 9px 14px 9px 0;
+    vertical-align: top;
+    line-height: 1.6;
+  }
+  td:last-child, th:last-child { padding-right: 0; }
+  tbody tr:last-child td { border-bottom: none; }
+  td code { font-size: 12.4px; white-space: nowrap; }
+  .n { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  th.n { text-align: right; }
+
+  .rule-box {
+    border: 1px solid var(--accent);
+    border-left-width: 3px;
+    background: var(--accent-bg);
+    border-radius: 0 5px 5px 0;
+    padding: 15px 18px;
+    margin: 20px 0;
+  }
+  .rule-box.warn { border-color: var(--warn); background: var(--warn-bg); }
+  .rule-box > :first-child { margin-top: 0; }
+  .rule-box > :last-child { margin-bottom: 0; }
+  .rule-box .label {
+    font-family: var(--f-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    display: block;
+    margin-bottom: 7px;
+  }
+  .rule-box.warn .label { color: var(--warn); }
+  .rule-box p { max-width: none; font-size: 14.2px; }
+
+  .sev { font-weight: 600; }
+  .sev.high { color: var(--up); }
+  .sev.mid  { color: var(--warn); }
+  .sev.low  { color: var(--accent-ink); }
+
+  footer {
+    margin-top: 76px;
+    padding-top: 22px;
+    border-top: 2px solid var(--ink);
+    font-size: 13px;
+    color: var(--ink-3);
+  }
+
+  @media (max-width: 940px) {
+    .shell { grid-template-columns: 1fr; }
+    .rail {
+      position: static;
+      height: auto;
+      border-right: none;
+      border-bottom: 1px solid var(--rule);
+      padding: 30px 26px 26px;
+    }
+    .rail nav { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 0 12px; }
+    .rail-group { grid-column: 1 / -1; }
+    main { padding: 34px 26px 100px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-mark">Formula v0.1</div>
+    <div class="rail-title">AI 투자 비서<br>엔진 산식</div>
+    <nav id="toc">
+      <a href="#basis">공통 기준</a>
+
+      <div class="rail-group">Portfolio</div>
+      <a href="#pf-value" class="sub">평가금액과 비중</a>
+      <a href="#pf-cost" class="sub">평균매입가</a>
+      <a href="#pf-return" class="sub">수익률</a>
+
+      <div class="rail-group">Risk</div>
+      <a href="#rk-conc" class="sub">집중도</a>
+      <a href="#rk-vol" class="sub">변동성</a>
+      <a href="#rk-corr" class="sub">상관과 분산효과</a>
+      <a href="#rk-dd" class="sub">낙폭과 베타</a>
+      <a href="#rk-style" class="sub">스타일 · 금리민감도</a>
+      <a href="#rk-score" class="sub">Risk Score</a>
+      <a href="#rk-find" class="sub">Finding 발생 규칙</a>
+
+      <div class="rail-group">Attribution</div>
+      <a href="#at-contrib" class="sub">종목 기여도</a>
+      <a href="#at-brinson" class="sub">시장 · 섹터 · 선택</a>
+      <a href="#at-link" class="sub">다기간 연결</a>
+
+      <div class="rail-group">Event</div>
+      <a href="#ev-match" class="sub">이벤트 매칭</a>
+      <a href="#ev-rank" class="sub">브리핑 랭킹</a>
+
+      <div class="rail-group">운영</div>
+      <a href="#ops-data" class="sub">결측 · 최소 요건</a>
+      <a href="#ops-precision" class="sub">정밀도 정책</a>
+      <a href="#ops-test" class="sub">검증 항등식</a>
+    </nav>
+  </aside>
+
+  <main>
+    <div class="wrap">
+
+      <header class="masthead">
+        <div class="eyebrow">AI Part · Calculation Layer</div>
+        <h1>엔진 산식 명세</h1>
+        <p class="standfirst">
+          AI 응답에 등장하는 모든 수치의 계산 근거를 정의한다.
+          LLM은 이 문서의 출력값을 설명할 뿐 어떤 값도 스스로 만들지 않는다.
+        </p>
+        <div class="meta-strip">
+          <span><b>시장</b> KOSPI · KOSDAQ</span>
+          <span><b>통화</b> KRW 단일</span>
+          <span><b>주기</b> 일별 종가</span>
+          <span><b>연환산</b> 246 거래일</span>
+        </div>
+      </header>
+
+      <h2 id="basis"><span class="num">§1</span>공통 기준</h2>
+      <p>
+        모든 엔진은 아래 기준을 공유한다. 엔진마다 다른 기준을 쓰면 화면 간 수치가 어긋나므로
+        <strong>여기서 벗어나는 계산은 허용하지 않는다.</strong>
+      </p>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>항목</th><th>기준</th><th>근거</th></tr></thead>
+          <tbody>
+            <tr><td>수익률 형태</td><td>산술 수익률 <code>P_t/P_{t-1} − 1</code></td><td>기여도 합산이 성립하려면 로그수익률을 쓸 수 없다</td></tr>
+            <tr><td>가격</td><td>수정주가 종가</td><td>액면분할·유상증자 왜곡 제거. pykrx 수정주가 사용</td></tr>
+            <tr><td>연환산 거래일</td><td><code>D = 246</code></td><td>국내 증시 연간 개장일 실측치. 252는 미국 기준이라 쓰지 않는다</td></tr>
+            <tr><td>표본 표준편차</td><td><code>ddof = 1</code></td><td>모표준편차가 아닌 표본 추정</td></tr>
+            <tr><td>관측 구간</td><td>기본 60거래일</td><td>상관·변동성 추정의 최소 표본. §6 참조</td></tr>
+            <tr><td>휴장일</td><td>거래일 인덱스로 정렬 후 계산</td><td>달력일 기준으로 하면 주말이 0 수익률로 들어간다</td></tr>
+            <tr><td>배당</td><td>Phase 1 제외</td><td>가격 수익률만. 총수익률은 Phase 3 이후</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="pf-value"><span class="num">§2</span>Portfolio Engine</h2>
+
+      <h3 id="pf-value-h">2.1 평가금액과 비중</h3>
+      <div class="eq">
+        <span class="eq-name">Valuation</span>
+        <div class="eq-line">MV_i = q_i × P_i
+V    = Σ_i MV_i + C
+w_i  = MV_i / V
+w_c  = C / V</div>
+        <div class="eq-where">
+          <b>q_i</b> 보유수량 · <b>P_i</b> 현재가 · <b>C</b> 현금 · <b>V</b> 총자산<br>
+          <b>w_i</b> 종목 비중 (현금 포함 분모) · <b>w_c</b> 현금 비중
+        </div>
+      </div>
+      <p>
+        비중의 분모에 현금을 포함한다. 사용자가 "내 자산에서 삼성전자가 몇 퍼센트"를 물을 때 기대하는 값이기 때문이다.
+        <strong>다만 집중도(HHI) 계산에서는 현금을 제외하고 재정규화한다</strong> — 현금만 늘려도 분산된 것처럼 보이는 왜곡을 막기 위해서다(<a href="#rk-conc">§3.1</a>).
+      </p>
+
+      <h3 id="pf-cost">2.2 평균매입가 — 이동평균법</h3>
+      <div class="eq">
+        <span class="eq-name">Moving Average Cost</span>
+        <div class="eq-line">매수 시   A' = (q × A + q_b × P_b + fee) / (q + q_b)
+매도 시   A' = A                    (수량만 감소, 단가 불변)
+평가손익  PnL_i = q_i × (P_i − A_i)
+손익률    R_i   = P_i / A_i − 1</div>
+        <div class="eq-where">
+          <b>A</b> 평균매입가 · <b>q_b, P_b</b> 매수 수량·단가 · <b>fee</b> 매수 수수료
+        </div>
+      </div>
+      <p>국내 증권사 관례인 이동평균법을 따른다. 선입선출(FIFO)을 쓰면 앱의 다른 화면과 손익이 어긋난다. 전량 매도 후 재매수 시 <code>A</code>는 초기화한다.</p>
+
+      <h3 id="pf-return">2.3 수익률 — 외부 현금흐름 조정</h3>
+      <div class="eq">
+        <span class="eq-name">Daily / Cumulative Return</span>
+        <div class="eq-line">r_t = (V_t − F_t) / V_{t-1} − 1
+R   = Π_t (1 + r_t) − 1</div>
+        <div class="eq-where">
+          <b>F_t</b> 당일 <em>외부</em> 순입금 (입출금만 포함) · <b>V_t</b> 당일 종가 기준 총자산
+        </div>
+      </div>
+      <div class="rule-box warn">
+        <span class="label">흔한 오류</span>
+        <p><strong>매수·매도는 현금흐름이 아니다.</strong> 현금과 주식 사이의 내부 이동이므로 <code>F_t</code>에 넣으면 수익률이 왜곡된다. <code>F_t</code>에 들어가는 것은 사용자가 계좌에 넣거나 뺀 금액뿐이다. 가상 포트폴리오에서는 초기 시드머니 지급과 추가 충전이 여기 해당한다.</p>
+      </div>
+
+      <h2 id="rk-conc"><span class="num">§3</span>Risk Engine</h2>
+
+      <h3 id="rk-conc-h">3.1 집중도</h3>
+      <div class="eq">
+        <span class="eq-name">Concentration</span>
+        <div class="eq-line">ŵ_i     = w_i / (1 − w_c)          주식 내 재정규화
+HHI     = Σ_i ŵ_i²
+N_eff   = 1 / HHI                   유효 종목 수
+HHI_sec = Σ_j ( Σ_{i∈j} ŵ_i )²      섹터 집중도
+top1    = max_i ŵ_i
+top3    = Σ (상위 3개 ŵ_i)</div>
+        <div class="eq-where">
+          <b>ŵ_i</b> 현금 제외 후 비중 · <b>j</b> 섹터 · <b>N_eff</b> 균등 분산으로 환산한 종목 수
+        </div>
+      </div>
+      <p>
+        <code>N_eff</code>를 함께 계산하는 이유는 설명 가능성 때문이다. HHI 0.28은 사용자에게 아무 의미가 없지만
+        "사실상 3.6종목에 나눠 담은 것과 같다"는 즉시 이해된다. <strong>LLM 프롬프트에는 HHI가 아니라 <code>N_eff</code>를 넣는다.</strong>
+      </p>
+
+      <h3 id="rk-vol">3.2 변동성</h3>
+      <div class="eq">
+        <span class="eq-name">Volatility</span>
+        <div class="eq-line">σ_i  = std(r_i, ddof=1) × √D          개별 종목 연율 변동성
+Σ    = Cov(R)                         일별 수익률 공분산 행렬
+σ_p  = √(ŵᵀ Σ ŵ) × √D                포트폴리오 연율 변동성
+D    = 246</div>
+        <div class="eq-where">
+          <b>R</b> 종목별 일별 수익률 행렬 (60거래일 × N) · <b>ŵ</b> 현금 제외 비중 벡터
+        </div>
+      </div>
+      <p>
+        포트폴리오 변동성은 개별 변동성의 가중평균이 <em>아니다.</em> 공분산 행렬을 거쳐야 상관관계에 의한 상쇄가 반영된다.
+        이 차이가 곧 분산효과이며 <a href="#rk-corr">§3.3</a>에서 지표로 쓴다.
+      </p>
+      <h4>EWMA 대안 — Phase 2 이후</h4>
+      <div class="eq">
+        <div class="eq-line">σ²_t = λ σ²_{t-1} + (1 − λ) r²_{t-1}      λ = 0.94</div>
+        <div class="eq-where">최근 변동에 가중. 단순 표준편차는 60일 전 급등락이 60일째 되는 날 갑자기 사라져 지표가 계단식으로 튄다</div>
+      </div>
+
+      <h3 id="rk-corr">3.3 상관과 분산효과</h3>
+      <div class="eq">
+        <span class="eq-name">Diversification</span>
+        <div class="eq-line">ρ_ij = Cov(r_i, r_j) / (σ_i σ_j)
+
+ρ̄    = Σ_{i≠j} ŵ_i ŵ_j ρ_ij  /  Σ_{i≠j} ŵ_i ŵ_j     비중가중 평균 상관
+
+DR   = ( Σ_i ŵ_i σ_i ) / σ_p                          분산 비율</div>
+        <div class="eq-where">
+          <b>DR ≥ 1</b> 항상 성립 · <b>DR = 1</b> 분산효과 전무 · <b>DR</b>이 클수록 분산이 실제로 작동
+        </div>
+      </div>
+      <div class="rule-box">
+        <span class="label">기획서의 핵심 주장을 뒷받침하는 지표</span>
+        <p>"종목은 세 개로 나뉘어 있지만 실질적인 분산 효과는 제한적"이라는 진단은 <code>DR</code>이 근거다. 종목 수나 HHI만으로는 이 주장을 할 수 없다. <strong><code>DR ≤ 1.15</code>이면서 <code>N_eff ≥ 3</code>일 때가 "숫자상 분산, 실질은 집중" 상태</strong>이며, 이 조합에서만 해당 문장을 생성하도록 프롬프트에 조건을 건다.</p>
+      </div>
+
+      <h3 id="rk-dd">3.4 낙폭과 베타</h3>
+      <div class="eq">
+        <span class="eq-name">Drawdown · Beta</span>
+        <div class="eq-line">peak_t = max_{s ≤ t} V_s
+DD_t   = V_t / peak_t − 1
+MDD    = min_t DD_t                     (음수)
+
+β = Cov(r_p, r_m) / Var(r_m)            60거래일</div>
+        <div class="eq-where"><b>r_m</b> 벤치마크 일별 수익률 · 벤치마크는 보유 시장 비중으로 결정 (<a href="#at-brinson">§4.2</a>)</div>
+      </div>
+      <p>보유 기간이 60거래일 미만이면 <code>MDD</code>는 계산하되 <strong>기간을 함께 표시</strong>한다. "최대 낙폭 −8%"만 보여주면 3년치인지 3주치인지 알 수 없다.</p>
+
+      <h3 id="rk-style">3.5 스타일 편중과 금리민감도</h3>
+      <div class="eq">
+        <span class="eq-name">Style Tilt</span>
+        <div class="eq-line">PBR_i = 시가총액_i / 자본총계_i          DART 최근 분기 기준
+성장 판정  PBR_i ≥ 시장 상위 30% 분위
+대형 판정  시가총액 순위 ≤ 100위
+
+w_growth = Σ_{i ∈ 성장} ŵ_i
+w_large  = Σ_{i ∈ 대형} ŵ_i</div>
+        <div class="eq-where">분위 기준은 매 분기 재계산하며 계산 시점을 <code>as_of</code>로 기록한다</div>
+      </div>
+
+      <h4>금리민감도 — 규칙 기반 프록시</h4>
+      <div class="eq">
+        <div class="eq-line">S = Σ_i ŵ_i × s(sector_i)
+
+s(sector) = +1.0  반도체 · IT · 바이오 · 2차전지 · 인터넷
+            +0.3  경기소비재 · 산업재
+             0.0  통신 · 유틸리티 · 필수소비재
+            −0.5  은행 · 보험 · 증권
+
+rate_sensitivity = high      S ≥ 0.60
+                   moderate  0.25 ≤ S < 0.60
+                   low       S < 0.25</div>
+      </div>
+      <div class="rule-box warn">
+        <span class="label">한계 명시</span>
+        <p>금리 변화에 대한 <strong>회귀 계수를 쓰지 않는다.</strong> 국내 금리 변동 이벤트는 연 8회 내외라 60거래일 표본으로는 신뢰할 수 있는 민감도를 추정할 수 없다. 위 값은 섹터 성격에 기반한 근사이며, <strong>LLM 프롬프트에 "추정치이며 실제 반응과 다를 수 있음"을 반드시 함께 전달한다.</strong> 회귀 기반 전환은 데이터가 2년 이상 쌓인 뒤 검토한다.</p>
+      </div>
+
+      <h3 id="rk-score">3.6 Risk Score</h3>
+      <p>각 지표를 0–100으로 정규화한 뒤 가중 합산한다. 정규화는 구간 선형이며 범위를 벗어나면 절단한다.</p>
+      <div class="eq">
+        <span class="eq-name">Normalization</span>
+        <div class="eq-line">s(x; lo, hi) = clip( (x − lo) / (hi − lo), 0, 1 ) × 100
+
+risk_score = Σ_k ( weight_k × s_k ) / 100        0 ≤ score ≤ 100</div>
+      </div>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>구성요소</th><th>지표</th><th class="n">lo → 0점</th><th class="n">hi → 100점</th><th class="n">가중</th></tr></thead>
+          <tbody>
+            <tr><td>종목 집중도</td><td><code>HHI</code></td><td class="n">0.10</td><td class="n">0.50</td><td class="n">30</td></tr>
+            <tr><td>섹터 집중도</td><td><code>HHI_sec</code></td><td class="n">0.20</td><td class="n">0.60</td><td class="n">25</td></tr>
+            <tr><td>변동성</td><td><code>σ_p</code></td><td class="n">0.15</td><td class="n">0.45</td><td class="n">20</td></tr>
+            <tr><td>분산 실패</td><td><code>DR</code> <span style="color:var(--ink-3)">(역방향)</span></td><td class="n">1.50</td><td class="n">1.05</td><td class="n">15</td></tr>
+            <tr><td>현금 완충 부족</td><td><code>w_c</code> <span style="color:var(--ink-3)">(역방향)</span></td><td class="n">0.20</td><td class="n">0.02</td><td class="n">10</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>역방향 지표는 <code>lo &gt; hi</code>로 두면 같은 식이 그대로 성립한다. 가중치 합은 100이다.</p>
+      <div class="eq">
+        <span class="eq-name">Risk Level</span>
+        <div class="eq-line">low       score &lt; 35
+moderate  35 ≤ score &lt; 65
+high      score ≥ 65</div>
+      </div>
+      <div class="rule-box">
+        <span class="label">경계 안정화</span>
+        <p>임계값 근처에서 등급이 매일 뒤집히면 신뢰를 잃는다. <strong>등급 변경은 이전 등급 대비 ±3점 이상 벌어졌을 때만 반영</strong>하는 히스테리시스를 적용한다. 예를 들어 <code>moderate</code>에서 <code>high</code>로 올라가려면 68점 이상이어야 하고, 내려오려면 62점 이하여야 한다.</p>
+      </div>
+
+      <h3 id="rk-find">3.7 Finding 발생 규칙</h3>
+      <p>API의 <code>findings[]</code>는 아래 임계를 넘은 항목만 생성한다. <code>severity</code> 순, 동률이면 지표 초과폭 순으로 정렬한다.</p>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th><code>id</code></th><th>조건</th><th>severity</th></tr></thead>
+          <tbody>
+            <tr><td rowspan="2"><code>ticker_concentration</code></td><td><code>top1 ≥ 0.25</code></td><td><span class="sev mid">medium</span></td></tr>
+            <tr><td><code>top1 ≥ 0.40</code></td><td><span class="sev high">high</span></td></tr>
+            <tr><td rowspan="2"><code>sector_concentration</code></td><td>단일 섹터 비중 <code>≥ 0.35</code></td><td><span class="sev mid">medium</span></td></tr>
+            <tr><td>단일 섹터 비중 <code>≥ 0.50</code></td><td><span class="sev high">high</span></td></tr>
+            <tr><td rowspan="2"><code>volatility</code></td><td><code>σ_p ≥ 0.30</code></td><td><span class="sev mid">medium</span></td></tr>
+            <tr><td><code>σ_p ≥ 0.40</code></td><td><span class="sev high">high</span></td></tr>
+            <tr><td rowspan="2"><code>correlation</code></td><td><code>DR ≤ 1.20</code> 이고 <code>N_eff ≥ 3</code></td><td><span class="sev mid">medium</span></td></tr>
+            <tr><td><code>DR ≤ 1.10</code> 이고 <code>N_eff ≥ 3</code></td><td><span class="sev high">high</span></td></tr>
+            <tr><td><code>style_tilt</code></td><td><code>w_growth ≥ 0.70</code> 또는 <code>≤ 0.15</code></td><td><span class="sev low">info</span></td></tr>
+            <tr><td><code>macro_exposure</code></td><td><code>rate_sensitivity = high</code></td><td><span class="sev low">info</span></td></tr>
+            <tr><td rowspan="2"><code>liquidity</code></td><td><code>w_c ≤ 0.05</code></td><td><span class="sev low">info</span></td></tr>
+            <tr><td><code>w_c ≤ 0.02</code></td><td><span class="sev mid">medium</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="at-contrib"><span class="num">§4</span>Attribution Engine</h2>
+
+      <h3 id="at-contrib-h">4.1 종목 기여도</h3>
+      <div class="eq">
+        <span class="eq-name">Contribution</span>
+        <div class="eq-line">c_{i,t} = w_{i,t-1} × r_{i,t}
+
+r_{p,t} = Σ_i c_{i,t}      (현금 수익률 0, w_c 포함해 Σw = 1)</div>
+        <div class="eq-where">
+          <b>w_{i,t-1}</b> <em>전일 종가 기준</em> 비중 — 당일 비중을 쓰면 항등식이 깨진다
+        </div>
+      </div>
+      <p>기여 상위를 <code>contributors</code>, 하위(음수)를 <code>detractors</code>로 내보낸다. 정렬 기준은 수익률이 아니라 <strong>기여도</strong>다 — 비중 1%인 종목이 20% 올라도 전체에 미치는 영향은 비중 20%인 종목의 1% 상승과 같다.</p>
+
+      <h3 id="at-brinson">4.2 시장 · 섹터 · 선택 분해</h3>
+      <p>Brinson–Fachler 모형을 쓴다. 벤치마크는 보유 종목의 시장 구성비로 결정하며, KOSPI·KOSDAQ 혼합 시 비중 가중 합성 지수를 쓴다.</p>
+      <div class="eq">
+        <span class="eq-name">Brinson–Fachler</span>
+        <div class="eq-line">Allocation_j  = (w_j^p − w_j^b) × (r_j^b − r_b)
+Selection_j   =  w_j^b        × (r_j^p − r_j^b)
+Interaction_j = (w_j^p − w_j^b) × (r_j^p − r_j^b)
+
+Σ_j (A_j + S_j + I_j) = r_p − r_b</div>
+        <div class="eq-where">
+          <b>w_j^p, w_j^b</b> 섹터 j의 포트폴리오·벤치마크 비중 · <b>r_j^p, r_j^b</b> 섹터 j의 포트폴리오·벤치마크 수익률 · <b>r_b</b> 벤치마크 전체 수익률
+        </div>
+      </div>
+      <h4>API 응답으로의 매핑</h4>
+      <div class="eq">
+        <div class="eq-line">breakdown.market    = r_b
+breakdown.sector    = Σ_j Allocation_j
+breakdown.selection = Σ_j ( Selection_j + Interaction_j )
+
+market + sector + selection = r_p            ✓ 항등식</div>
+      </div>
+      <p>
+        Interaction을 selection에 합치는 이유는 사용자에게 3개 이상의 축을 제시하면 이해되지 않기 때문이다.
+        회계적으로는 별도 항이지만 <strong>"종목을 잘 골랐는가"라는 질문에 대한 답으로는 두 항이 같은 방향</strong>을 가리킨다.
+      </p>
+      <p>섹터별 벤치마크 수익률 <code>r_j^b</code>는 KRX 업종지수에서 얻는다. 업종지수가 없는 섹터는 해당 섹터 편입 종목의 시가총액 가중 수익률로 대체하고 <code>proxy: true</code>를 표기한다.</p>
+
+      <h3 id="at-link">4.3 다기간 연결 — Carino</h3>
+      <div class="rule-box warn">
+        <span class="label">단순 합산은 틀린다</span>
+        <p>일별 기여도를 그냥 더하면 총합이 기간 수익률과 맞지 않는다. 복리 효과 때문이며 기간이 길수록 오차가 커진다. <strong>일 변동성 2% 포트폴리오의 40거래일 구간을 시뮬레이션하면 단순 합산 오차가 0.16%p</strong>로, 화면에 그대로 노출되는 크기다. 아래 링킹을 적용하면 오차가 부동소수점 한계(1e−15)까지 떨어진다.</p>
+      </div>
+      <div class="eq">
+        <span class="eq-name">Carino Linking</span>
+        <div class="eq-line">k_t = ln(1 + r_{p,t}) / r_{p,t}          r_{p,t} = 0 이면 k_t = 1
+K   = ln(1 + R_p)   / R_p               R_p = Π(1 + r_{p,t}) − 1
+
+C_i = Σ_t c_{i,t} × (k_t / K)
+
+Σ_i C_i = R_p                            ✓ 항등식</div>
+      </div>
+      <pre><code>import numpy as np
+
+def carino_link(daily_contrib, port_returns):
+    """daily_contrib: (T, N) 일별 종목 기여도
+       port_returns:  (T,)   일별 포트폴리오 수익률"""
+    r    = np.asarray(port_returns, dtype=float)
+    safe = np.where(np.abs(r) < 1e-12, 1.0, r)          # 0 나눗셈 방지
+    k    = np.where(np.abs(r) < 1e-12, 1.0, np.log1p(r) / safe)
+    R    = np.prod(1 + r) - 1
+    K    = 1.0 if abs(R) < 1e-12 else np.log1p(R) / R
+    return (np.asarray(daily_contrib) * (k / K)[:, None]).sum(axis=0)</code></pre>
+      <p><code>period=1d</code>는 링킹이 불필요하므로 건너뛴다. <code>1w</code> 이상에서만 적용한다.</p>
+
+      <h2 id="ev-match"><span class="num">§5</span>Event Intelligence</h2>
+
+      <h3 id="ev-match-h">5.1 이벤트 매칭 신뢰도</h3>
+      <div class="eq">
+        <span class="eq-name">Matched Confidence</span>
+        <div class="eq-line">conf = 0.40 × recency + 0.30 × entity + 0.30 × semantic
+
+recency  = exp(−Δt / τ)          τ = 1 거래일, Δt = 이벤트~변동 간격
+entity   = 1.0  종목명·종목코드 직접 언급
+           0.5  섹터·업종 언급
+           0.3  거시 이벤트
+semantic = 임베딩 코사인 유사도 (이벤트 본문 ↔ 변동 방향 문맥)</div>
+      </div>
+      <div class="rule-box">
+        <span class="label">인과 표현 게이트</span>
+        <p><code>conf ≥ 0.60</code>일 때만 LLM에 인과 표현을 허용한다. 미만이면 이벤트를 전달하되 <strong>"때문입니다" 대신 "같은 날 다음 소식이 있었습니다"</strong> 형태만 쓰도록 프롬프트에서 강제한다. 주가 변동의 원인을 단정하는 것은 이 서비스가 할 수 있는 주장의 범위를 넘는다.</p>
+      </div>
+
+      <h3 id="ev-rank">5.2 브리핑 랭킹</h3>
+      <div class="eq">
+        <span class="eq-name">Relevance Score</span>
+        <div class="eq-line">relevance = ŵ_i^0.5 × importance × recency × novelty
+
+importance = 1.0  실적 발표 · 실적 정정
+             0.8  주요 공시 (공급계약 · 유증 · 자사주 · 지분변동)
+             0.6  거시 이벤트 × rate_sensitivity 계수
+             0.4  일반 뉴스
+             0.7  포트폴리오 구조 변화 (섹터 비중 5%p 이상 이동)
+
+recency = exp(−days / 2)
+novelty = 0.3   최근 7일 내 동일 항목 노출 이력 있음
+          1.0   신규</div>
+      </div>
+      <p>
+        비중에 <strong>제곱근을 씌우는 이유</strong>는 선형으로 두면 최대 보유 종목이 상위 4칸을 독식하기 때문이다.
+        제곱근은 비중을 여전히 반영하되 소액 보유 종목의 중요 이벤트가 올라올 여지를 남긴다.
+      </p>
+      <div class="rule-box">
+        <span class="label">비용 경계</span>
+        <p>이 산식은 <strong>전부 코드로 계산한다.</strong> LLM은 상위 4건이 확정된 뒤 문장 생성에만 호출된다. 랭킹 자체를 LLM에 맡기면 비용이 사용자 수 × 이벤트 수에 비례해 증가하고, 순위 재현성도 사라진다.</p>
+      </div>
+
+      <h2 id="ops-data"><span class="num">§6</span>운영 규칙</h2>
+
+      <h3 id="ops-data-h">6.1 결측과 최소 데이터 요건</h3>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>지표</th><th class="n">최소 거래일</th><th>미달 시 동작</th></tr></thead>
+          <tbody>
+            <tr><td>비중 · 평가손익</td><td class="n">0</td><td>항상 계산 가능</td></tr>
+            <tr><td>HHI · 집중도</td><td class="n">0</td><td>항상 계산 가능</td></tr>
+            <tr><td>일별 기여도</td><td class="n">2</td><td><code>INSUFFICIENT_DATA</code></td></tr>
+            <tr><td>변동성 · MDD</td><td class="n">60</td><td>지표 <code>null</code>, Risk Score에서 해당 항목 제외 후 가중 재정규화</td></tr>
+            <tr><td>상관 · DR · 베타</td><td class="n">60</td><td>동일</td></tr>
+            <tr><td>Brinson 분해</td><td class="n">2</td><td><code>INSUFFICIENT_DATA</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        신규 상장 종목이 섞이면 그 종목만 히스토리가 짧다. 이때 <strong>전체를 포기하지 않고 해당 종목을 제외한 부분집합으로 계산</strong>하되,
+        제외 비중이 20%를 넘으면 지표를 <code>null</code>로 낸다. 응답에는 항상 <code>coverage</code>(계산에 포함된 비중)를 함께 실어 LLM이 한계를 언급할 수 있게 한다.
+      </p>
+      <h4>결측 처리</h4>
+      <ul>
+        <li>거래정지 구간은 <strong>직전가 유지가 아니라 해당 날짜를 제외</strong>한다. 0 수익률이 들어가면 변동성이 과소 추정된다.</li>
+        <li>종목 간 거래일이 다르면 <strong>교집합</strong>으로 정렬한다. 공분산 행렬 계산에는 동일 날짜가 필요하다.</li>
+        <li>교집합이 60일 미만이면 위 표의 미달 처리를 따른다.</li>
+      </ul>
+
+      <h3 id="ops-precision">6.2 정밀도 정책</h3>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>단계</th><th>규칙</th></tr></thead>
+          <tbody>
+            <tr><td>내부 계산</td><td><code>float64</code> 전 구간 유지. 중간 반올림 금지</td></tr>
+            <tr><td>API <code>raw</code></td><td>반올림하지 않은 원값 그대로</td></tr>
+            <tr><td>표시 — 비율</td><td>소수 1자리, <strong>half-up</strong> (은행가 반올림 아님)</td></tr>
+            <tr><td>표시 — 금액</td><td>정수 원. 1억 이상은 "1억 2,340만 원" 형태로 축약</td></tr>
+            <tr><td>표시 — 기여도</td><td><code>%p</code> 단위 소수 2자리. 합이 총합과 어긋나면 최대 항목에서 잔차 흡수</td></tr>
+            <tr><td>0 근처</td><td><code>|x| &lt; 0.00005</code>는 <code>0.0%</code>로 표시하되 부호를 붙이지 않는다</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>기여도 표시에서 <strong>잔차를 최대 항목에 흡수시키는 처리</strong>가 필요하다. 각 항목을 독립적으로 반올림하면 합계가 총 수익률과 0.01%p 어긋나 보이고, 사용자는 이를 계산 오류로 받아들인다.</p>
+
+      <h3 id="ops-test">6.3 검증 항등식</h3>
+      <p>아래는 단위 테스트로 상시 검증한다. 하나라도 깨지면 응답을 내보내지 않는다.</p>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th class="n">#</th><th>항등식</th><th class="n">허용 오차</th></tr></thead>
+          <tbody>
+            <tr><td class="n">1</td><td><code>Σ w_i + w_c = 1</code></td><td class="n">1e−9</td></tr>
+            <tr><td class="n">2</td><td><code>Σ ŵ_i = 1</code></td><td class="n">1e−9</td></tr>
+            <tr><td class="n">3</td><td><code>Σ c_i,t = r_p,t</code> <span style="color:var(--ink-3)">(일별)</span></td><td class="n">1e−9</td></tr>
+            <tr><td class="n">4</td><td><code>Σ C_i = R_p</code> <span style="color:var(--ink-3)">(Carino 적용 후)</span></td><td class="n">1e−6</td></tr>
+            <tr><td class="n">5</td><td><code>market + sector + selection = r_p</code></td><td class="n">1e−9</td></tr>
+            <tr><td class="n">6</td><td><code>1/N ≤ HHI ≤ 1</code></td><td class="n">—</td></tr>
+            <tr><td class="n">7</td><td><code>DR ≥ 1</code></td><td class="n">1e−9</td></tr>
+            <tr><td class="n">8</td><td><code>0 ≤ risk_score ≤ 100</code></td><td class="n">—</td></tr>
+            <tr><td class="n">9</td><td><code>MDD ≤ 0</code></td><td class="n">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="rule-box">
+        <span class="label">응답 대조 검증</span>
+        <p>API 명세 §2.3의 마지막 검사는 이 문서와 맞물린다. <strong>응답의 <code>segments[].raw</code>가 엔진 출력과 일치하는지</strong> 반환 직전에 대조한다. 항등식 검증이 엔진 내부의 정합성을 보장한다면, 이 대조는 엔진과 LLM 사이에서 값이 변질되지 않았음을 보장한다. 두 층이 모두 있어야 숫자 정확도가 성립한다.</p>
+      </div>
+
+      <h4>골든 케이스</h4>
+      <p>손으로 검산 가능한 고정 포트폴리오를 회귀 테스트로 고정한다. 최소 4종.</p>
+      <ol>
+        <li><strong>단일 종목</strong> — <code>HHI = 1</code>, <code>N_eff = 1</code>, <code>DR = 1</code>, 기여도 = 수익률</li>
+        <li><strong>균등 2종목 · 무상관</strong> — <code>HHI = 0.5</code>, <code>DR = √2 ≈ 1.414</code></li>
+        <li><strong>완전 상관 3종목</strong> — <code>DR = 1</code>. 분산 실패 판정이 나와야 함</li>
+        <li><strong>기간 중 입금 발생</strong> — 수익률이 입금액에 영향받지 않아야 함 (<a href="#pf-return">§2.3</a>)</li>
+      </ol>
+
+      <footer>
+        AI 투자 비서 · 엔진 산식 v0.1 — 국내 주식 전용, 일별 종가 기준, 연환산 246 거래일.
+        API 계약은 별도 문서를 따른다.
+      </footer>
+
+    </div>
+  </main>
+</div>
+
+<script>
+  var links = Array.prototype.slice.call(document.querySelectorAll('#toc a'));
+  var targets = links
+    .map(function (a) { return document.getElementById(a.getAttribute('href').slice(1)); })
+    .filter(Boolean);
+
+  if ('IntersectionObserver' in window && targets.length) {
+    var visible = new Set();
+    var obs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) visible.add(e.target.id);
+        else visible.delete(e.target.id);
+      });
+      var firstId = null;
+      for (var i = 0; i < targets.length; i++) {
+        if (visible.has(targets[i].id)) { firstId = targets[i].id; break; }
+      }
+      if (!firstId) return;
+      links.forEach(function (a) {
+        a.classList.toggle('active', a.getAttribute('href') === '#' + firstId);
+      });
+    }, { rootMargin: '-8% 0px -72% 0px', threshold: 0 });
+    targets.forEach(function (t) { obs.observe(t); });
+  }
+</script>

@@ -1,0 +1,859 @@
+<title>AI 응답 정책</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@500;600;700&display=swap">
+
+<style>
+  :root {
+    --paper:      #ECEEEC;
+    --surface:    #FBFCFA;
+    --surface-2:  #E3E7E3;
+    --ink:        #1A1E1C;
+    --ink-2:      #565E59;
+    --ink-3:      #7D857F;
+    --rule:       #D2D8D3;
+    --rule-soft:  #DFE3DF;
+    --accent:     #1F5C4D;
+    --accent-ink: #14493C;
+    --accent-bg:  #DCE8E2;
+    --up:         #B93F32;
+    --down:       #245FA6;
+    --warn:       #8F6415;
+    --warn-bg:    #F0E6D0;
+    --shadow:     0 1px 2px rgba(26,30,28,.05), 0 8px 24px -16px rgba(26,30,28,.28);
+
+    --f-display: "Noto Serif KR", "Apple SD Gothic Neo", serif;
+    --f-body:    "IBM Plex Sans KR", "Apple SD Gothic Neo", system-ui, sans-serif;
+    --f-mono:    "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #141815;
+      --surface:    #1B211D;
+      --surface-2:  #232A25;
+      --ink:        #E3E8E4;
+      --ink-2:      #A2ADA6;
+      --ink-3:      #7B857E;
+      --rule:       #2E3731;
+      --rule-soft:  #262E29;
+      --accent:     #6BBFA3;
+      --accent-ink: #8CD4BA;
+      --accent-bg:  #1D2E28;
+      --up:         #E0705F;
+      --down:       #6EA3E0;
+      --warn:       #D2A24E;
+      --warn-bg:    #2C2618;
+      --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #141815;
+    --surface:    #1B211D;
+    --surface-2:  #232A25;
+    --ink:        #E3E8E4;
+    --ink-2:      #A2ADA6;
+    --ink-3:      #7B857E;
+    --rule:       #2E3731;
+    --rule-soft:  #262E29;
+    --accent:     #6BBFA3;
+    --accent-ink: #8CD4BA;
+    --accent-bg:  #1D2E28;
+    --up:         #E0705F;
+    --down:       #6EA3E0;
+    --warn:       #D2A24E;
+    --warn-bg:    #2C2618;
+    --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 15.5px;
+    line-height: 1.72;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell {
+    display: grid;
+    grid-template-columns: 258px minmax(0, 1fr);
+    max-width: 1220px;
+    margin: 0 auto;
+  }
+
+  .rail {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 44px 26px 44px 30px;
+    border-right: 1px solid var(--rule);
+  }
+  .rail-mark {
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+  .rail-title {
+    font-family: var(--f-display);
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.4;
+    margin: 0 0 26px;
+    letter-spacing: -.01em;
+  }
+  .rail nav { display: flex; flex-direction: column; gap: 1px; }
+  .rail a {
+    display: block;
+    padding: 4px 10px 4px 11px;
+    color: var(--ink-2);
+    text-decoration: none;
+    font-size: 13.2px;
+    line-height: 1.5;
+    border-left: 2px solid transparent;
+    border-radius: 0 3px 3px 0;
+    transition: color .13s, background .13s, border-color .13s;
+  }
+  .rail a:hover { color: var(--ink); background: var(--rule-soft); }
+  .rail a.sub { padding-left: 24px; font-size: 12.6px; color: var(--ink-3); }
+  .rail a.active {
+    color: var(--accent-ink);
+    border-left-color: var(--accent);
+    background: var(--accent-bg);
+    font-weight: 500;
+  }
+  .rail-group {
+    font-family: var(--f-mono);
+    font-size: 9.8px;
+    font-weight: 600;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 20px 0 6px 11px;
+  }
+  .rail a:focus-visible, main a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  main { padding: 44px 52px 140px; min-width: 0; }
+  .wrap { max-width: 800px; }
+
+  .masthead { padding-bottom: 30px; border-bottom: 2px solid var(--ink); margin-bottom: 38px; }
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 14px;
+  }
+  h1 {
+    font-family: var(--f-display);
+    font-size: clamp(30px, 4.4vw, 42px);
+    font-weight: 700;
+    line-height: 1.24;
+    letter-spacing: -.025em;
+    margin: 0 0 16px;
+    text-wrap: balance;
+  }
+  .standfirst {
+    font-size: 16.5px;
+    line-height: 1.68;
+    color: var(--ink-2);
+    margin: 0;
+    max-width: 62ch;
+  }
+  .meta-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 26px;
+    margin-top: 24px;
+    font-family: var(--f-mono);
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+  .meta-strip b { color: var(--ink-2); font-weight: 500; }
+
+  h2 {
+    font-family: var(--f-display);
+    font-size: 25px;
+    font-weight: 700;
+    letter-spacing: -.02em;
+    line-height: 1.34;
+    margin: 68px 0 8px;
+    padding-top: 22px;
+    border-top: 1px solid var(--rule);
+    text-wrap: balance;
+    scroll-margin-top: 24px;
+  }
+  h2 .num {
+    font-family: var(--f-mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-right: 12px;
+    letter-spacing: 0;
+  }
+  h3 {
+    font-family: var(--f-display);
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -.012em;
+    margin: 42px 0 10px;
+    scroll-margin-top: 24px;
+    text-wrap: balance;
+  }
+  h4 {
+    font-family: var(--f-body);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 26px 0 9px;
+  }
+  p { margin: 0 0 15px; max-width: 68ch; }
+  main a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
+  strong { font-weight: 600; }
+  ul, ol { margin: 0 0 15px; padding-left: 20px; max-width: 68ch; }
+  li { margin-bottom: 5px; }
+  li::marker { color: var(--ink-3); }
+
+  code {
+    font-family: var(--f-mono);
+    font-size: .875em;
+    background: var(--surface-2);
+    padding: 1.5px 5px;
+    border-radius: 3px;
+    color: var(--accent-ink);
+  }
+
+  pre {
+    font-family: var(--f-mono);
+    font-size: 12.6px;
+    line-height: 1.68;
+    background: var(--surface-2);
+    border: 1px solid var(--rule-soft);
+    border-radius: 5px;
+    padding: 13px 15px;
+    overflow-x: auto;
+    margin: 0 0 14px;
+    tab-size: 2;
+  }
+  pre code { background: none; padding: 0; color: var(--ink); font-size: inherit; }
+
+  /* ── 프롬프트 블록 ──────────────────── */
+  .prompt {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 6px 6px 0;
+    padding: 15px 20px;
+    margin: 0 0 18px;
+    box-shadow: var(--shadow);
+  }
+  .prompt-name {
+    font-family: var(--f-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    display: block;
+    margin-bottom: 9px;
+  }
+  .prompt-body {
+    font-family: var(--f-mono);
+    font-size: 12.8px;
+    line-height: 1.85;
+    white-space: pre-wrap;
+    color: var(--ink);
+    overflow-x: auto;
+  }
+
+  /* ── 대화 예시 ──────────────────────── */
+  .dialog { margin: 0 0 20px; display: flex; flex-direction: column; gap: 9px; }
+  .turn {
+    border-radius: 7px;
+    padding: 11px 15px;
+    font-size: 14.2px;
+    line-height: 1.66;
+    border: 1px solid var(--rule-soft);
+  }
+  .turn.q { background: var(--surface-2); }
+  .turn.a { background: var(--surface); border-color: var(--rule); }
+  .turn.bad { background: var(--warn-bg); border-color: var(--warn); }
+  .turn-tag {
+    font-family: var(--f-mono);
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    display: block;
+    margin-bottom: 5px;
+  }
+  .turn.bad .turn-tag { color: var(--warn); }
+  .turn.a .turn-tag { color: var(--accent-ink); }
+
+  .t-wrap { overflow-x: auto; margin: 0 0 18px; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 13.6px;
+    min-width: 460px;
+  }
+  th {
+    text-align: left;
+    font-family: var(--f-body);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    border-bottom: 1.5px solid var(--rule);
+    padding: 0 14px 7px 0;
+    white-space: nowrap;
+  }
+  td {
+    border-bottom: 1px solid var(--rule-soft);
+    padding: 9px 14px 9px 0;
+    vertical-align: top;
+    line-height: 1.6;
+  }
+  td:last-child, th:last-child { padding-right: 0; }
+  tbody tr:last-child td { border-bottom: none; }
+  td code { font-size: 12.4px; }
+  .n { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  th.n { text-align: right; }
+  .no  { color: var(--up); font-weight: 600; }
+  .yes { color: var(--accent-ink); font-weight: 600; }
+
+  .rule-box {
+    border: 1px solid var(--accent);
+    border-left-width: 3px;
+    background: var(--accent-bg);
+    border-radius: 0 5px 5px 0;
+    padding: 15px 18px;
+    margin: 20px 0;
+  }
+  .rule-box.warn { border-color: var(--warn); background: var(--warn-bg); }
+  .rule-box > :first-child { margin-top: 0; }
+  .rule-box > :last-child { margin-bottom: 0; }
+  .rule-box .label {
+    font-family: var(--f-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    display: block;
+    margin-bottom: 7px;
+  }
+  .rule-box.warn .label { color: var(--warn); }
+  .rule-box p { max-width: none; font-size: 14.2px; }
+
+  .figure {
+    font-family: var(--f-mono);
+    font-size: 12.4px;
+    line-height: 1.75;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    padding: 18px 20px;
+    overflow-x: auto;
+    margin: 0 0 18px;
+    color: var(--ink-2);
+    white-space: pre;
+  }
+
+  footer {
+    margin-top: 76px;
+    padding-top: 22px;
+    border-top: 2px solid var(--ink);
+    font-size: 13px;
+    color: var(--ink-3);
+  }
+
+  @media (max-width: 940px) {
+    .shell { grid-template-columns: 1fr; }
+    .rail {
+      position: static;
+      height: auto;
+      border-right: none;
+      border-bottom: 1px solid var(--rule);
+      padding: 30px 26px 26px;
+    }
+    .rail nav { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 0 12px; }
+    .rail-group { grid-column: 1 / -1; }
+    main { padding: 34px 26px 100px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-mark">Policy v0.1</div>
+    <div class="rail-title">AI 투자 비서<br>응답 정책</div>
+    <nav id="toc">
+      <div class="rail-group">프롬프트</div>
+      <a href="#layers" class="sub">계층과 조립 순서</a>
+      <a href="#base" class="sub">공통 시스템 프롬프트</a>
+      <a href="#budget" class="sub">토큰 예산과 캐싱</a>
+
+      <div class="rail-group">응답</div>
+      <a href="#shape" class="sub">답변 구조 표준</a>
+      <a href="#numbers" class="sub">수치 표기 규약</a>
+      <a href="#cite" class="sub">근거 표기 규약</a>
+      <a href="#tone" class="sub">톤과 문체</a>
+      <a href="#wiki" class="sub">Wiki 인용 정책</a>
+
+      <div class="rail-group">Guardrail</div>
+      <a href="#gate-in" class="sub">입력단 — 의도 분류</a>
+      <a href="#forbidden" class="sub">금지 표현과 대체</a>
+      <a href="#gate-out" class="sub">출력단 — 자동 검사</a>
+
+      <div class="rail-group">운영</div>
+      <a href="#routing" class="sub">모델 라우팅</a>
+      <a href="#params" class="sub">호출 파라미터</a>
+      <a href="#failure" class="sub">실패 처리</a>
+      <a href="#version" class="sub">버전 관리</a>
+    </nav>
+  </aside>
+
+  <main>
+    <div class="wrap">
+
+      <header class="masthead">
+        <div class="eyebrow">AI Part · Prompt &amp; Response</div>
+        <h1>프롬프트와 응답 정책</h1>
+        <p class="standfirst">
+          LLM에게 무엇을 주고, 무엇을 쓰게 하고, 무엇을 못 쓰게 할지 정의한다.
+          엔진이 계산한 값을 어떤 문장으로 바꿀 것인가에 대한 규칙 전부가 여기에 있다.
+        </p>
+        <div class="meta-strip">
+          <span><b>기본 모델</b> claude-opus-5</span>
+          <span><b>Thinking</b> adaptive</span>
+          <span><b>출력</b> Structured Output</span>
+          <span><b>언어</b> ko-KR</span>
+        </div>
+      </header>
+
+      <h2 id="layers"><span class="num">§1</span>프롬프트 계층과 조립 순서</h2>
+      <p>
+        모든 기능이 하나의 조립 규칙을 공유한다. 계층을 나누는 이유는 두 가지다 —
+        <strong>고정 구간을 앞에 몰아 프롬프트 캐시를 태우기 위해서</strong>, 그리고
+        기능별 프롬프트를 고칠 때 공통 규칙이 흔들리지 않게 하기 위해서다.
+      </p>
+      <div class="figure">┌─ L1  공통 시스템        고정 · 전 기능 동일 ─┐
+│                                             │  ← 캐시 구간
+└─ L2  기능별 시스템      고정 · 기능당 1개 ──┘
+   L3  사용자 Wiki        준고정 · 세션 내 불변
+   L4  엔진 출력 JSON     매 요청 변동
+   L5  RAG 문서           매 요청 변동
+   L6  대화 이력          chat 전용
+   L7  현재 요청          질문 · 기준시각</div>
+
+      <div class="rule-box warn">
+        <span class="label">캐시를 조용히 깨뜨리는 것</span>
+        <p><strong>현재 시각을 L1·L2에 넣으면 캐시가 매 요청 깨진다.</strong> 프롬프트 캐시는 접두 일치라서 앞쪽 1바이트만 바뀌어도 뒤가 전부 무효화된다. 기준 시각·요청 ID·사용자 이름은 반드시 L7에 넣는다. 같은 이유로 도구 목록의 순서도 고정해야 하고, JSON을 직렬화할 때 키 정렬을 켜야 한다.</p>
+      </div>
+
+      <h2 id="base"><span class="num">§1.1</span>공통 시스템 프롬프트</h2>
+      <p>전 기능이 공유하는 L1이다. 이 안에 기능별 지시를 넣지 않는다.</p>
+      <div class="prompt">
+        <span class="prompt-name">L1 · Base System</span>
+        <div class="prompt-body">당신은 국내 주식 투자자를 돕는 분석 도우미입니다.
+사용자의 포트폴리오와 시장 데이터를 이해하고, 무슨 일이 있었는지 설명합니다.
+
+■ 역할의 경계
+- 당신은 계산하지 않습니다. 모든 수치는 제공된 엔진 출력에서만 가져옵니다.
+- 당신은 투자를 권유하지 않습니다. 매수·매도 의견, 목표주가, 가격 전망을
+  생성하지 않습니다.
+- 당신은 사실과 해석을 구분해 말합니다. 확인된 것과 추정한 것을 섞지 않습니다.
+
+■ 수치 표기
+- 비율·금액·수량·배수는 반드시 자리표시자로 씁니다: {{key}}
+- 사용 가능한 key는 요청마다 별도로 주어집니다. 목록에 없는 key를 만들지 않습니다.
+- 연도, 분기, 서수, 종목코드는 자리표시자 없이 그대로 씁니다.
+
+■ 근거
+- 외부 사실을 언급할 때는 근거 id를 붙입니다: [^cit_1]
+- 주어진 근거로 확인되지 않는 사실은 쓰지 않습니다. 추측으로 메우지 않습니다.
+- 데이터가 부족하면 부족하다고 씁니다.
+
+■ 문체
+- 존댓말을 씁니다. 이모지와 감탄사는 쓰지 않습니다.
+- 한 문장은 60자 이내를 지향합니다.
+- 전문 용어는 응답 내 첫 등장 시 한 번만 괄호로 풀어 씁니다.</div>
+      </div>
+      <p>
+        <strong>"계산하지 않습니다"를 첫 번째 경계로 두는 이유</strong>는 이 서비스에서 가장 비싼 실패가 숫자 오류이기 때문이다.
+        모델은 지시가 없으면 주어진 값을 자연스럽게 반올림한다. 이 문장 하나로 전부 막히지는 않으므로
+        <a href="#gate-out">§5</a>의 자동 검사와 함께 이중으로 방어한다.
+      </p>
+
+      <h2 id="budget"><span class="num">§1.2</span>토큰 예산과 캐싱</h2>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>계층</th><th>내용</th><th class="n">목표 토큰</th><th>캐시</th></tr></thead>
+          <tbody>
+            <tr><td>L1</td><td>공통 시스템</td><td class="n">~1,200</td><td class="yes">고정</td></tr>
+            <tr><td>L2</td><td>기능별 시스템 + 예시</td><td class="n">~900</td><td class="yes">고정</td></tr>
+            <tr><td>L3</td><td>Wiki (profile + 해당 theses)</td><td class="n">~400</td><td>세션 단위</td></tr>
+            <tr><td>L4</td><td>엔진 출력 JSON</td><td class="n">~1,500</td><td class="no">변동</td></tr>
+            <tr><td>L5</td><td>RAG 문서 (상위 6건)</td><td class="n">~4,000</td><td class="no">변동</td></tr>
+            <tr><td>L6</td><td>대화 이력 (chat)</td><td class="n">~2,000</td><td class="no">변동</td></tr>
+            <tr><td>L7</td><td>질문 · 기준시각</td><td class="n">~200</td><td class="no">변동</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        캐시 분기점은 <strong>L2 끝에 하나</strong>를 둔다. L1+L2가 약 2,100 토큰이라 최소 캐시 단위(약 1,024 토큰)를 넘는다.
+        분기점은 요청당 최대 4개까지 쓸 수 있지만, 나머지 계층은 매번 바뀌므로 추가해도 적중하지 않는다.
+      </p>
+      <pre><code>system=[
+  { "type": "text", "text": BASE_SYSTEM },
+  { "type": "text", "text": FEATURE_SYSTEM,
+    "cache_control": { "type": "ephemeral" } },   # ← 여기까지 캐시
+]</code></pre>
+      <div class="rule-box">
+        <span class="label">적중 확인</span>
+        <p>배포 후 <code>usage.cache_read_input_tokens</code>를 반드시 확인한다. 반복 요청에서 이 값이 계속 0이면 어딘가에서 접두가 깨지고 있다는 뜻이다. 로그에 남기고 대시보드에 올려 둔다 — 조용히 실패하는 항목이라 지표 없이는 몇 주간 모른다.</p>
+      </div>
+
+      <h2 id="shape"><span class="num">§2</span>답변 구조 표준</h2>
+      <p>
+        기획 단계의 <code>Fact → Interpretation → Portfolio Impact → Risk → What to Watch</code> 5단 구조를
+        <strong>모든 기능에 그대로 강제하지 않는다.</strong> 브리핑 한 항목을 5문장으로 쓰면 읽히지 않는다.
+        대신 기능별 축약형을 정의하고, <strong>Fact가 항상 첫 문장</strong>이라는 규칙만 공통으로 지킨다.
+      </p>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>기능</th><th>구조</th><th class="n">문장</th></tr></thead>
+          <tbody>
+            <tr><td>Daily Briefing 항목</td><td>Fact → Impact</td><td class="n">2</td></tr>
+            <tr><td>Stock Analyst 섹션</td><td>Fact → Interpretation → Watch</td><td class="n">3–4</td></tr>
+            <tr><td>Thesis Check</td><td>Fact → Interpretation → Watch</td><td class="n">4</td></tr>
+            <tr><td>Portfolio Doctor finding</td><td>Fact → Risk → Watch</td><td class="n">3</td></tr>
+            <tr><td>Why Moved</td><td>Fact → Impact</td><td class="n">3–4</td></tr>
+            <tr><td>Before You Trade</td><td>Fact → Impact</td><td class="n">2–3</td></tr>
+            <tr><td>Ask My Portfolio</td><td>가변</td><td class="n">≤ 6</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Fact를 앞에 두는 것은 문체 취향이 아니다. <strong>해석이 먼저 오면 사용자가 근거를 검증할 기회를 잃는다.</strong>
+        "집중도가 위험합니다. 반도체가 42.3%이기 때문입니다"와 "반도체 관련 자산이 42.3%입니다. 동일 업황에 함께 노출되어 분산 효과가 제한적입니다"는
+        같은 내용이지만 후자만 사용자가 전제를 확인하고 결론에 동의하거나 동의하지 않을 수 있다.
+      </p>
+
+      <h2 id="numbers"><span class="num">§3</span>수치 표기 규약</h2>
+      <p>모델은 자리표시자만 생성하고, 서버가 엔진 값으로 치환한다. 요청마다 사용 가능한 key 목록을 함께 넘긴다.</p>
+      <div class="prompt">
+        <span class="prompt-name">L4 · 엔진 출력 전달 형식</span>
+        <div class="prompt-body">[사용 가능한 수치 자리표시자]
+{{semi_weight}}   반도체 업종 비중
+{{semi_count}}    반도체 관련 보유 종목 수
+{{n_eff}}         유효 종목 수
+{{dr}}            분산 비율
+
+목록에 없는 자리표시자를 쓰면 응답이 폐기됩니다.
+수치를 직접 쓰지 마십시오. 반올림한 근사값도 허용되지 않습니다.</div>
+      </div>
+      <h4>Structured Output으로 강제</h4>
+      <p>자유 문장으로 받지 않고 스키마로 받는다. <code>used_placeholders</code>를 함께 받아 검증을 단순화한다.</p>
+      <pre><code>output_config={
+  "format": {
+    "type": "json_schema",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "narrative":          { "type": "string" },
+        "used_placeholders":  { "type": "array", "items": { "type": "string" } },
+        "used_citations":     { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["narrative", "used_placeholders", "used_citations"],
+      "additionalProperties": False
+    }
+  }
+}</code></pre>
+      <div class="rule-box warn">
+        <span class="label">프리필을 쓰지 않는다</span>
+        <p>JSON 출력을 강제하려고 assistant 턴에 <code>{</code>를 미리 넣는 방식은 현재 모델에서 400 오류로 거부된다. 반드시 위의 <code>output_config.format</code>을 쓴다.</p>
+      </div>
+
+      <h2 id="cite"><span class="num">§4</span>근거 표기 규약</h2>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>주장 유형</th><th>근거 필요</th><th>예</th></tr></thead>
+          <tbody>
+            <tr><td>엔진 계산 결과</td><td><code>type: engine</code> 자동 부착</td><td>비중, 변동성, 기여도</td></tr>
+            <tr><td>기업 사실</td><td class="yes">필수</td><td>실적, 공급계약, 지분 변동</td></tr>
+            <tr><td>시장 반응 서술</td><td class="yes">필수</td><td>"시장이 주목하는 요인"</td></tr>
+            <tr><td>일정</td><td class="yes">필수</td><td>실적 발표일, 배당 기준일</td></tr>
+            <tr><td>사용자 진술 인용</td><td><code>type: wiki</code></td><td>투자 논지</td></tr>
+            <tr><td>일반 상식</td><td>불필요</td><td>"금리가 오르면 성장주가 영향받는 경향"</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        마지막 줄이 위험 지점이다. <strong>"일반 상식"의 범위를 넓게 잡으면 근거 없는 서술이 그 이름으로 들어온다.</strong>
+        허용 범위를 교과서 수준의 메커니즘 설명으로 한정하고,
+        <strong>특정 종목·특정 시점에 대한 진술은 예외 없이 근거를 요구</strong>한다.
+      </p>
+
+      <h2 id="tone"><span class="num">§4.1</span>톤과 문체</h2>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>항목</th><th>규칙</th></tr></thead>
+          <tbody>
+            <tr><td>어미</td><td><code>~습니다</code> / <code>~합니다</code>. 반말·개조식 금지</td></tr>
+            <tr><td>2인칭</td><td>대명사 대신 존대 어미로 처리 — "보유하신", "말씀하신". "당신"·"고객님" 미사용</td></tr>
+            <tr><td>이모지·감탄사</td><td class="no">전면 금지</td></tr>
+            <tr><td>전문 용어</td><td>응답 내 첫 등장 시 괄호 설명 1회. 같은 응답에서 반복 설명 금지</td></tr>
+            <tr><td>문장 길이</td><td>60자 이내 지향. 한 문장에 두 가지 주장 금지</td></tr>
+            <tr><td>불확실성</td><td><code>~로 보입니다</code> / <code>~일 수 있습니다</code> / <code>확인되지 않았습니다</code> 세 가지만 사용</td></tr>
+            <tr><td>강조</td><td>굵게·느낌표 대신 문장 순서로 강조. 중요한 것을 먼저 쓴다</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>불확실성 표현을 세 가지로 고정하는 이유는 <strong>어조의 미세한 차이가 확신도로 읽히기 때문</strong>이다. "가능성이 높아 보입니다"와 "~로 보입니다"는 같은 근거에서 나왔더라도 사용자가 받는 신뢰도가 다르다. 표현이 늘어나면 근거 강도와 어조의 대응이 무너진다.</p>
+
+      <h2 id="wiki"><span class="num">§4.2</span>Wiki 인용 정책</h2>
+      <p>Wiki 항목의 <code>source</code>에 따라 인용 어투가 달라진다. 이 구분을 어기면 "내가 언제 그랬어?" 문제가 발생한다.</p>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th><code>source</code></th><th>허용 어투</th><th>단정</th></tr></thead>
+          <tbody>
+            <tr><td><code>user_stated</code></td><td>"말씀하신 대로", "~라고 하셨습니다"</td><td class="yes">가능</td></tr>
+            <tr><td><code>derived_from_trades</code></td><td>"거래 내역을 보면", "~에 매수하셨습니다"</td><td class="yes">가능</td></tr>
+            <tr><td><code>ai_inferred</code></td><td>"~하신 것으로 보이는데, 맞을까요?"</td><td class="no">질문형만</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="rule-box">
+        <span class="label">주문 점검에서의 제한</span>
+        <p>주문 전 점검의 <code>wiki_conflicts</code>는 <strong><code>user_stated</code> 항목만</strong> 사용한다. AI가 추론한 성향으로 사용자의 주문에 이의를 제기하는 것은 근거 없는 참견이며, 개인화가 역효과를 내는 대표적인 경로다.</p>
+      </div>
+
+      <h2 id="gate-in"><span class="num">§5</span>Guardrail — 입력단</h2>
+      <p>질문을 네 갈래로 분류한다. 저지연이 필요하므로 별도의 경량 분류 호출로 처리한다.</p>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>분류</th><th>예시 질문</th><th>처리</th></tr></thead>
+          <tbody>
+            <tr><td><code>normal</code></td><td>"내 반도체 비중이 얼마야?"</td><td>정상 처리</td></tr>
+            <tr><td><code>advice_seeking</code></td><td>"뭐 사야 돼?", "지금 팔까?"</td><td>재구성 후 대안 제시</td></tr>
+            <tr><td><code>prediction_seeking</code></td><td>"이거 오를까?", "얼마까지 가?"</td><td>재구성 후 대안 제시</td></tr>
+            <tr><td><code>out_of_scope</code></td><td>투자와 무관한 질문</td><td>범위 안내</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="rule-box">
+        <span class="label">거절이 아니라 재구성</span>
+        <p>못 한다고만 답하면 사용자는 기능을 다시 쓰지 않는다. <strong>할 수 없는 것을 한 문장으로 말하고, 즉시 할 수 있는 것을 실제 데이터와 함께 제시</strong>한다. 이것이 이 서비스에서 규제 준수와 사용성이 만나는 지점이다.</p>
+      </div>
+      <div class="dialog">
+        <div class="turn q"><span class="turn-tag">사용자</span>지금 삼성전자 더 사야 할까?</div>
+        <div class="turn bad"><span class="turn-tag">잘못된 응답</span>죄송합니다. 투자 조언은 제공할 수 없습니다.</div>
+        <div class="turn a"><span class="turn-tag">올바른 응답</span>매수 여부는 말씀드릴 수 없습니다. 대신 판단에 필요한 것들을 정리해 드리겠습니다.<br><br>삼성전자는 현재 포트폴리오의 41.7%로, 이미 가장 큰 비중입니다. 추가 매수 시 비중이 어떻게 바뀌는지는 주문 화면에서 미리 확인하실 수 있습니다. 매수 시점에 남기신 논지는 "HBM 구조적 성장"이었고, 이후 확인된 변화는 종목 분석에 정리해 두었습니다.</div>
+      </div>
+      <p>재구성 응답도 <a href="#numbers">§3</a>의 자리표시자 규약을 그대로 따른다. 위 예시의 <code>41.7%</code> 역시 모델이 쓴 것이 아니라 치환된 값이다.</p>
+
+      <h2 id="forbidden"><span class="num">§5.1</span>금지 표현과 대체</h2>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>금지</th><th>예</th><th>대체</th></tr></thead>
+          <tbody>
+            <tr><td>매매 권유</td><td>"지금이 매수 적기입니다"</td><td class="no">생성 금지</td></tr>
+            <tr><td>목표주가</td><td>"10만 원까지 상승 여력"</td><td class="no">생성 금지</td></tr>
+            <tr><td>종목 간 우열</td><td>"A보다 B가 낫습니다"</td><td class="no">생성 금지</td></tr>
+            <tr><td>손절·익절 조언</td><td>"지금 정리하시는 편이"</td><td class="no">생성 금지</td></tr>
+            <tr><td>확률 단정</td><td>"오를 가능성이 높습니다"</td><td>"다음 요인이 확인됩니다"</td></tr>
+            <tr><td>인과 단정<br><span style="color:var(--ink-3)">(conf &lt; 0.6)</span></td><td>"실적 때문에 올랐습니다"</td><td>"같은 날 실적 발표가 있었습니다"</td></tr>
+            <tr><td>미래 단정</td><td>"실적이 개선될 것입니다"</td><td>"회사는 개선을 전망했습니다[^cit_1]"</td></tr>
+            <tr><td>감정 유도</td><td>"지금 놓치면 후회할"</td><td class="no">생성 금지</td></tr>
+            <tr><td>위험 축소</td><td>"크게 걱정하지 않으셔도"</td><td class="no">생성 금지</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        <strong>미래 단정의 대체가 핵심 패턴</strong>이다. 회사의 전망을 전달하는 것은 사실 보도이고,
+        같은 내용을 AI가 자기 목소리로 말하면 예측이 된다. <strong>주어를 출처로 바꾸면 대부분의 미래 서술이 합법적인 사실 전달이 된다.</strong>
+        종목 분석의 "시장이 주목하는 요인"이라는 섹션명도 같은 원리로 정해졌다.
+      </p>
+
+      <h2 id="gate-out"><span class="num">§5.2</span>Guardrail — 출력단</h2>
+      <p>생성 직후 순서대로 검사한다. 하나라도 걸리면 응답을 내보내지 않는다.</p>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th class="n">#</th><th>검사</th><th>실패 시</th></tr></thead>
+          <tbody>
+            <tr><td class="n">1</td><td>스키마 준수 — 필수 필드 존재</td><td>재생성</td></tr>
+            <tr><td class="n">2</td><td>미치환 자리표시자 — <code>{{ }}</code> 잔존</td><td>재생성</td></tr>
+            <tr><td class="n">3</td><td>미허용 자리표시자 — 목록 밖 key 사용</td><td>재생성</td></tr>
+            <tr><td class="n">4</td><td>원시 수치 — 비율·금액·수량·배수 직접 기입</td><td>재생성</td></tr>
+            <tr><td class="n">5</td><td>엔진 값 대조 — 치환 결과가 엔진 출력과 일치</td><td>차단</td></tr>
+            <tr><td class="n">6</td><td>근거 무결성 — 존재하지 않는 <code>cit_id</code> 참조</td><td>재생성</td></tr>
+            <tr><td class="n">7</td><td>금지 표현 — <a href="#forbidden">§5.1</a> 분류</td><td>재생성</td></tr>
+            <tr><td class="n">8</td><td>Wiki 어투 — <code>ai_inferred</code> 단정 사용</td><td>재생성</td></tr>
+            <tr><td class="n">9</td><td>길이 — 기능별 문장 수 상한</td><td>재생성</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        <strong>5번만 재생성이 아니라 차단이다.</strong> 값이 어긋났다는 것은 파이프라인 어딘가가 고장났다는 뜻이므로,
+        다시 생성해서 우연히 맞기를 기대하면 안 된다. 즉시 <code>GUARDRAIL_BLOCKED</code>로 처리하고 알림을 띄운다.
+      </p>
+      <p>7번은 정규식만으로 부족하다. "지금이 좋은 자리로 보입니다"는 금지어 목록에 걸리지 않지만 명백한 매수 권유다. <strong>경량 분류 호출을 함께 태워</strong> 표현이 아니라 의미를 검사한다.</p>
+
+      <h2 id="routing"><span class="num">§6</span>모델 라우팅</h2>
+      <p>사용자에게 보이는 설명은 전부 <code>claude-opus-5</code>로 생성한다. 작업 난이도는 모델이 아니라 <code>effort</code>로 조절한다.</p>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>작업</th><th>모델</th><th>effort</th><th>근거</th></tr></thead>
+          <tbody>
+            <tr><td>Stock Analyst 섹션</td><td><code>claude-opus-5</code></td><td>high</td><td>공시·재무 해석, 다중 근거 종합</td></tr>
+            <tr><td>Ask My Portfolio</td><td><code>claude-opus-5</code></td><td>high</td><td>도구 선택 + 다단 추론</td></tr>
+            <tr><td>Thesis Check</td><td><code>claude-opus-5</code></td><td>high</td><td>논지와 신규 사실의 대조 판단</td></tr>
+            <tr><td>Portfolio Doctor</td><td><code>claude-opus-5</code></td><td>medium</td><td>입력이 구조화되어 있어 추론 부담 낮음</td></tr>
+            <tr><td>Why Moved</td><td><code>claude-opus-5</code></td><td>medium</td><td>동일</td></tr>
+            <tr><td>Before You Trade</td><td><code>claude-opus-5</code></td><td>low</td><td>차분 설명, 2–3문장</td></tr>
+            <tr><td>Briefing 문장</td><td><code>claude-opus-5</code></td><td>low</td><td>입력 확정, 2문장</td></tr>
+            <tr><td>출력단 의미 검사</td><td><code>claude-opus-5</code></td><td>low</td><td>분류 한 건, 저지연</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="rule-box">
+        <span class="label">비용 선택지 — 팀 결정 사항</span>
+        <p>대량 배치 경로(이벤트 분류·태깅, 입력단 의도 분류)는 <code>claude-haiku-4-5</code>로 내리면 입력 기준 5분의 1 비용이 된다. 다만 <strong>이는 품질과 비용을 맞바꾸는 결정이므로 팀이 명시적으로 선택해야 한다.</strong> 기본값은 전 경로 <code>claude-opus-5</code>이며, 내리더라도 <strong>사용자 대면 설명 경로는 내리지 않는다.</strong> 전환 시 반드시 동일 평가셋으로 전후를 비교한다.</p>
+      </div>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>모델</th><th class="n">컨텍스트</th><th class="n">입력 $/1M</th><th class="n">출력 $/1M</th></tr></thead>
+          <tbody>
+            <tr><td><code>claude-opus-5</code></td><td class="n">1M</td><td class="n">5.00</td><td class="n">25.00</td></tr>
+            <tr><td><code>claude-sonnet-5</code></td><td class="n">1M</td><td class="n">3.00</td><td class="n">15.00</td></tr>
+            <tr><td><code>claude-haiku-4-5</code></td><td class="n">200K</td><td class="n">1.00</td><td class="n">5.00</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="params"><span class="num">§6.1</span>호출 파라미터</h2>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>파라미터</th><th>값</th><th>비고</th></tr></thead>
+          <tbody>
+            <tr><td><code>thinking</code></td><td><code>{"type": "adaptive"}</code></td><td>고정 예산 방식은 현재 모델에서 400 오류</td></tr>
+            <tr><td><code>output_config.effort</code></td><td>위 표 참조</td><td><code>output_config</code> 안에 넣는다. 최상위 아님</td></tr>
+            <tr><td><code>output_config.format</code></td><td>기능별 JSON Schema</td><td>구버전 <code>output_format</code> 아님</td></tr>
+            <tr><td><code>max_tokens</code></td><td>비스트리밍 16,000 / 스트리밍 64,000</td><td>낮게 잡으면 문장 중간에 잘린다</td></tr>
+            <tr><td><code>temperature</code></td><td class="no">사용 불가</td><td>현재 모델에서 제거됨. 400 오류</td></tr>
+            <tr><td>assistant 프리필</td><td class="no">사용 불가</td><td>400 오류. Structured Output으로 대체</td></tr>
+            <tr><td>스트리밍</td><td>chat · analysis</td><td>긴 출력에서 HTTP 타임아웃 방지</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="rule-box warn">
+        <span class="label">재현성에 대한 주의</span>
+        <p><code>temperature</code>를 쓸 수 없으므로 <strong>출력을 완전히 고정할 방법이 없다.</strong> 평가 체계에서 "동일 조건 일관성"을 볼 때 이 점을 전제해야 하며, 문자열 일치가 아니라 <strong>수치 일치와 결론 일치</strong>로 판정해야 한다. 수치는 어차피 엔진에서 오므로 결정론적이다.</p>
+      </div>
+
+      <h2 id="failure"><span class="num">§7</span>실패 처리</h2>
+      <div class="figure">생성 → 검사 실패
+   │
+   ├─ 1차 재생성   위반 항목을 프롬프트에 명시해 피드백
+   │                 "직전 응답에서 {{unknown_key}}를 사용했습니다.
+   │                  허용 목록에 있는 자리표시자만 쓰십시오."
+   │
+   ├─ 2차 재생성   동일 방식 1회 추가
+   │
+   └─ 최종 실패    GUARDRAIL_BLOCKED 반환 + 알림</div>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>상황</th><th>처리</th></tr></thead>
+          <tbody>
+            <tr><td>섹션 하나만 실패</td><td>해당 섹션만 <code>null</code>. 나머지 섹션은 정상 반환</td></tr>
+            <tr><td>엔진 값 대조 실패</td><td>재생성 없이 즉시 차단 + 알림 (<a href="#gate-out">§5.2</a>)</td></tr>
+            <tr><td>RAG 결과 0건</td><td>생성 진행하되 "관련 자료를 찾지 못했습니다" 고정 문구</td></tr>
+            <tr><td>엔진 데이터 부족</td><td>생성 시도하지 않음. <code>INSUFFICIENT_DATA</code></td></tr>
+            <tr><td>2회 재생성 후 실패</td><td><code>GUARDRAIL_BLOCKED</code> + 실패 프롬프트·응답 전문 보관</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        재생성 시 <strong>위반 내용을 구체적으로 알려줘야</strong> 고쳐진다. "형식을 지키세요"로는 같은 실수를 반복한다.
+        어떤 key가 문제였는지, 어떤 문장이 걸렸는지를 그대로 넣는다.
+      </p>
+
+      <h2 id="version"><span class="num">§7.1</span>버전 관리</h2>
+      <p>
+        <strong>프롬프트는 코드가 아니라 데이터로 다룬다.</strong> 소스에 하드코딩하면 수정할 때마다 배포가 필요하고,
+        어떤 버전이 어떤 응답을 만들었는지 추적할 수 없다.
+      </p>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>항목</th><th>규칙</th></tr></thead>
+          <tbody>
+            <tr><td>저장</td><td>파일 또는 DB. 기능별 · 계층별로 분리</td></tr>
+            <tr><td>버전 태그</td><td><code>briefing.v3</code> 형식. 의미 변경 시에만 증가</td></tr>
+            <tr><td>응답 로그</td><td><code>prompt_version</code>, <code>model</code>, <code>effort</code>, <code>cache_read_tokens</code> 기록</td></tr>
+            <tr><td>롤백</td><td>이전 버전 태그로 즉시 전환 가능해야 함</td></tr>
+            <tr><td>A/B</td><td>사용자 해시 기반 분기. 평가셋으로 전후 비교 후 승격</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="rule-box">
+        <span class="label">피드백과의 연결</span>
+        <p>API의 <code>POST /feedback</code>에서 수집하는 <code>reasons</code>가 이 문서의 우선순위를 결정한다. <code>wrong_number</code>가 많으면 <a href="#numbers">§3</a>과 출력단 검사를, <code>too_generic</code>이 많으면 <a href="#shape">§2</a>의 구조와 Wiki 활용을 손본다. <strong>프롬프트를 감으로 고치지 않기 위한 장치</strong>이므로 피드백 UI는 Phase 1부터 붙인다.</p>
+      </div>
+
+      <footer>
+        AI 투자 비서 · 프롬프트와 응답 정책 v0.1 — 기본 모델 claude-opus-5, 국내 주식 전용.
+        평가 체계와 골든 데이터셋은 별도 문서를 따른다.
+      </footer>
+
+    </div>
+  </main>
+</div>
+
+<script>
+  var links = Array.prototype.slice.call(document.querySelectorAll('#toc a'));
+  var targets = links
+    .map(function (a) { return document.getElementById(a.getAttribute('href').slice(1)); })
+    .filter(Boolean);
+
+  if ('IntersectionObserver' in window && targets.length) {
+    var visible = new Set();
+    var obs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) visible.add(e.target.id);
+        else visible.delete(e.target.id);
+      });
+      var firstId = null;
+      for (var i = 0; i < targets.length; i++) {
+        if (visible.has(targets[i].id)) { firstId = targets[i].id; break; }
+      }
+      if (!firstId) return;
+      links.forEach(function (a) {
+        a.classList.toggle('active', a.getAttribute('href') === '#' + firstId);
+      });
+    }, { rootMargin: '-8% 0px -72% 0px', threshold: 0 });
+    targets.forEach(function (t) { obs.observe(t); });
+  }
+</script>

@@ -1,0 +1,13 @@
+target-version = "py312"
+line-length = 100
+
+exclude = [".venv", "alembic/versions"]
+
+[lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = [
+  "E501",  # 줄 길이는 formatter가 다룬다. 주석의 한글 설명까지 자르면 가독성이 떨어진다
+]
+
+[lint.isort]
+known-first-party = ["app", "ingest"]
