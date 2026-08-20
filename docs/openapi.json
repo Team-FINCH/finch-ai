@@ -571,6 +571,7 @@
   "paths": {
     "/api/ai/v1/briefing": {
       "get": {
+        "description": "그날 알아야 할 일 최대 4건(§8).\n\n보유 종목이 없거나 유의미한 항목이 없으면 409가 아니라 200 + status \"empty\"다.\n프런트가 그 값으로 섹션을 숨기기로 되어 있어서, 여기서 끊으면 화면이 에러를 문다.\n\nponytail: 배치가 없어 요청 시점에 계산한다. 스케줄러가 생기면 여기서 조회만 한다.\n그래서 status는 ready 아니면 empty다 — generating을 돌려줄 주체가 없다.",
         "operationId": "get_briefing_api_ai_v1_briefing_get",
         "parameters": [
           {
