@@ -230,13 +230,13 @@ def test_종목코드가_6자리가_아니면_거부한다(client):
         headers={"X-User-Id": HOLDER},
     )
     assert response.status_code == 400
-    assert response.json()["error"]["code"] == "INVALID_REQUEST"
+    assert response.json()["code"] == "INVALID_REQUEST"
 
 
 def test_모르는_섹션은_거부한다(client):
     response = _post(client, {"sections": ["moon_phase"]})
     assert response.status_code == 400
-    assert response.json()["error"]["detail"]["sections"] == ["moon_phase"]
+    assert response.json()["detail"]["sections"] == ["moon_phase"]
 
 
 def test_토큰이_없으면_거부한다(client):
@@ -250,5 +250,8 @@ def test_키가_없으면_지어내지_않고_실패한다(monkeypatch):
     with TestClient(app) as test_client:
         response = _post(test_client, {"sections": ["current"]})
     assert response.status_code == 409
-    assert response.json()["error"]["code"] == "INSUFFICIENT_DATA"
-    assert "LLM 키" in response.json()["error"]["message"]
+    assert response.json()["code"] == "INSUFFICIENT_DATA"
+    body = response.json()
+    # 사유는 detail 로만 나간다. message 는 사용자에게 그대로 보이는 문구다(백엔드 §1.3).
+    assert body["detail"]["reason"] == "llm_key_missing"
+    assert "LLM" not in body["message"]

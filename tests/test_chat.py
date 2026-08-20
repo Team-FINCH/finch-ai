@@ -187,7 +187,7 @@ def test_종목코드가_6자리가_아니면_거부한다(portfolio_client):
         {"message": "이거 어때?", "context": {"screen": "stock_detail", "ticker": "AAPL"}},
     )
     assert response.status_code == 400
-    assert response.json()["error"]["detail"]["ticker"] == "AAPL"
+    assert response.json()["detail"]["ticker"] == "AAPL"
 
 
 # ── 근거 ─────────────────────────────────────────────────────────────────────
@@ -273,7 +273,7 @@ def test_도구_호출_총량도_막는다(monkeypatch):
 def test_질문이_비면_거부한다(portfolio_client):
     response = _post(portfolio_client, {"message": "   "})
     assert response.status_code == 400
-    assert response.json()["error"]["code"] == "INVALID_REQUEST"
+    assert response.json()["code"] == "INVALID_REQUEST"
 
 
 def test_너무_긴_질문은_거부한다(portfolio_client):
@@ -293,8 +293,11 @@ def test_키가_없으면_지어내지_않고_실패한다(monkeypatch):
         response = _post(client, {"message": "내 비중 얼마야?"})
 
     assert response.status_code == 409
-    assert response.json()["error"]["code"] == "INSUFFICIENT_DATA"
-    assert "LLM 키" in response.json()["error"]["message"]
+    assert response.json()["code"] == "INSUFFICIENT_DATA"
+    body = response.json()
+    # 사유는 detail 로만 나간다. message 는 사용자에게 그대로 보이는 문구다(백엔드 §1.3).
+    assert body["detail"]["reason"] == "llm_key_missing"
+    assert "LLM" not in body["message"]
 
 
 def test_검사에_걸린_답변은_내보내지_않는다(monkeypatch):
@@ -307,7 +310,7 @@ def test_검사에_걸린_답변은_내보내지_않는다(monkeypatch):
         response = _post(client, {"message": "내 비중 얼마야?"})
 
     assert response.status_code == 422
-    assert response.json()["error"]["code"] == "GUARDRAIL_BLOCKED"
+    assert response.json()["code"] == "GUARDRAIL_BLOCKED"
 
 
 # ── 클라이언트 계약 ──────────────────────────────────────────────────────────

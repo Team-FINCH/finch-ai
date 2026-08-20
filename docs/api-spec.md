@@ -210,14 +210,15 @@ data: {"finish_reason":"stop","tokens":{"input":8412,"output":623}}
 
 ```
 {
-  "error": {
-    "code": "INSUFFICIENT_DATA",
-    "message": "위험 지표를 계산하기에 가격 히스토리가 부족합니다.",
-    "detail": { "required_days": 60, "available_days": 23, "ticker": "462870" }
-  },
+  "code": "INSUFFICIENT_DATA",
+  "message": "위험 지표를 계산하기에 가격 히스토리가 부족합니다.",
+  "detail": { "required_days": 60, "available_days": 23, "ticker": "462870" },
   "request_id": "req_01JQZ8M3T7K2"
 }
 ```
+
+> **문구 규약**
+> `message`는 **사용자에게 그대로 보여도 되는 한국어 문구**다. 백엔드 명세 §1.3 이 이 값을 화면에 그대로 노출하는 전제이므로, "LLM 키가 없습니다" 같은 내부 사정은 담지 않는다. 기계가 분기할 사유는 `detail.reason`으로 보낸다 (예: `llm_key_missing`, `ledger_unavailable`). `request_id`는 §1.3 에 없지만 남긴다 — `POST /feedback`이 이 값으로 응답을 찾으므로 에러에서만 빠지면 제보를 응답에 맞출 수 없다.
 
 | HTTP | code | 발생 조건 | 프론트 처리 |
 | --- | --- | --- | --- |

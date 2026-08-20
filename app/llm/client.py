@@ -204,7 +204,7 @@ class AnthropicClient:
                 },
             )
         except anthropic.APITimeoutError as exc:
-            raise LLMTimeout("LLM 응답이 지연되어 중단했습니다.") from exc
+            raise LLMTimeout("응답이 지연되어 중단했습니다. 다시 시도해 주세요.") from exc
 
         result = _to_result(message)
         # §1.2 — 반복 요청에서 이 값이 계속 0이면 접두가 어딘가에서 깨지고 있다.
@@ -243,7 +243,7 @@ class AnthropicClient:
                 thinking={"type": "adaptive"},
             )
         except anthropic.APITimeoutError as exc:
-            raise LLMTimeout("LLM 응답이 지연되어 중단했습니다.") from exc
+            raise LLMTimeout("응답이 지연되어 중단했습니다. 다시 시도해 주세요.") from exc
 
         turn = _to_turn(message)
         log.info(
@@ -326,7 +326,7 @@ class OpenAIClient:
             res.raise_for_status()
             return res.json()
         except httpx.TimeoutException as exc:
-            raise LLMTimeout("LLM 응답이 지연되어 중단했습니다.") from exc
+            raise LLMTimeout("응답이 지연되어 중단했습니다. 다시 시도해 주세요.") from exc
         finally:
             if self._client is None:
                 await client.aclose()

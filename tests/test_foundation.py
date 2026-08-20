@@ -130,7 +130,7 @@ def test_all_endpoints_registered() -> None:
 def test_missing_auth_returns_unauthorized() -> None:
     res = client.post(f"{API_PREFIX}/stocks/005930/analysis", json={})
     assert res.status_code == 401
-    assert res.json()["error"]["code"] == "UNAUTHORIZED"
+    assert res.json()["code"] == "UNAUTHORIZED"
 
 
 def test_blank_trusted_header_returns_unauthorized() -> None:
@@ -141,7 +141,7 @@ def test_blank_trusted_header_returns_unauthorized() -> None:
         headers={settings.trusted_user_header: "   "},
     )
     assert res.status_code == 401
-    assert res.json()["error"]["code"] == "UNAUTHORIZED"
+    assert res.json()["code"] == "UNAUTHORIZED"
 
 
 def test_internal_token_must_match_when_configured(monkeypatch) -> None:
@@ -155,7 +155,7 @@ def test_internal_token_must_match_when_configured(monkeypatch) -> None:
             sent[settings.internal_token_header] = token
         res = client.post(f"{API_PREFIX}/stocks/005930/analysis", json={}, headers=sent)
         assert res.status_code == 401, token
-        assert res.json()["error"]["code"] == "UNAUTHORIZED"
+        assert res.json()["code"] == "UNAUTHORIZED"
 
     ok = client.post(
         f"{API_PREFIX}/stocks/005930/analysis",
@@ -192,7 +192,7 @@ def test_app_error_becomes_structured_response() -> None:
     """AppError가 예외 핸들러를 우회해 500으로 새면 안 된다."""
     res = client.post(f"{API_PREFIX}/stocks/005930/analysis", json={}, headers=AUTH)
     assert res.status_code == 409
-    assert res.json()["error"]["code"] == "INSUFFICIENT_DATA"
+    assert res.json()["code"] == "INSUFFICIENT_DATA"
 
 
 @pytest.mark.parametrize(
@@ -206,7 +206,7 @@ def test_app_error_becomes_structured_response() -> None:
 def test_validation_errors_use_invalid_request(order: dict) -> None:
     res = client.post(f"{API_PREFIX}/orders/preview", json={"orders": [order]}, headers=AUTH)
     assert res.status_code == 400
-    assert res.json()["error"]["code"] == "INVALID_REQUEST"
+    assert res.json()["code"] == "INVALID_REQUEST"
 
 
 def test_briefing_returns_envelope_when_empty() -> None:

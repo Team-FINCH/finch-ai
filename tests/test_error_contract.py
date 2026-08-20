@@ -97,7 +97,7 @@ def test_종목분석_LLM_타임아웃은_504다(monkeypatch):
     )
     res = client.post(STOCKS_URL, json={"sections": ["current"]}, headers=AUTH)
     assert res.status_code == 504
-    assert res.json()["error"]["code"] == "LLM_TIMEOUT"
+    assert res.json()["code"] == "LLM_TIMEOUT"
 
 
 def test_종목분석_근거_검색_실패는_502다(monkeypatch):
@@ -110,7 +110,7 @@ def test_종목분석_근거_검색_실패는_502다(monkeypatch):
     )
     res = client.post(STOCKS_URL, json={"sections": ["current"]}, headers=AUTH)
     assert res.status_code == 502
-    assert res.json()["error"]["code"] == "RETRIEVAL_FAILED"
+    assert res.json()["code"] == "RETRIEVAL_FAILED"
 
 
 def test_종목분석_LLM_키가_없으면_409다(monkeypatch):
@@ -122,7 +122,7 @@ def test_종목분석_LLM_키가_없으면_409다(monkeypatch):
     )
     res = client.post(STOCKS_URL, json={"sections": ["current"]}, headers=AUTH)
     assert res.status_code == 409
-    assert res.json()["error"]["code"] == "INSUFFICIENT_DATA"
+    assert res.json()["code"] == "INSUFFICIENT_DATA"
 
 
 # ── 대화 ─────────────────────────────────────────────────────────────────
@@ -133,7 +133,33 @@ def test_대화_LLM_타임아웃은_504다(monkeypatch):
     )
     res = client.post(CHAT_URL, json={"message": "PER이 뭐야?"}, headers=AUTH)
     assert res.status_code == 504
-    assert res.json()["error"]["code"] == "LLM_TIMEOUT"
+    assert res.json()["code"] == "LLM_TIMEOUT"
+
+
+# ── 응답 형식 ─────────────────────────────────────────────────────────────
+def test_에러는_최상위_code_message_detail이다(monkeypatch):
+    """백엔드 §1.3 형식. 예전처럼 error 로 한 겹 감싸지 않는다."""
+    client = _app(monkeypatch)
+    body = client.post(STOCKS_URL, json={}, headers={"X-User-Id": "u"}).json()
+
+    assert "error" not in body
+    assert set(body) >= {"code", "message", "detail"}
+    # request_id 는 §1.3 에 없지만 남긴다. /feedback 이 이 값으로 응답을 찾는다.
+    assert body["request_id"]
+
+
+def test_사용자에게_보이는_문구에_내부_용어를_넣지_않는다(monkeypatch):
+    """백엔드가 message 를 프런트에 그대로 노출한다(§1.3).
+
+    "LLM 키가 없습니다" 같은 문구는 사용자에게 아무 의미가 없고 설정을 흘린다.
+    사유는 detail.reason 으로 보낸다.
+    """
+    client = _app(monkeypatch)
+    body = client.post(STOCKS_URL, json={}, headers={"X-User-Id": "u"}).json()
+
+    for word in ("LLM", "원장", "토큰", "임베딩", "adapter", "None", "Traceback"):
+        assert word not in body["message"], body["message"]
+    assert body["message"].endswith("다.")
 
 
 # ── 검색 계층 ─────────────────────────────────────────────────────────────

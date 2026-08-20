@@ -230,7 +230,7 @@ def test_한_종목이어도_터지지_않는다(client: TestClient) -> None:
 def test_원장이_없으면_409(client: TestClient) -> None:
     response = _get(client, STRANGER)
     assert response.status_code == 409
-    assert response.json()["error"]["code"] == "INSUFFICIENT_DATA"
+    assert response.json()["code"] == "INSUFFICIENT_DATA"
 
 
 def test_보유_0종목이면_409(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -246,7 +246,7 @@ def test_보유_0종목이면_409(monkeypatch: pytest.MonkeyPatch) -> None:
     with _make_client(monkeypatch, StubSession()) as client:
         response = _get(client, "drained")
     assert response.status_code == 409
-    assert "보유 종목" in response.json()["error"]["message"]
+    assert "보유 종목" in response.json()["message"]
 
 
 def test_LLM_키가_없으면_409(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -259,7 +259,10 @@ def test_LLM_키가_없으면_409(monkeypatch: pytest.MonkeyPatch) -> None:
     with TestClient(app) as client:
         response = _get(client, HOLDER)
     assert response.status_code == 409
-    assert "LLM 키" in response.json()["error"]["message"]
+    body = response.json()
+    # 사유는 detail 로만 나간다. message 는 사용자에게 그대로 보이는 문구다(백엔드 §1.3).
+    assert body["detail"]["reason"] == "llm_key_missing"
+    assert "LLM" not in body["message"]
 
 
 def test_문장_생성이_실패해도_지표는_나온다(monkeypatch: pytest.MonkeyPatch) -> None:

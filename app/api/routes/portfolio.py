@@ -233,7 +233,10 @@ async def diagnosis(user_id: CurrentUser, db: DbSession) -> Envelope[dict]:
     """
     ledger = _ledger(user_id)
     if ledger is None:
-        raise InsufficientData("원장을 읽을 수 없어 진단할 수 없습니다.")
+        raise InsufficientData(
+            "보유 내역을 불러오지 못해 진단할 수 없습니다.",
+            detail={"reason": "ledger_unavailable"},
+        )
 
     engine = PortfolioEngine(ledger)
     last = ledger.trading_days[-1]
@@ -256,7 +259,9 @@ async def diagnosis(user_id: CurrentUser, db: DbSession) -> Envelope[dict]:
     client = get_llm_client()
     if isinstance(client, NullLlmClient):
         # 키가 없으면 전 항목이 같은 이유로 실패한다. 항목마다 null로 흩뿌리지 않는다.
-        raise InsufficientData("LLM 키가 없어 진단을 생성할 수 없습니다.")
+        raise InsufficientData(
+            "지금은 진단을 만들 수 없습니다.", detail={"reason": "llm_key_missing"}
+        )
 
     indicators = _indicator_segments(result)
     ordered = list(result.findings)
@@ -330,7 +335,10 @@ async def attribution(
     """
     ledger = _ledger(user_id)
     if ledger is None:
-        raise InsufficientData("원장을 읽을 수 없어 분해할 수 없습니다.")
+        raise InsufficientData(
+            "보유 내역을 불러오지 못해 분해할 수 없습니다.",
+            detail={"reason": "ledger_unavailable"},
+        )
 
     rows = PortfolioEngine(ledger).daily_returns()
     if not rows:
@@ -369,7 +377,9 @@ async def attribution(
 
     client = get_llm_client()
     if isinstance(client, NullLlmClient):
-        raise InsufficientData("LLM 키가 없어 요약을 생성할 수 없습니다.")
+        raise InsufficientData(
+            "지금은 요약을 만들 수 없습니다.", detail={"reason": "llm_key_missing"}
+        )
 
     outcome = await generate_section(
         _SUMMARY_KEY,

@@ -84,14 +84,22 @@ featureSpec 의 AI MVP 3종이 어느 엔드포인트인지입니다. 별도 엔
 
 ---
 
-## 3. 에러 응답
+## 3. 에러 응답 — **백엔드 §1.3 형식으로 맞췄습니다**
 
 ```json
 {
-  "error": { "code": "LLM_TIMEOUT", "message": "...", "detail": {} },
-  "request_id": "..."
+  "code": "LLM_TIMEOUT",
+  "message": "응답이 지연되어 중단했습니다. 다시 시도해 주세요.",
+  "detail": {},
+  "request_id": "req_01JQZ8M3T7K2"
 }
 ```
+
+전에는 `error` 로 한 겹 감쌌는데 벗겼습니다. 백엔드가 매핑 코드를 만드는 것보다 우리가 맞추는 편이 쌉니다.
+
+- `message` 는 **사용자에게 그대로 보여도 되는 한국어 문구**입니다. §1.3 대로 그대로 노출하셔도 됩니다. "LLM 키가 없습니다" 같은 내부 사정은 담지 않았고, 기계가 분기할 사유는 `detail.reason` 으로 보냅니다 (`llm_key_missing` · `ledger_unavailable` · `internal_token_mismatch` 등).
+- **`request_id` 는 §1.3 에 없지만 최상위에 남겼습니다.** `POST /feedback` 이 이 값으로 응답을 찾습니다. 에러에서만 빠지면 "이 답변 이상해요" 를 응답에 맞출 수 없습니다. 빼야 한다면 말씀해 주세요.
+- **필드 명명은 아직 snake_case 입니다.** `request_id` 는 성공 봉투에도 있는 같은 필드인데, 봉투가 §1.3 회신 대기라 지금 에러만 `requestId` 로 바꾸면 한 개념이 한 API 안에서 두 이름이 됩니다. 봉투 회신이 오면 직렬화 지점 한 곳에서 둘을 함께 바꿉니다.
 
 ### 에러 코드와 HTTP 상태
 

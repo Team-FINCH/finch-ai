@@ -14,6 +14,10 @@ from app.core.errors import Unauthorized
 
 DbSession = Annotated[AsyncSession, Depends(get_session)]
 
+#: 401 문구는 사유를 가린다. 어느 헤더가 왜 틀렸는지 알려주면 토큰을 맞춰 볼
+#: 여지를 준다. 구분이 필요한 쪽은 detail.reason 을 본다 — 내부 전용 API 다.
+_DENIED = "인증에 실패했습니다."
+
 
 def _check_internal_token(token: str | None) -> None:
     """호출자가 백엔드가 맞는지 확인한다. 백엔드 API 명세 §9.
@@ -28,11 +32,11 @@ def _check_internal_token(token: str | None) -> None:
     expected = settings.backend_service_token
     if not expected:
         if settings.app_env != "local":
-            raise Unauthorized("서비스 간 토큰이 설정되지 않았습니다.")
+            raise Unauthorized(_DENIED, detail={"reason": "internal_token_not_configured"})
         return
     # 앞에서부터 다른 자리를 찾는 비교는 걸린 시간으로 토큰을 알려 준다.
     if not token or not hmac.compare_digest(token, expected):
-        raise Unauthorized("서비스 간 토큰이 올바르지 않습니다.")
+        raise Unauthorized(_DENIED, detail={"reason": "internal_token_mismatch"})
 
 
 async def get_current_user_id(
@@ -55,7 +59,7 @@ async def get_current_user_id(
     """
     _check_internal_token(internal_token)
     if not user_id or not user_id.strip():
-        raise Unauthorized("사용자 식별 헤더가 없습니다.")
+        raise Unauthorized(_DENIED, detail={"reason": "user_header_missing"})
     return user_id.strip()
 
 

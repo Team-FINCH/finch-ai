@@ -173,12 +173,22 @@ class Envelope[ContentT](BaseModel):
 
 
 # ── 에러 응답 ────────────────────────────────────────────
-class ErrorBody(BaseModel):
+class ErrorResponse(BaseModel):
+    """실패 응답. 백엔드 API 명세 §1.3 의 형태를 그대로 따른다.
+
+    전에는 `{"error": {...}, "request_id"}` 로 한 겹 감쌌는데, 백엔드는 최상위
+    `code`·`message`·`detail` 을 읽어 프런트로 넘긴다. 봉투를 벗기는 쪽이
+    백엔드에 매핑 코드를 만들게 하는 것보다 싸므로 우리가 맞춘다.
+
+    `message` 는 **사용자에게 그대로 보여도 되는 한국어 문구**여야 한다.
+    백엔드가 화면마다 문구를 다시 만들지 않는 전제다(§1.3).
+
+    `request_id` 는 §1.3 에 없지만 남긴다. `POST /feedback` 이 이 값으로 응답을
+    찾으므로, 에러에서만 빠지면 "이 답변 이상해요" 를 응답에 맞출 수 없다.
+    성공 봉투와 같은 이름을 쓴다 — 한 개념을 두 이름으로 부르지 않는다.
+    """
+
     code: ErrorCode
     message: str
     detail: dict[str, Any] = Field(default_factory=dict)
-
-
-class ErrorResponse(BaseModel):
-    error: ErrorBody
     request_id: str = Field(default_factory=new_request_id)
