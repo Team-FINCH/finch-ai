@@ -762,13 +762,21 @@
             <tr><td><code>thinking</code></td><td><code>{"type": "adaptive"}</code></td><td>고정 예산 방식은 현재 모델에서 400 오류</td></tr>
             <tr><td><code>output_config.effort</code></td><td>위 표 참조</td><td><code>output_config</code> 안에 넣는다. 최상위 아님</td></tr>
             <tr><td><code>output_config.format</code></td><td>기능별 JSON Schema</td><td>구버전 <code>output_format</code> 아님</td></tr>
-            <tr><td><code>max_tokens</code></td><td>비스트리밍 16,000 / 스트리밍 64,000</td><td>낮게 잡으면 문장 중간에 잘린다</td></tr>
+            <tr><td><code>max_tokens</code></td><td>16,000</td><td>낮게 잡으면 문장 중간에 잘린다. 비스트리밍 호출의 안전선이다</td></tr>
             <tr><td><code>temperature</code></td><td class="no">사용 불가</td><td>현재 모델에서 제거됨. 400 오류</td></tr>
             <tr><td>assistant 프리필</td><td class="no">사용 불가</td><td>400 오류. Structured Output으로 대체</td></tr>
-            <tr><td>스트리밍</td><td>chat · analysis</td><td>긴 출력에서 HTTP 타임아웃 방지</td></tr>
           </tbody>
         </table>
       </div>
+      <div class="rule-box">
+        <span class="label">상향 스트리밍</span>
+        <p><strong>모델 호출은 스트리밍하지 않는다.</strong> <code>messages.create</code> 단발이고 <code>max_tokens</code>는 16,000이다.
+        비스트리밍은 SDK HTTP 타임아웃 때문에 16,000이 안전선이고, 그보다 큰 값은 SDK가 스트리밍을 요구한다.
+        더 긴 출력이 필요해지면 상향 스트리밍으로 바꾸고 64,000까지 올릴 수 있다.</p>
+        <p>여기서 말하는 스트리밍은 <strong>우리 &rarr; 모델</strong> 구간이다. 클라이언트로 내보내는 SSE 와는 다른 층이며,
+        그쪽은 MVP 범위 밖으로 폐기했다(API 명세 &sect;2.5). 둘을 섞지 말 것.</p>
+      </div>
+
       <div class="rule-box warn">
         <span class="label">재현성에 대한 주의</span>
         <p><code>temperature</code>를 쓸 수 없으므로 <strong>출력을 완전히 고정할 방법이 없다.</strong> 평가 체계에서 "동일 조건 일관성"을 볼 때 이 점을 전제해야 하며, 문자열 일치가 아니라 <strong>수치 일치와 결론 일치</strong>로 판정해야 한다. 수치는 어차피 엔진에서 오므로 결정론적이다.</p>
