@@ -202,7 +202,7 @@ async def test_섹터는_우리_instruments에서_온다(sessions):
 
 @pytest.mark.asyncio
 async def test_시세가_없는_종목이면_거래일이_빈다(sessions):
-    """엔진은 거래일마다 보유 종목 전부의 종가를 찾는다. 하나라도 없으면 KeyError 다.
+    """엔진은 거래일마다 보유 종목 전부의 종가를 찾는다. 하나도 없으면 InsufficientData 다.
 
     비는 편이 낫다 — 호출부가 이미 그것을 데이터 부족으로 다룬다.
     """
