@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import suppress
 from typing import Any
 
 from sqlalchemy import select
@@ -67,7 +68,10 @@ async def record(
     except Exception:
         # 응답은 이미 만들어졌다. 로그를 못 남긴 것이 답을 못 준 것이 되면 안 된다.
         log.exception("응답 로그 기록 실패 · request_id=%s", envelope.request_id)
-        await db.rollback()
+        # 롤백마저 터질 수 있다. 세션이 이미 쓸 수 없는 상태라면 add가 죽고
+        # rollback도 죽는다 — 그 예외가 여기서 새 나가면 그물이 받아서 놓치는 꼴이다.
+        with suppress(Exception):
+            await db.rollback()
 
 
 async def last_risk_level(db: AsyncSession, user_id: str) -> RiskLevel | None:
