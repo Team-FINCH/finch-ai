@@ -1,0 +1,48 @@
+# AI 파트(ai/) CI. 루트 .gitlab-ci.yml 에서 아래처럼 포함해 사용한다.
+#
+#   include:
+#     - local: ai/.gitlab-ci.yml
+#
+# 루트는 소유권 경계상 AI 담당이 수정하지 않으므로(ADR-0002) 포함 설정은 팀에서 처리한다.
+# 포함 전까지 이 파일은 동작하지 않는다.
+
+ai:test:
+  image: python:3.12
+  services:
+    - name: pgvector/pgvector:pg17
+      alias: postgres
+  variables:
+    POSTGRES_USER: ai_invest
+    POSTGRES_PASSWORD: ai_invest
+    POSTGRES_DB: ai_invest
+    DATABASE_URL: postgresql+asyncpg://ai_invest:ai_invest@postgres:5432/ai_invest
+  # ai/ 변경에만 반응해 다른 파트 파이프라인에 영향을 주지 않는다.
+  rules:
+    - changes:
+        - ai/**/*
+  cache:
+    key:
+      files:
+        - ai/requirements.txt
+    paths:
+      - .cache/pip
+  before_script:
+    - cd ai
+    - python -m pip install --upgrade pip
+    - pip install -r requirements.txt
+  script:
+    - ruff check .
+    - alembic upgrade head
+    # 모델과 마이그레이션이 어긋나면 실패한다.
+    - alembic check
+    - pytest -q
+    - python -m eval.run --metrics
+    # 라우터를 고치고 스키마 재생성을 잊으면 실패한다.
+    - python -m scripts.export_openapi --check
+    # HTML을 고치고 Markdown 재생성을 잊으면 에이전트가 낡은 문서를 읽는다.
+    - |
+      if [ -f scripts/html2md.py ]; then
+        python scripts/html2md.py --check
+      else
+        echo "scripts/html2md.py 없음 — 건너뜀"
+      fi
