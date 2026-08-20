@@ -33,15 +33,33 @@ OUT = Path(__file__).resolve().parent.parent / "docs" / "openapi.json"
 # 빈 값으로 잡아 임포트 직후 아무 요청도 보낼 수 없다.
 SERVERS = [{"url": "http://localhost:8000", "description": "로컬 개발 서버"}]
 
-TRUSTED_HEADER_AUTH = {
-    "type": "apiKey",
-    "in": "header",
-    "name": settings.trusted_user_header,
-    "description": (
-        "백엔드가 JWT를 검증한 뒤 넣어 주는 사용자 식별자. 경로나 본문으로는 받지 않는다. "
-        "AI 서버는 이 값을 검증 없이 신뢰하므로 내부 네트워크에서만 접근 가능해야 한다."
-    ),
+# 백엔드 명세 §9 — 헤더 두 개가 짝이다. 토큰으로 호출자가 백엔드임을 확인하고
+# 사용자 헤더로 누구의 데이터인지 정한다. 하나라도 빠지면 401이다.
+AUTH_SCHEMES = {
+    "internalToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": settings.internal_token_header,
+        "description": (
+            "서비스 간 공유 토큰. 호출자가 백엔드임을 확인한다. "
+            "이 서버는 외부에 노출되지 않는 전제이며, 토큰은 그 문을 잠그는 두 번째 자물쇠다."
+        ),
+    },
+    "trustedUserHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": settings.trusted_user_header,
+        "description": (
+            "백엔드가 JWT를 검증한 뒤 넣어 주는 사용자 식별자. 경로나 본문으로는 받지 않는다. "
+            "AI 서버는 이 값을 검증 없이 신뢰하므로 내부 네트워크에서만 접근 가능해야 한다."
+        ),
+    },
 }
+
+#: 오퍼레이션 파라미터에서 걷어낼 인증 헤더. securitySchemes 한 곳에서만 말한다.
+AUTH_HEADERS = frozenset(
+    {settings.internal_token_header.lower(), settings.trusted_user_header.lower()}
+)
 
 # 인증이 필요 없는 경로. 나머지는 전부 신뢰 헤더를 요구한다.
 PUBLIC_PATHS = {"/health"}
@@ -69,10 +87,9 @@ def build() -> dict[str, Any]:
     # 인증은 평범한 Header 의존성이라 FastAPI가 스키마에 적어 주지 않는다.
     # 그대로 내보내면 Postman이 신뢰 헤더를 붙이지 않아 전부 401로 떨어지고,
     # 읽는 사람은 내보낸 스키마가 깨진 줄 안다. 여기서 한 번 채운다.
-    schema.setdefault("components", {})["securitySchemes"] = {
-        "trustedUserHeader": TRUSTED_HEADER_AUTH
-    }
-    schema["security"] = [{"trustedUserHeader": []}]
+    schema.setdefault("components", {})["securitySchemes"] = AUTH_SCHEMES
+    # 한 객체 안에 둘을 넣으면 OR가 아니라 AND다. 실제로 둘 다 있어야 통과한다.
+    schema["security"] = [{"internalToken": [], "trustedUserHeader": []}]
     for path in PUBLIC_PATHS & schema["paths"].keys():
         for op in schema["paths"][path].values():
             op["security"] = []
@@ -80,10 +97,11 @@ def build() -> dict[str, Any]:
     # 같은 이유로 신뢰 헤더가 오퍼레이션마다 헤더 파라미터로도 잡혀 있다.
     # 위에서 securitySchemes로 선언했으니 남겨 두면 Postman이 요청 12개마다
     # 인증 입력을 두 벌 보여 준다. 인증은 한 군데서만 말한다.
-    header = settings.trusted_user_header.lower()
     for ops in schema["paths"].values():
         for op in ops.values():
-            params = [q for q in op.get("parameters", []) if q["name"].lower() != header]
+            params = [
+                q for q in op.get("parameters", []) if q["name"].lower() not in AUTH_HEADERS
+            ]
             if params:
                 op["parameters"] = params
             else:

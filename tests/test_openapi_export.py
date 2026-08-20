@@ -38,25 +38,32 @@ def test_every_path_is_prefixed_or_health() -> None:
 def test_trusted_header_auth_is_declared() -> None:
     """FastAPI가 안 적어 주는 인증을 내보내기가 채워 넣는지.
 
-    이게 빠지면 Postman이 신뢰 헤더를 붙이지 않아 전부 401이 된다.
+    이게 빠지면 Postman이 인증 헤더를 붙이지 않아 전부 401이 된다.
     """
-    scheme = COMMITTED["components"]["securitySchemes"]["trustedUserHeader"]
-    assert scheme["type"] == "apiKey"
-    assert scheme["in"] == "header"
-    assert scheme["name"] == settings.trusted_user_header
-    assert COMMITTED["security"] == [{"trustedUserHeader": []}]
+    schemes = COMMITTED["components"]["securitySchemes"]
+    assert schemes["trustedUserHeader"]["name"] == settings.trusted_user_header
+    assert schemes["internalToken"]["name"] == settings.internal_token_header
+    for scheme in schemes.values():
+        assert scheme["type"] == "apiKey"
+        assert scheme["in"] == "header"
+
+
+def test_both_auth_headers_are_required_together() -> None:
+    """백엔드 명세 §9는 둘 다 보낸다. 리스트로 쪼개면 OR가 되어 하나만으로 통과하는 계약이 된다."""
+    assert COMMITTED["security"] == [{"internalToken": [], "trustedUserHeader": []}]
 
 
 def test_no_duplicate_auth_header_parameter() -> None:
     """인증은 securitySchemes 한 군데서만. 헤더 파라미터로도 남으면 Postman이 두 벌 물어본다."""
-    header = settings.trusted_user_header.lower()
+    headers = {settings.trusted_user_header.lower(), settings.internal_token_header.lower()}
     dupes = [
-        (p, m)
+        (p, m, q["name"])
         for p, ops in COMMITTED["paths"].items()
         for m, op in ops.items()
-        if any(q["name"].lower() == header for q in op.get("parameters", []))
+        for q in op.get("parameters", [])
+        if q["name"].lower() in headers
     ]
-    assert not dupes, f"{settings.trusted_user_header} 파라미터가 남아 있음: {dupes}"
+    assert not dupes, f"인증 헤더가 파라미터로 남아 있음: {dupes}"
 
 
 def test_path_parameters_survive() -> None:

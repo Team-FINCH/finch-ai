@@ -37,11 +37,15 @@ Postman에 컬렉션으로 두고 계속 쓰려는 경우다.
 
 ## 3. 사용자 헤더 설정
 
-인증은 `X-User-Id: <사용자 식별자>` 하나뿐이다. 운영에서는 **백엔드가 JWT를 검증한 뒤
-이 헤더를 넣어 준다** — AI는 값을 그대로 믿는다. 경로나 본문에 사용자 ID를 넣는 자리는
-없고, 넣어도 무시된다. `Authorization` 은 AI가 읽지 않는다.
+인증 헤더는 두 개다(백엔드 명세 §9). `X-Internal-Token` 은 호출자가 백엔드인지 확인하고,
+`X-User-Id` 는 누구의 데이터인지 정한다. 운영에서는 **백엔드가 JWT를 검증한 뒤 이 헤더를
+넣어 준다** — AI는 값을 그대로 믿는다. 경로나 본문에 사용자 ID를 넣는 자리는 없고, 넣어도
+무시된다. `Authorization` 은 AI가 읽지 않는다.
 
-스키마에 `trustedUserHeader` 가 apiKey 스킴으로 선언돼 있어서 Postman이 컬렉션 단위로
+로컬(`APP_ENV=local`)에서 `BACKEND_SERVICE_TOKEN` 이 비어 있으면 `X-Internal-Token` 은
+생략해도 된다. 운영에서는 비워 두면 401이다.
+
+스키마에 `internalToken` · `trustedUserHeader` 가 apiKey 스킴으로 선언돼 있어서 Postman이 컬렉션 단위로
 자동으로 잡아 준다. 컬렉션 **Authorization** 탭에서 값만 채우면 하위 요청이 전부 물려받는다.
 
 로컬에서는 **비어 있지 않은 아무 문자열이나 통과한다.** `u_test`면 된다.
@@ -50,6 +54,8 @@ Postman에 컬렉션으로 두고 계속 쓰려는 경우다.
 
 ```bash
 curl http://localhost:8000/api/ai/v1/wiki -H "X-User-Id: u_test"
+# 토큰을 설정했다면
+# curl ... -H "X-Internal-Token: $BACKEND_SERVICE_TOKEN" -H "X-User-Id: u_test"
 ```
 
 헤더를 빼면 401이 온다. 이건 정상 동작이다.

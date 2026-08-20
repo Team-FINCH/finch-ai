@@ -555,6 +555,12 @@
       }
     },
     "securitySchemes": {
+      "internalToken": {
+        "description": "서비스 간 공유 토큰. 호출자가 백엔드임을 확인한다. 이 서버는 외부에 노출되지 않는 전제이며, 토큰은 그 문을 잠그는 두 번째 자물쇠다.",
+        "in": "header",
+        "name": "X-Internal-Token",
+        "type": "apiKey"
+      },
       "trustedUserHeader": {
         "description": "백엔드가 JWT를 검증한 뒤 넣어 주는 사용자 식별자. 경로나 본문으로는 받지 않는다. AI 서버는 이 값을 검증 없이 신뢰하므로 내부 네트워크에서만 접근 가능해야 한다.",
         "in": "header",
@@ -1071,6 +1077,7 @@
   },
   "security": [
     {
+      "internalToken": [],
       "trustedUserHeader": []
     }
   ],

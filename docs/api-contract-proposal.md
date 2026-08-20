@@ -140,20 +140,26 @@ HTTP 상태는 `errors.py` 한 곳에서만 결정하고 라우터가 직접 지
 
 ## 4. 인증 — **확정**
 
-호출 경로는 **프런트 → 백엔드 → AI** 입니다. 백엔드가 이미 JWT 를 검증하므로 AI 가 다시 검증하면 서명 키를 두 곳에서 관리하게 됩니다. 그래서 **백엔드가 검증 후 신뢰된 사용자 식별자를 헤더로 넘기는** 쪽으로 정했습니다.
+호출 경로는 **프런트 → 백엔드 → AI** 입니다. 백엔드가 이미 JWT 를 검증하므로 AI 가 다시 검증하면 서명 키를 두 곳에서 관리하게 됩니다. 그래서 **백엔드가 검증 후 신뢰된 사용자 식별자를 헤더로 넘기는** 쪽으로 정했고, 백엔드 API 명세 §9 의 헤더 두 개를 그대로 받습니다.
 
 ```
+X-Internal-Token: <서비스 간 공유 토큰>
 X-User-Id: <사용자 식별자>
 ```
 
 | 항목 | 값 |
 |---|---|
-| 헤더 이름 | `X-User-Id` — `TRUSTED_USER_HEADER` 로 바꿀 수 있습니다 |
-| 값 | 사용자 식별자 문자열. 앞뒤 공백은 잘라냅니다 |
-| 없거나 비면 | `UNAUTHORIZED` (401) |
+| `X-Internal-Token` | 호출자가 백엔드인지 확인. `BACKEND_SERVICE_TOKEN` 과 대조합니다 |
+| `X-User-Id` | 사용자 식별자 문자열. 앞뒤 공백은 잘라냅니다 |
+| 헤더 이름 변경 | `INTERNAL_TOKEN_HEADER` · `TRUSTED_USER_HEADER` 로 바꿉니다 |
+| 하나라도 틀리면 | `UNAUTHORIZED` (401) |
 | `Authorization` | **AI 는 읽지 않습니다.** 백엔드에서 끝납니다 |
 
-구현은 `app/api/deps.py` 의 `get_current_user_id` 이고, `docs/openapi.json` 에는 `trustedUserHeader` 시큐리티 스킴으로 실려 있습니다.
+토큰 비교는 `hmac.compare_digest` 로 합니다. `==` 는 앞에서부터 다른 자리를 찾다가 멈춰서, 걸린 시간이 토큰을 한 글자씩 알려줍니다.
+
+`BACKEND_SERVICE_TOKEN` 이 비어 있으면 **`APP_ENV=local` 에서만** 토큰 검증을 건너뜁니다. 운영에서 비워 두는 것은 설정 사고이므로 401 로 막습니다 — 그때 열어 두면 인증이 아예 없는 것과 같습니다.
+
+구현은 `app/api/deps.py` 의 `get_current_user_id` 이고, `docs/openapi.json` 에는 `internalToken` · `trustedUserHeader` 두 시큐리티 스킴으로 실려 있습니다(한 객체 안에 둘 = AND).
 
 ### ⚠️ 배포 조건 — **AI 서버는 외부에 노출되면 안 됩니다**
 
