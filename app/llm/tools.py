@@ -19,18 +19,43 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from functools import lru_cache
 from typing import Any
 
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.adapters import SeedLedgerSource
+# 라우터에서 끌어 쓰는 것은 전부 엔진 입력을 만드는 헬퍼다. 여기서 다시 짜면 §5·§6·§7이
+# 화면마다 다른 숫자를 내게 된다. 반대 방향(라우터 → 도구) 의존은 없어 순환도 아니다.
+from app.api.routes.orders import (
+    OrderLine,
+    _after_snapshot,
+    _delta,
+    _measures,
+    _raised,
+    _summary_values,
+)
+from app.api.routes.portfolio import (
+    _attribution_segments,
+    _benchmark,
+    _events,
+    _indicator_segments,
+    _ledger,
+    _market_benchmark,
+    _market_cap_ranks,
+    _period_start,
+)
+from app.core.adapters import Ledger, SeedLedgerSource
 from app.core.config import settings
-from app.core.enums import MetricSource, Screen, WikiSource
+from app.core.enums import MetricSource, OrderSide, Period, Screen, WikiSource
+from app.core.errors import AppError
 from app.core.schemas import Segment
+from app.engines.attribution import ContributorRow, attribute
 from app.engines.portfolio import PortfolioEngine, PortfolioSnapshot
+from app.engines.risk import Finding, assess
 from app.llm.generate import count_segment, krw_segment, ratio_segment
 from app.rag.search import search
 from app.wiki.store import list_facts, list_theses
@@ -125,6 +150,72 @@ TOOLS: list[dict[str, Any]] = [
                 "ticker": {
                     "type": "string",
                     "description": "6자리 종목코드. 한 종목의 논지만 볼 때 넣는다.",
+                }
+            },
+        },
+    },
+    {
+        "name": "calc_risk_metrics",
+        "description": (
+            "포트폴리오 전체의 위험 진단을 돌려준다. 집중도(HHI·상위 비중·업종), 변동성, "
+            "최대낙폭, 현금 여력, 금리 노출과 엔진이 잡은 위험 항목 목록이 함께 온다. "
+            "'내 포트폴리오 위험한가', '분산이 부족한가', '변동성이 큰가' 같은 질문에 쓴다. "
+            "보유 비중만 필요하면 get_portfolio로 충분하다."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "simulate_order",
+        "description": (
+            "주문을 체결했다고 가정하고 위험 지표를 다시 계산해 전·후와 그 차이를 돌려준다. "
+            "'이거 사면 집중도가 어떻게 되나', '팔면 위험이 줄어드나' 처럼 아직 내지 않은 "
+            "주문의 영향을 물을 때 쓴다. 승인·거절을 판정하지는 않는다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "orders": {
+                    "type": "array",
+                    "description": "점검할 주문 묶음. 한 번에 여러 건을 넣으면 함께 체결된 것으로 본다.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "ticker": {"type": "string", "description": "6자리 종목코드."},
+                            "side": {
+                                "type": "string",
+                                "enum": [side.value for side in OrderSide],
+                                "description": "매수는 buy, 매도는 sell.",
+                            },
+                            "quantity": {
+                                "type": "integer",
+                                "description": "주문 수량. 1주 이상이어야 한다.",
+                            },
+                            "price": {
+                                "type": "integer",
+                                "description": "지정가(원). 비우면 최근 종가로 본다.",
+                            },
+                        },
+                        "required": ["ticker", "side", "quantity"],
+                    },
+                }
+            },
+            "required": ["orders"],
+        },
+    },
+    {
+        "name": "calc_attribution",
+        "description": (
+            "기간 수익률을 시장·섹터·선택 세 축으로 분해하고 종목별 기여도를 돌려준다. "
+            "'왜 올랐나', '뭐 때문에 빠졌나', '시장 대비 잘했나' 같은 질문에 쓴다. "
+            "종목 하나의 등락만 궁금하면 get_price_history가 맞다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "period": {
+                    "type": "string",
+                    "enum": [period.value for period in Period],
+                    "description": f"분해할 구간. 기본 {Period.D1.value}.",
                 }
             },
         },
@@ -375,6 +466,198 @@ async def _get_wiki(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     return {"theses": payload_theses, "facts": payload_facts}
 
 
+# ── 2·3단계 도구 ─────────────────────────────────────────────────────────────
+def _register(ctx: ToolContext, prefix: str, segments: Mapping[str, Segment]) -> dict[str, str]:
+    """엔진 Segment 묶음을 자리표시자로 등록한다.
+
+    `ctx.values`는 대화 하나가 통째로 쓰는 평평한 이름 공간이다. `get_portfolio`가
+    이미 올려 둔 `top1_weight`를 여기서 같은 key로 덮으면, 모델이 앞 값을 보고 쓴
+    문장에 뒤 값이 렌더된다. 접두사가 그 충돌을 막는다.
+    """
+    return dict(_put(ctx, f"{prefix}_{name}", segment) for name, segment in segments.items())
+
+
+async def _risk_inputs(
+    ctx: ToolContext, engine: PortfolioEngine, ledger: Ledger, symbols: tuple[str, ...]
+) -> tuple[list[tuple[date, float]], dict[Any, float] | None, dict[str, int] | None]:
+    """`assess()`가 받는 입력 중 DB가 필요한 것들. 세션이 없으면 둘 다 None이다.
+
+    세션은 동시 사용이 안전하지 않고 도구는 `asyncio.gather`로 동시에 돌므로 락을
+    잡는다. 대신 CPU만 쓰는 `assess()`는 락 밖에서 돈다.
+    """
+    value_series = [(day, engine.snapshot(day).total_value) for day in ledger.trading_days]
+    if ctx.db is None:
+        return value_series, None, None
+    async with ctx.db_lock:
+        return value_series, await _benchmark(ctx.db), await _market_cap_ranks(ctx.db, symbols)
+
+
+async def _calc_risk_metrics(ctx: ToolContext, _: dict[str, Any]) -> dict[str, Any]:
+    ledger = _ledger(ctx.user_id)
+    if ledger is None:
+        return {"unavailable": "이 사용자의 원장을 읽을 수 없습니다."}
+
+    engine = PortfolioEngine(ledger)
+    snapshot = engine.snapshot(ledger.trading_days[-1])
+    if not snapshot.holdings:
+        return {"unavailable": "보유 종목이 없어 진단할 대상이 없습니다."}
+
+    symbols = tuple(h.symbol for h in snapshot.holdings)
+    value_series, benchmark, ranks = await _risk_inputs(ctx, engine, ledger, symbols)
+    result = assess(
+        snapshot,
+        ledger.prices,
+        value_series=value_series,
+        benchmark=benchmark,
+        market_cap_ranks=ranks,
+    )
+
+    ctx.portfolio_as_of = _as_datetime(snapshot.trade_date)
+    return {
+        "as_of": snapshot.trade_date.isoformat(),
+        "risk_level": result.risk_level.value if result.risk_level is not None else None,
+        "risk_score": round(result.risk_score) if result.risk_score is not None else None,
+        # 히스토리가 짧으면 변동성·분산 항이 통째로 빠진다. 왜 빠졌는지를 같이 준다.
+        "insufficient_history": result.insufficient_history,
+        "findings": _finding_rows(result.findings),
+        "metrics": _register(ctx, "risk", _indicator_segments(result)),
+    }
+
+
+def _finding_rows(findings: Sequence[Finding]) -> list[dict[str, Any]]:
+    """엔진이 잡은 위험 항목. 문장은 모델이 쓰므로 판정만 넘긴다."""
+    return [
+        {"id": f.id, "severity": f.severity.value, "metric": f.metric, "threshold": f.threshold}
+        for f in findings
+    ]
+
+
+async def _simulate_order(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    raw = args.get("orders")
+    if not isinstance(raw, list) or not raw:
+        return {"unavailable": "점검할 주문이 필요합니다."}
+    try:
+        orders = [OrderLine.model_validate(line) for line in raw]
+    except ValidationError:
+        return {"unavailable": "주문 형식이 올바르지 않습니다. 종목코드·매매구분·수량을 확인하십시오."}
+
+    ledger = _ledger(ctx.user_id)
+    if ledger is None:
+        return {"unavailable": "이 사용자의 원장을 읽을 수 없습니다."}
+    if ctx.db is None:
+        return {"unavailable": "시세 원천이 연결되지 않아 체결을 가정할 수 없습니다."}
+
+    engine = PortfolioEngine(ledger)
+    last = ledger.trading_days[-1]
+    before_snapshot = engine.snapshot(last)
+    try:
+        async with ctx.db_lock:
+            after_snapshot, extra_prices, order_summary, orders_value = await _after_snapshot(
+                ctx.db, ledger, before_snapshot, orders, last
+            )
+    except AppError as exc:
+        # 보유를 넘는 매도처럼 엔드포인트에서 400이 되는 경우다. 대화는 끊지 않는다.
+        return {"unavailable": exc.message}
+
+    symbols = tuple(
+        {h.symbol for h in before_snapshot.holdings} | {h.symbol for h in after_snapshot.holdings}
+    )
+    value_series, benchmark, ranks = await _risk_inputs(ctx, engine, ledger, symbols)
+    common = {"value_series": value_series, "benchmark": benchmark, "market_cap_ranks": ranks}
+    before = assess(before_snapshot, ledger.prices, **common)
+    after = assess(after_snapshot, {**ledger.prices, **extra_prices}, **common)
+
+    before_measures, after_measures = _measures(before), _measures(after)
+    ctx.portfolio_as_of = _as_datetime(before_snapshot.trade_date)
+    return {
+        "as_of": before_snapshot.trade_date.isoformat(),
+        "orders": order_summary,
+        "before": before_measures,
+        "after": after_measures,
+        "delta": _delta(before_measures, after_measures),
+        # 주문 때문에 새로 걸렸거나 등급이 올라간 항목. 경고할 것이 있으면 이것뿐이다.
+        "raised": _finding_rows(_raised(before, after)),
+        "metrics": _register(
+            ctx, "order", _summary_values(before_measures, after_measures, orders_value)
+        ),
+    }
+
+
+async def _calc_attribution(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    try:
+        period = Period(str(args.get("period") or Period.D1.value))
+    except ValueError:
+        allowed = " · ".join(p.value for p in Period)
+        return {"unavailable": f"지원하지 않는 구간입니다. {allowed} 중에서 고르십시오."}
+
+    ledger = _ledger(ctx.user_id)
+    if ledger is None:
+        return {"unavailable": "이 사용자의 원장을 읽을 수 없습니다."}
+    if ctx.db is None:
+        return {"unavailable": "벤치마크 원천이 연결되지 않아 분해할 수 없습니다."}
+
+    engine = PortfolioEngine(ledger)
+    rows = engine.daily_returns()
+    if not rows:
+        return {"unavailable": "수익률을 낼 수 있는 거래일이 없습니다."}
+    window = [row for row in rows if row.trade_date >= _period_start(period, rows[-1].trade_date)]
+    if not window:
+        return {"unavailable": f"{period.value} 구간에 거래일이 없습니다."}
+
+    days = [row.trade_date for row in window]
+    weights = [{c.symbol: c.weight for c in row.contributions} for row in window]
+    returns = [{c.symbol: c.return_rate for c in row.contributions} for row in window]
+    symbols = sorted({s for w in weights for s in w})
+    sectors = {h.symbol: h.sector or "기타" for h in engine.snapshot(days[-1]).holdings}
+    sectors |= {s: (ledger.instrument(s).sector or "기타") for s in symbols if ledger.instrument(s)}
+    names = {s: (ledger.instrument(s).name if ledger.instrument(s) else s) for s in symbols}
+
+    async with ctx.db_lock:
+        benchmark, universe = await _market_benchmark(ctx.db, days)
+        events = await _events(ctx.db, symbols, days[0], days[-1])
+    if benchmark is None:
+        return {"unavailable": "시가총액·시세가 적재되지 않아 벤치마크를 만들 수 없습니다."}
+
+    result = attribute(
+        trading_days=days,
+        portfolio_weights=weights,
+        portfolio_returns=returns,
+        benchmark=benchmark,
+        sectors=sectors | universe,
+        names=names,
+        events=events,
+    )
+
+    ctx.portfolio_as_of = _as_datetime(days[-1])
+    return {
+        "period": period.value,
+        "start": result.start.isoformat(),
+        "end": result.end.isoformat(),
+        "trading_days": result.trading_days,
+        "contributors": [_contributor_row(row) for row in result.contributors[:_TOP_K]],
+        "metrics": _register(ctx, "attr", _attribution_segments(result)),
+    }
+
+
+def _contributor_row(row: ContributorRow) -> dict[str, Any]:
+    """기여도 한 줄.
+
+    §6 응답의 `_contributor_payload`와 달리 이벤트의 `citation_id`는 떼고 제목만
+    남긴다. 그 id는 분해 응답이 만드는 것이라 대화의 근거 목록(`ctx.hits`)에 없고,
+    그대로 넘기면 모델이 없는 근거를 인용해 어투 검사에서 통째로 막힌다.
+    """
+    return {
+        "ticker": row.ticker,
+        "name": row.name,
+        "sector": row.sector,
+        "weight": row.weight,
+        "return": row.return_rate,
+        "contribution": row.contribution,
+        "held_at_start": row.held_at_start,
+        "events": [event.title for event in row.events],
+    }
+
+
 # ── 디스패치 ─────────────────────────────────────────────────────────────────
 async def dispatch(name: str, args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
     """도구 하나를 실행한다. 실패해도 예외를 던지지 않는다.
@@ -392,6 +675,12 @@ async def dispatch(name: str, args: dict[str, Any], ctx: ToolContext) -> dict[st
             return await _search(ctx, name, args)
         if name == "get_wiki":
             return await _get_wiki(ctx, args)
+        if name == "calc_risk_metrics":
+            return await _calc_risk_metrics(ctx, args)
+        if name == "simulate_order":
+            return await _simulate_order(ctx, args)
+        if name == "calc_attribution":
+            return await _calc_attribution(ctx, args)
     except Exception:  # noqa: BLE001 — 어떤 원천이 터져도 대화는 이어져야 한다
         log.exception("도구 %s 실행 실패", name)
         return {"unavailable": "자료를 가져오지 못했습니다."}
