@@ -671,6 +671,10 @@
       </div>
 
       <h3 id="stream">2.5 SSE 스트리밍</h3>
+      <div class="rule-box">
+        <span class="label">미구현</span>
+        <p><strong>스트리밍은 아직 구현되지 않았다.</strong> 대화와 종목 분석은 <code>Accept</code>와 무관하게 <a href="#envelope">§2.2</a>의 JSON 봉투를 한 번에 돌려준다. 아래는 스트리밍을 붙일 때의 목표 형태이며 <code>docs/openapi.json</code>에는 실려 있지 않다. <strong>프론트는 이 절을 보고 구현하지 않는다</strong> — 계약의 기준은 openapi.json이다.</p>
+      </div>
       <p><code>Accept: text/event-stream</code>을 보내면 스트리밍으로 응답한다. 대화와 종목 분석이 지원한다.</p>
       <pre><code>event: meta
 data: {"request_id":"req_01JQZ8M3T7K2","data_as_of":{...}}
@@ -759,7 +763,7 @@ data: {"finish_reason":"stop","tokens":{"input":8412,"output":623}}</code></pre>
           <span class="tag p1">Phase 1</span>
         </div>
         <div class="ep-body">
-          <p class="ep-note">종목 상세 화면의 AI 분석. 투자 논지 점검을 섹션으로 포함한다. SSE 지원.</p>
+          <p class="ep-note">종목 상세 화면의 AI 분석. 투자 논지 점검을 섹션으로 포함한다. SSE 는 <a href="#stream">§2.5</a> 참조 — 아직 JSON 봉투만 돌려준다.</p>
         </div>
       </div>
 
@@ -844,7 +848,7 @@ data: {"finish_reason":"stop","tokens":{"input":8412,"output":623}}</code></pre>
         <div class="ep-head">
           <span class="verb post">POST</span>
           <span class="path">/api/ai/v1/chat</span>
-          <span class="tag sse">SSE</span>
+          <span class="tag sse">SSE (미구현)</span>
           <span class="tag p1">Phase 1</span>
         </div>
         <div class="ep-body">
@@ -862,9 +866,28 @@ data: {"finish_reason":"stop","tokens":{"input":8412,"output":623}}</code></pre>
   }
 }</code></pre>
       <p>
-        <code>conversation_id</code>를 생략하면 새 대화를 시작하고 응답 <code>meta</code> 이벤트로 발급한다.
+        <code>conversation_id</code>를 생략하면 새 대화를 시작하고 응답 <code>content.conversation_id</code>로 발급한다.
         <code>context</code>는 화면 맥락으로, 사용자가 "이거 어때?"처럼 대명사로 물을 때 지시 대상을 해소한다.
         <code>screen</code>은 <code>home · portfolio · stock_detail · order · chat</code> 중 하나.
+        <code>message</code>는 공백만으로는 안 되고 2,000자를 넘으면 <code>INVALID_REQUEST</code>다 &mdash;
+        그보다 긴 것은 대화가 아니라 문서 붙여넣기다.
+      </p>
+
+      <h4>Response &mdash; content</h4>
+      <pre><code>{
+  "conversation_id": "conv_01JQZ7X4M9",
+  "answer": {
+    "title": "답변",
+    "text": "삼성전자는 포트폴리오의 41.7%를 차지합니다. …",
+    "segments": [ ]
+  },
+  "tools_used": ["get_portfolio", "calc_risk_metrics"]
+}</code></pre>
+      <p>
+        <code>answer</code>는 <a href="#narrative">&sect;2.3</a>의 Section과 같은 모양이라 종목 분석의 섹션과 같은 방식으로 렌더링한다.
+        <code>tools_used</code>는 이번 답변에서 실제로 호출된 Tool 이름이며, 근거를 되짚을 때 쓴다 &mdash; 호출 순서는 보장하지 않는다.
+        투자 용어 질의(featureSpec &sect;10.2 "용어 설명")도 이 엔드포인트가 담당하고, 도구가 필요 없는 질문은 Tool 없이 답하므로
+        <code>tools_used</code>가 빈 배열이 된다.
       </p>
 
       <h4>에이전트 Tool 목록</h4>

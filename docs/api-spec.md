@@ -172,6 +172,9 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 
 ### 2.5 SSE 스트리밍
 
+> **미구현**
+> **스트리밍은 아직 구현되지 않았다.** 대화와 종목 분석은 `Accept`와 무관하게 [§2.2](#envelope)의 JSON 봉투를 한 번에 돌려준다. 아래는 스트리밍을 붙일 때의 목표 형태이며 `docs/openapi.json`에는 실려 있지 않다. **프론트는 이 절을 보고 구현하지 않는다** — 계약의 기준은 openapi.json이다.
+
 `Accept: text/event-stream`을 보내면 스트리밍으로 응답한다. 대화와 종목 분석이 지원한다.
 
 ```
@@ -246,7 +249,7 @@ data: {"finish_reason":"stop","tokens":{"input":8412,"output":623}}
 
 **POST** `/api/ai/v1/stocks/{ticker}/analysis`  —  Phase 1
 
-종목 상세 화면의 AI 분석. 투자 논지 점검을 섹션으로 포함한다. SSE 지원.
+종목 상세 화면의 AI 분석. 투자 논지 점검을 섹션으로 포함한다. SSE 는 [§2.5](#stream) 참조 — 아직 JSON 봉투만 돌려준다.
 
 #### Request
 
@@ -325,7 +328,7 @@ data: {"finish_reason":"stop","tokens":{"input":8412,"output":623}}
 
 ## §4 AI 대화
 
-**POST** `/api/ai/v1/chat`  —  SSE · Phase 1
+**POST** `/api/ai/v1/chat`  —  SSE (미구현) · Phase 1
 
 유일한 도구 호출 에이전트. 나머지 기능의 파이프라인을 Tool로 노출해 재사용한다.
 
@@ -342,7 +345,23 @@ data: {"finish_reason":"stop","tokens":{"input":8412,"output":623}}
 }
 ```
 
-`conversation_id`를 생략하면 새 대화를 시작하고 응답 `meta` 이벤트로 발급한다. `context`는 화면 맥락으로, 사용자가 "이거 어때?"처럼 대명사로 물을 때 지시 대상을 해소한다. `screen`은 `home · portfolio · stock_detail · order · chat` 중 하나.
+`conversation_id`를 생략하면 새 대화를 시작하고 응답 `content.conversation_id`로 발급한다. `context`는 화면 맥락으로, 사용자가 "이거 어때?"처럼 대명사로 물을 때 지시 대상을 해소한다. `screen`은 `home · portfolio · stock_detail · order · chat` 중 하나. `message`는 공백만으로는 안 되고 2,000자를 넘으면 `INVALID_REQUEST`다 — 그보다 긴 것은 대화가 아니라 문서 붙여넣기다.
+
+#### Response — content
+
+```
+{
+  "conversation_id": "conv_01JQZ7X4M9",
+  "answer": {
+    "title": "답변",
+    "text": "삼성전자는 포트폴리오의 41.7%를 차지합니다. …",
+    "segments": [ ]
+  },
+  "tools_used": ["get_portfolio", "calc_risk_metrics"]
+}
+```
+
+`answer`는 [§2.3](#narrative)의 Section과 같은 모양이라 종목 분석의 섹션과 같은 방식으로 렌더링한다. `tools_used`는 이번 답변에서 실제로 호출된 Tool 이름이며, 근거를 되짚을 때 쓴다 — 호출 순서는 보장하지 않는다. 투자 용어 질의(featureSpec §10.2 "용어 설명")도 이 엔드포인트가 담당하고, 도구가 필요 없는 질문은 Tool 없이 답하므로 `tools_used`가 빈 배열이 된다.
 
 #### 에이전트 Tool 목록
 
