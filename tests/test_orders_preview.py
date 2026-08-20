@@ -345,7 +345,10 @@ def test_첫_종목을_담는_경우도_터지지_않는다(monkeypatch: pytest.
         instruments={"005930": Instrument("005930", "삼성전자", "반도체")},
         prices={"005930": dict.fromkeys(days, 70000.0)},
     )
-    monkeypatch.setattr("app.api.routes.orders._ledger", lambda _user: empty)
+    async def _empty(_user):  # _ledger 는 async 다
+        return empty
+
+    monkeypatch.setattr("app.api.routes.orders._ledger", _empty)
     with _make_client(monkeypatch, StubSession()) as client:
         content = _post(client, "fresh", [_buy("005930", 10, price=70000)]).json()["content"]
 

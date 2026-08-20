@@ -76,7 +76,7 @@ def _ledger_source() -> SeedLedgerSource:
     return SeedLedgerSource(settings.seed_fixture_path)
 
 
-def _ledger(user_id: str) -> Ledger | None:
+async def _ledger(user_id: str) -> Ledger | None:
     """원장 스냅샷. 못 읽으면 None이다.
 
     백엔드 원장 읽기가 열리기 전까지는 시드 어댑터만 있다(§11). `stocks.py`는 스냅샷
@@ -86,7 +86,7 @@ def _ledger(user_id: str) -> Ledger | None:
     if not settings.use_seed_adapter:
         return None
     try:
-        ledger = _ledger_source().load(user_id)
+        ledger = await _ledger_source().load(user_id)
     except (KeyError, FileNotFoundError, OSError):
         return None
     return ledger if ledger.trading_days else None
@@ -231,7 +231,7 @@ async def diagnosis(user_id: CurrentUser, db: DbSession) -> Envelope[dict]:
 
     보유 0종목이거나 원장을 못 읽을 때만 409다 — 진단할 대상 자체가 없는 경우다.
     """
-    ledger = _ledger(user_id)
+    ledger = await _ledger(user_id)
     if ledger is None:
         raise InsufficientData(
             "보유 내역을 불러오지 못해 진단할 수 없습니다.",
@@ -333,7 +333,7 @@ async def attribution(
     `app.engines.attribution` 모듈 설명에 적혀 있다. 원장을 못 읽거나 구간에 거래일이
     없으면 409, 지원하지 않는 기간이면 400이다.
     """
-    ledger = _ledger(user_id)
+    ledger = await _ledger(user_id)
     if ledger is None:
         raise InsufficientData(
             "보유 내역을 불러오지 못해 분해할 수 없습니다.",

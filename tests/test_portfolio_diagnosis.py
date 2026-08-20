@@ -242,7 +242,10 @@ def test_보유_0종목이면_409(monkeypatch: pytest.MonkeyPatch) -> None:
         instruments={"005930": Instrument("005930", "삼성전자", "반도체")},
         prices={"005930": dict.fromkeys(days, 70000.0)},
     )
-    monkeypatch.setattr("app.api.routes.portfolio._ledger", lambda _user: empty)
+    async def _empty(_user):  # _ledger 는 async 다
+        return empty
+
+    monkeypatch.setattr("app.api.routes.portfolio._ledger", _empty)
     with _make_client(monkeypatch, StubSession()) as client:
         response = _get(client, "drained")
     assert response.status_code == 409

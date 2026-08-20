@@ -265,12 +265,12 @@ def _ledger_source() -> SeedLedgerSource:
     return SeedLedgerSource(settings.seed_fixture_path)
 
 
-def _snapshot(user_id: str) -> PortfolioSnapshot | None:
+async def _snapshot(user_id: str) -> PortfolioSnapshot | None:
     """마지막 거래일 기준 스냅샷. 원장을 못 읽으면 None이다."""
     if not settings.use_seed_adapter:
         return None
     try:
-        ledger = _ledger_source().load(user_id)
+        ledger = await _ledger_source().load(user_id)
     except (KeyError, FileNotFoundError, OSError):
         return None
     if not ledger.trading_days:
@@ -291,7 +291,7 @@ def _put(ctx: ToolContext, key: str, segment: Segment) -> tuple[str, str]:
 
 # ── 도구 본체 ────────────────────────────────────────────────────────────────
 async def _get_portfolio(ctx: ToolContext, _: dict[str, Any]) -> dict[str, Any]:
-    snapshot = _snapshot(ctx.user_id)
+    snapshot = await _snapshot(ctx.user_id)
     if snapshot is None:
         return {"unavailable": "이 사용자의 원장을 읽을 수 없습니다."}
     if not snapshot.holdings:
@@ -355,7 +355,7 @@ async def _get_price_history(ctx: ToolContext, args: dict[str, Any]) -> dict[str
         return {"unavailable": "시세 원천이 연결되지 않았습니다."}
 
     try:
-        ledger = _ledger_source().load(ctx.user_id)
+        ledger = await _ledger_source().load(ctx.user_id)
     except (KeyError, FileNotFoundError, OSError):
         return {"unavailable": "이 사용자의 원장을 읽을 수 없습니다."}
 
@@ -493,7 +493,7 @@ async def _risk_inputs(
 
 
 async def _calc_risk_metrics(ctx: ToolContext, _: dict[str, Any]) -> dict[str, Any]:
-    ledger = _ledger(ctx.user_id)
+    ledger = await _ledger(ctx.user_id)
     if ledger is None:
         return {"unavailable": "이 사용자의 원장을 읽을 수 없습니다."}
 
@@ -541,7 +541,7 @@ async def _simulate_order(ctx: ToolContext, args: dict[str, Any]) -> dict[str, A
     except ValidationError:
         return {"unavailable": "주문 형식이 올바르지 않습니다. 종목코드·매매구분·수량을 확인하십시오."}
 
-    ledger = _ledger(ctx.user_id)
+    ledger = await _ledger(ctx.user_id)
     if ledger is None:
         return {"unavailable": "이 사용자의 원장을 읽을 수 없습니다."}
     if ctx.db is None:
@@ -590,7 +590,7 @@ async def _calc_attribution(ctx: ToolContext, args: dict[str, Any]) -> dict[str,
         allowed = " · ".join(p.value for p in Period)
         return {"unavailable": f"지원하지 않는 구간입니다. {allowed} 중에서 고르십시오."}
 
-    ledger = _ledger(ctx.user_id)
+    ledger = await _ledger(ctx.user_id)
     if ledger is None:
         return {"unavailable": "이 사용자의 원장을 읽을 수 없습니다."}
     if ctx.db is None:

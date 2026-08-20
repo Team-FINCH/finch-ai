@@ -91,9 +91,13 @@ class Ledger:
 
 
 class LedgerSource(Protocol):
-    """원장 읽기 인터페이스. 엔진은 이것만 안다."""
+    """원장 읽기 인터페이스. 엔진은 이것만 안다.
 
-    def load(self, user_id: str) -> Ledger: ...
+    실제 원장은 백엔드 HTTP + 우리 DB 라 async 다. 시드가 파일이라 동기였을 뿐이라
+    프로토콜을 async 로 둔다 — 구현마다 갈리면 호출부가 어느 쪽인지 알아야 한다.
+    """
+
+    async def load(self, user_id: str) -> Ledger: ...
 
 
 class SeedLedgerSource:
@@ -115,7 +119,8 @@ class SeedLedgerSource:
     def user_ids(self) -> Iterable[str]:
         return self._data()["portfolios"].keys()
 
-    def load(self, user_id: str) -> Ledger:
+    async def load(self, user_id: str) -> Ledger:
+        # 파일 읽기라 await 할 것이 없다. 프로토콜을 하나로 유지하려고 async 다.
         data = self._data()
         try:
             portfolio = data["portfolios"][user_id]

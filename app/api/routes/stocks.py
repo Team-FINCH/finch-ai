@@ -78,7 +78,7 @@ def _ledger_source() -> SeedLedgerSource:
     return SeedLedgerSource(settings.seed_fixture_path)
 
 
-def _snapshot(user_id: str) -> PortfolioSnapshot | None:
+async def _snapshot(user_id: str) -> PortfolioSnapshot | None:
     """마지막 거래일 기준 스냅샷. 원장을 못 읽으면 None이다.
 
     백엔드 원장 읽기가 열리기 전까지는 시드 어댑터만 있다(§11). 없는 것을
@@ -87,7 +87,7 @@ def _snapshot(user_id: str) -> PortfolioSnapshot | None:
     if not settings.use_seed_adapter:
         return None
     try:
-        ledger = _ledger_source().load(user_id)
+        ledger = await _ledger_source().load(user_id)
     except (KeyError, FileNotFoundError, OSError):
         return None
     if not ledger.trading_days:
@@ -141,7 +141,7 @@ async def create_analysis(
     if not hits:
         log.warning("종목 %s 검색 결과 0건 — 근거 없이 생성한다", ticker)
 
-    snapshot = _snapshot(user_id) if body.personalize else None
+    snapshot = await _snapshot(user_id) if body.personalize else None
     holding = _find(snapshot, ticker)
     thesis = (
         await get_active_thesis(db, user_id, ticker)

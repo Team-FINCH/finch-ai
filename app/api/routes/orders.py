@@ -350,7 +350,7 @@ async def preview(body: PreviewRequest, user_id: CurrentUser, db: DbSession) -> 
     히스토리가 짧으면 진단과 마찬가지로 409로 끊지 않는다. 변동성·상관만 전·후 모두
     null이 되고 집중도·현금 차분은 그대로 유효하다.
     """
-    ledger = _ledger(user_id)
+    ledger = await _ledger(user_id)
     if ledger is None:
         raise InsufficientData(
             "보유 내역을 불러오지 못해 점검할 수 없습니다.",

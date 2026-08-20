@@ -61,7 +61,7 @@ def _ledger_source() -> SeedLedgerSource:
     return SeedLedgerSource(settings.seed_fixture_path)
 
 
-def _ledger(user_id: str) -> Ledger | None:
+async def _ledger(user_id: str) -> Ledger | None:
     """원장 스냅샷. 못 읽으면 None이다(§11).
 
     브리핑에서 None은 오류가 아니다 — 진단과 달리 status "empty"로 나간다.
@@ -69,7 +69,7 @@ def _ledger(user_id: str) -> Ledger | None:
     if not settings.use_seed_adapter:
         return None
     try:
-        ledger = _ledger_source().load(user_id)
+        ledger = await _ledger_source().load(user_id)
     except (KeyError, FileNotFoundError, OSError):
         return None
     return ledger if ledger.trading_days else None
@@ -89,7 +89,7 @@ async def get_briefing(
     그래서 status는 ready 아니면 empty다 — generating을 돌려줄 주체가 없다.
     """
     now = now_kst()
-    ledger = _ledger(user_id)
+    ledger = await _ledger(user_id)
     if ledger is None:
         return await _empty(db, user_id, date, now)
 
