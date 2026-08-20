@@ -1,64 +1,45 @@
 # 작업 규칙
 
-AI 파트 저장소의 브랜치 · 커밋 · 이관 규칙입니다.
+팀 저장소 `ai/` 의 브랜치 · 커밋 규칙입니다.
 
 ---
 
 ## 1. 브랜치 전략
 
-이 저장소는 **팀 서비스 저장소가 만들어지기 전의 임시 개인 저장소**입니다.
-따라서 지금은 가볍게 가되, **이관 시점에 마찰이 없도록** 커밋 이력과 규칙을 미리 지켜둡니다.
-
-### 현재 — 단독 작업 단계
+AI 파트는 **에픽 단위**로 브랜치를 하나 열고, 그 아래 스토리들을 커밋으로 누적합니다.
+에픽 범위의 작업이 끝났을 때 MR 을 한 번 엽니다.
 
 ```
-main                    항상 동작하는 상태 유지
- ├── feat/engine-portfolio
- ├── feat/rag-dart-ingest
- └── fix/hhi-cash-normalize
+master                              팀 기본 브랜치
+ └── FINCH-4-ai-service        에픽 FINCH-4 "AI 서비스"
+      ├── ✨feat: ...                (스토리 FINCH-67)
+      └── 📝docs: ...                (스토리 FINCH-68)
 ```
-
-혼자 작업하므로 `develop`을 두지 않습니다. 통합 지점이 없는 상태에서 중간 브랜치를 만들면
-머지 단계만 하나 늘어날 뿐입니다.
-
-### 팀 저장소 이관 후
-
-```
-main                    배포 가능 상태. 태그로 마일스톤 표시
- └── develop            통합 브랜치. 기본 브랜치로 설정
-      ├── feat/ai-engine-portfolio
-      ├── feat/be-order-api
-      └── feat/fe-portfolio-screen
-```
-
-모노레포가 되면 브랜치명에 파트 구분자(`ai-` / `be-` / `fe-`)를 붙입니다.
-지금은 AI 전용이므로 붙이지 않습니다.
 
 ### 브랜치 이름
 
 ```
-<type>/<대상>-<내용>
+FINCH-<에픽번호>-<에픽명>
 ```
 
-| type | 용도 |
-|---|---|
-| `feat` | 기능 추가 |
-| `fix` | 버그 수정 |
-| `docs` | 문서만 변경 |
-| `refactor` | 동작 변경 없는 구조 개선 |
-| `test` | 테스트 추가 · 수정 |
-| `chore` | 빌드 · 설정 · 의존성 |
+에픽 번호는 Jira 에서 확인합니다. **브랜치를 만들기 전에 티켓을 먼저 확정합니다** —
+번호를 추측하면 다른 티켓과 충돌합니다.
 
-예시
+### 스토리는 티켓만, MR 은 안 엶
 
-```
-feat/engine-risk-score
-feat/rag-dart-ingest
-feat/wiki-thesis-collect
-fix/attribution-carino-linking
-docs/prompt-policy
-chore/ci-pytest
-```
+스토리마다 Jira 티켓은 만들어 작업 단위를 기록하되 MR 은 열지 않습니다.
+스토리 단위로 MR 을 열면 팀 리뷰 부담이 커지고, AI 파트는 담당자가 한 명이며
+소유 경로가 `ai/` 로 격리되어 있어 그 단위 리뷰의 실익이 크지 않습니다.
+
+대신 브랜치가 오래 사는 부담을 다음으로 줄입니다.
+
+- 작업 중 주기적으로 `origin/master` 를 브랜치에 반영합니다
+- 스토리별로 커밋을 분리해 리뷰어가 단위로 읽을 수 있게 합니다
+
+### 쓰기 범위
+
+`ai/` 안에서만 수정합니다. `backend/`, `frontend/`, `infra/`, `docs/` 와
+저장소 루트는 읽기 전용입니다. 루트 설정이 필요하면 팀에 요청합니다.
 
 ---
 
@@ -118,27 +99,29 @@ docs(api): 응답 구조를 narrative/metrics에서 text/segments로 변경
 
 ---
 
-## 3. PR 규칙
+## 3. MR 규칙
 
-혼자 작업하더라도 **작업 단위는 PR로 남깁니다.** 이력이 읽히고, 팀 저장소로 옮긴 뒤에도
-어떤 판단으로 무엇을 만들었는지 추적됩니다.
+MR 은 에픽 단위로 한 번 엽니다 (§1 참고). 대상 브랜치는 `master` 입니다.
 
-- 대상 브랜치는 `main` (이관 후에는 `develop`)
-- **Squash merge** — 작업 브랜치의 중간 커밋은 이력에 남기지 않는다
+- **Squash 하지 않는다** — 스토리별 커밋이 리뷰 단위이므로 뭉개면 읽을 수 없다
 - 머지 후 원격 브랜치 삭제
-- PR 본문에 관련 설계 문서 절 번호를 적는다 (예: `엔진 산식 §3.6`)
+- MR 본문에 포함된 스토리 티켓과 관련 설계 문서 절 번호를 적는다 (예: `엔진 산식 §3.6`)
+- 리뷰어가 봐야 할 지점을 따로 뽑아 적는다 — 특히 팀 조치가 필요한 항목
 
-### PR 템플릿
+### MR 템플릿
 
 ```markdown
-## 무엇을
-## 왜
-## 설계 문서
-- 엔진 산식 §
-## 확인
+## 개요
+- Jira: FINCH-<에픽번호>
+## 변경 사항
+## 검증
+- [ ] `./scripts/check.sh` 통과
 - [ ] 검증 항등식 통과
 - [ ] 골든 케이스 통과
 - [ ] 키·자격증명 미포함
+## 리뷰어가 봐줬으면 하는 곳
+## 설계 문서
+- 엔진 산식 §
 ```
 
 ---
@@ -164,8 +147,8 @@ v0.3.0    Phase 3 — Attribution Engine
 | `main` force push | 이관 시 히스토리가 깨진다 |
 | 파생 지표를 백엔드에서 받아 쓰기 | 화면마다 값이 어긋난다. 원장만 읽고 직접 계산한다 |
 
-> 이 저장소는 현재 **public**입니다. 금융 API 키를 다루는 동안에는 private 전환을 권합니다.
-> `gh repo edit --visibility private`
+> 키·자격증명은 `.env` 에만 두고 커밋하지 않습니다. `.env.example` 에는 값이 아닌
+> 키 이름과 형식만 적습니다. 웹훅 URL 처럼 그 자체가 권한인 값도 저장소에 넣지 않습니다.
 
 ---
 
@@ -224,8 +207,8 @@ python -m ingest.prices --days 120 --limit 300 &
 트랙마다 자기 디렉토리에서 자기 브랜치를 체크아웃하므로 파일이 충돌하지 않는다.
 
 ```bash
-git worktree add ../wt-ingest -b feat/ingest-instruments main
-cd ../wt-ingest && ./scripts/bootstrap.sh
+git worktree add ../wt-ingest -b FINCH-4-ai-service-wt origin/master
+cd ../wt-ingest/ai && ./scripts/bootstrap.sh
 ```
 
 ### 부트스트랩이 필요한 이유
@@ -263,29 +246,14 @@ git worktree prune
 
 ---
 
-## 9. 팀 저장소 이관 절차
+## 9. 이관 기록
 
-서비스 저장소가 만들어지면 아래 중 하나를 선택합니다.
+AI 서비스는 개인 GitHub 저장소(`tpals0409/ai-invest-service`)에서
+팀 저장소의 `ai/` 하위로 이관을 마쳤습니다. 개발 이력 40커밋을 보존했고,
+개인 에이전트 설정 문서는 이력을 포함해 제외했습니다.
 
-### A. AI 서비스를 별도 저장소로 유지 (권장)
-
-분리 원칙과 가장 잘 맞습니다. 리모트만 교체하면 히스토리가 그대로 따라갑니다.
-
-```bash
-git remote set-url origin https://github.com/<org>/<ai-repo>.git
-git push -u origin main
-```
-
-### B. 모노레포에 서브디렉토리로 병합
-
-히스토리를 보존하며 하위 경로로 들어갑니다.
-
-```bash
-# 모노레포에서 실행
-git subtree add --prefix=ai-service https://github.com/tpals0409/ai-invest-service.git main
-```
-
-### 이관 전 반드시 확인
+이관 전 아래 검사로 자격증명 노출이 없음을 확인했습니다.
+새 자격증명을 다룰 때도 같은 검사를 씁니다.
 
 ```bash
 # 히스토리 전체에 자격증명이 없는지 검사
@@ -295,5 +263,5 @@ git log -p --all | grep -iE '(api[_-]?key|secret|password|token)\s*=\s*[A-Za-z0-
 git ls-files | grep -E '\.env'
 ```
 
-둘 다 결과가 비어 있어야 합니다. 걸리는 것이 있으면 이관 전에 히스토리를 정리하고,
+둘 다 결과가 비어 있어야 합니다. 걸리는 것이 있으면 히스토리를 정리하고,
 노출된 키는 **전부 재발급**합니다.

@@ -1,6 +1,7 @@
 # AI 투자 비서 — AI 파트
 
-국내 주식 투자 앱에 얹는 Personal Investment Copilot의 **AI 파트 저장소**입니다.
+국내 주식 투자 앱에 얹는 Personal Investment Copilot의 **AI 파트**입니다.
+팀 저장소의 `ai/` 디렉터리이며, 아래 명령은 모두 `ai/` 안에서 실행합니다.
 사용자의 포트폴리오와 신뢰할 수 있는 금융 데이터를 연결해, 투자 상황을 이해하고 설명합니다.
 
 > **Calculation은 Engine이 하고, Explanation은 AI가 한다.**
@@ -97,9 +98,16 @@ alembic upgrade head
 
 # 4. 실행
 uvicorn app.api.main:app --reload
+
+# 5. 검사 — 푸시 전에 돌립니다
+./scripts/check.sh
 ```
 
 `http://localhost:8000/docs`에서 OpenAPI 문서를 확인할 수 있습니다.
+
+`scripts/check.sh`는 린트·마이그레이션 드리프트·테스트·평가 지표·OpenAPI 스키마
+최신 여부 등 7종을 순서대로 돌리고, 실패한 항목을 한 번에 모아 보고합니다.
+DB 나 의존성이 준비되지 않았으면 무엇을 실행해야 하는지 알려주고 멈춥니다.
 
 필요한 외부 키는 `.env.example`를 참고하세요. **키는 절대 커밋하지 않습니다.**
 
@@ -110,9 +118,12 @@ uvicorn app.api.main:app --reload
 
 ## 에이전트로 작업할 때
 
-`CLAUDE.md`가 모든 세션에 자동 로드되어 작업 규율(커밋 단위, 탐침 우선, 읽기 범위,
-완료 정의)을 담당한다. 태스크 지시문에 규율을 다시 적지 않는다 —
-형식은 [docs/worker-task-template.md](docs/worker-task-template.md) 참고.
+작업 규율(커밋 단위, 탐침 우선, 읽기 범위, 완료 정의)은 개인 에이전트 설정에 두고
+저장소에는 두지 않는다. 팀 저장소로 이관하면서 개인 설정 문서는 제외했다.
+태스크 지시문 형식은 [docs/worker-task-template.md](docs/worker-task-template.md) 참고.
+
+AI 파트는 `ai/` 안에서만 작업한다. `backend/`, `frontend/`, `infra/`, `docs/` 와
+저장소 루트는 읽기 전용이다.
 
 ## 평가
 
@@ -131,12 +142,22 @@ python -m eval.run --retrieval  # 검색 정확도 (임베딩 키 필요)
 
 ## 브랜치 전략
 
-현재는 AI 파트 전용 임시 저장소이므로 `main` + 작업 브랜치로 운영합니다.
-팀 저장소로 이관하면 `develop`을 추가합니다. 자세한 규칙은 [CONTRIBUTING.md](CONTRIBUTING.md)를 참고하세요.
+팀 저장소 기본 브랜치는 `master` 입니다. AI 파트는 **에픽 단위**로 브랜치를 하나 열고,
+그 아래 스토리들을 커밋으로 누적한 뒤 에픽 작업이 끝나면 MR 을 한 번 엽니다.
 
 ```
-main
- ├── feat/engine-portfolio
- ├── feat/rag-dart-ingest
- └── fix/hhi-cash-normalize
+master
+ └── FINCH-4-ai-service      ← 에픽 FINCH-4 "AI 서비스"
+      ├── ✨feat: AI 파트 로컬 검사 스크립트 추가        (FINCH-67)
+      └── 📝docs: 이관 이후 낡은 AI 파트 문서 정정        (FINCH-68)
 ```
+
+스토리마다 Jira 티켓은 만들되 MR 은 열지 않습니다. 브랜치가 오래 사는 만큼
+작업 중 주기적으로 `origin/master` 를 반영하고, 스토리별로 커밋을 분리해
+리뷰어가 단위로 읽을 수 있게 합니다.
+
+커밋 메시지는 팀 컨벤션(`✨feat:`, `📝docs:` 등)을 따릅니다 —
+저장소 루트의 `docs/convention/gitConvention.md` 를 참고하세요.
+이관 전 커밋들이 쓰던 `feat(scope):` 형식은 그때의 기록이므로 그대로 둡니다.
+
+자세한 규칙은 [CONTRIBUTING.md](CONTRIBUTING.md) 를 참고하세요.
