@@ -10,10 +10,11 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Protocol
 
+from app.core.config import settings
 from app.core.enums import OrderSide
 
 
@@ -149,3 +150,124 @@ class SeedLedgerSource:
             trades=trades,
             flows=flows,
         )
+
+
+class BackendLedgerSource:
+    """백엔드 `/internal/v1` 을 읽는 어댑터. 백엔드 API 명세 §9.
+
+    읽기 전용이다. 백엔드는 원본 값만 내려주고 파생 지표는 우리가 계산한다.
+
+    **백엔드가 아직 못 주는 것이 있다.** §9 는 보유·거래만 준다.
+
+    | 필요한 것 | §9 제공 | 여기서 하는 일 |
+    | --- | --- | --- |
+    | 일별 종가 시계열 | `currentPrice` 한 점뿐 | `asOf` 하루치만 채운다 |
+    | 섹터 | 없음 | `Ledger.instrument()` 의 "미분류" 로 떨어진다 |
+    | 입출금 | 없음 (`/api/v1/deposits` 는 사용자 API) | 빈 튜플 |
+
+    그래서 이 어댑터만으로는 60거래일이 필요한 위험 지표가 `INSUFFICIENT_DATA`
+    로 떨어진다. 명세대로의 정상 동작이지 버그가 아니다. 시계열 원천이 붙어야
+    풀리며, 없는 값을 지어내지 않는 편이 조용히 틀린 숫자보다 낫다.
+    """
+
+    # ponytail: 동기 클라이언트다. LedgerSource.load 가 동기라 async 로 만들면
+    # 엔진·라우터까지 번지는데, 프로토콜 뒤에 숨기는 게 이 설계의 요점이다.
+    # 라우터에 물릴 때 asyncio.to_thread 로 감싸면 이벤트 루프를 막지 않는다.
+    _TRADE_PAGE = 100
+
+    def __init__(
+        self,
+        base_url: str,
+        token: str,
+        *,
+        client: object | None = None,
+        timeout: float = 5.0,
+    ) -> None:
+        self._base = base_url.rstrip("/")
+        self._token = token
+        self._client = client
+        self._timeout = timeout
+        #: load() 가 채운다. 사용자별 데이터라 모든 요청에 사용자 헤더가 실려야 한다.
+        self._user_id = ""
+
+    def _get(self, path: str, params: Mapping[str, object] | None = None) -> dict:
+        import httpx
+
+        # 사용자별 데이터라 사용자 헤더가 함께 가야 한다. 백엔드 명세 §9.
+        headers = {
+            settings.internal_token_header: self._token,
+            settings.trusted_user_header: self._user_id,
+        }
+        client = self._client or httpx.Client(timeout=self._timeout)
+        try:
+            res = client.get(f"{self._base}{path}", params=params, headers=headers)
+            res.raise_for_status()
+            return res.json()
+        finally:
+            if self._client is None:
+                client.close()
+
+    def load(self, user_id: str) -> Ledger:
+        self._user_id = user_id
+        portfolio = self._get("/internal/v1/portfolio")
+        as_of = _to_date(portfolio["asOf"])
+        round_id = portfolio.get("roundId")
+
+        instruments = {
+            h["stockCode"]: Instrument(h["stockCode"], h["stockName"], "미분류")
+            for h in portfolio.get("holdings", ())
+        }
+        # 시세 시계열이 없다. 스냅샷 하루치만 넣는다 — 위 표 참조.
+        prices = {
+            h["stockCode"]: {as_of: float(h["currentPrice"])}
+            for h in portfolio.get("holdings", ())
+        }
+
+        trades = tuple(self._trades(round_id))
+        # 거래일은 체결일 + 스냅샷 기준일에서 뽑는다. 개장일 달력이 따로 없다.
+        trading_days = tuple(sorted({t.trade_date for t in trades} | {as_of}))
+
+        return Ledger(
+            user_id=user_id,
+            trading_days=trading_days,
+            instruments=instruments,
+            prices=prices,
+            trades=trades,
+            flows=(),  # §9 에 입출금이 없다
+        )
+
+    def _trades(self, round_id: object) -> Iterable[Trade]:
+        """커서 페이징을 끝까지 따라간다. 기본 100건. 백엔드 명세 §9.2."""
+        cursor: str | None = None
+        seen = 0
+        while True:
+            params: dict[str, object] = {"size": self._TRADE_PAGE}
+            if round_id is not None:
+                params["roundId"] = round_id
+            if cursor:
+                params["cursor"] = cursor
+            page = self._get("/internal/v1/trades", params)
+
+            for row in page.get("trades", ()):
+                yield Trade(
+                    trade_date=_to_date(row["executedAt"]),
+                    symbol=row["stockCode"],
+                    side=OrderSide(row["side"].lower()),
+                    quantity=float(row["quantity"]),
+                    price=float(row["price"]),
+                    # §9 에 수수료가 없다. 0 이면 수익률이 실제보다 좋게 나온다.
+                    fee=float(row.get("fee", 0.0)),
+                )
+                seen += 1
+
+            cursor = page.get("nextCursor")
+            # hasNext 가 참인데 커서가 없으면 같은 쪽을 영원히 다시 받는다.
+            if not page.get("hasNext") or not cursor:
+                return
+            if seen > 100_000:
+                raise RuntimeError("거래 페이징이 끝나지 않는다. 백엔드 커서를 확인하라")
+
+
+def _to_date(value: str) -> date:
+    """ISO 8601 날짜/일시에서 날짜만 꺼낸다. 백엔드는 오프셋을 붙여 보낸다."""
+    return datetime.fromisoformat(value).date()
