@@ -7,12 +7,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 from typing import Protocol
+
+from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.enums import OrderSide
@@ -153,26 +156,30 @@ class SeedLedgerSource:
 
 
 class BackendLedgerSource:
-    """백엔드 `/internal/v1` 을 읽는 어댑터. 백엔드 API 명세 §9.
+    """원장은 백엔드에서, 시장 데이터는 우리 DB 에서 읽는 어댑터.
 
-    읽기 전용이다. 백엔드는 원본 값만 내려주고 파생 지표는 우리가 계산한다.
+    역할 분담이 있다. 백엔드는 원장(누가 무엇을 얼마나 들고 있나)을 갖고,
+    우리는 시장 데이터(과거 종가·섹터)를 갖는다. 백엔드 명세 §9 가
+    `currentPrice` 한 점만 주는 것은 설계 누락이 아니라 이 분담 때문이다.
 
-    **백엔드가 아직 못 주는 것이 있다.** §9 는 보유·거래만 준다.
+    | 데이터 | 출처 |
+    | --- | --- |
+    | 보유·현금·회차 | 백엔드 `GET /internal/v1/portfolio` |
+    | 거래 이력 | 백엔드 `GET /internal/v1/trades` (커서 페이징) |
+    | 과거 일별 종가 | 우리 `price_daily` (ingest/prices.py 가 채운다) |
+    | 섹터 | 우리 `instruments.sector` |
 
-    | 필요한 것 | §9 제공 | 여기서 하는 일 |
-    | --- | --- | --- |
-    | 일별 종가 시계열 | `currentPrice` 한 점뿐 | `asOf` 하루치만 채운다 |
-    | 섹터 | 없음 | `Ledger.instrument()` 의 "미분류" 로 떨어진다 |
-    | 입출금 | 없음 (`/api/v1/deposits` 는 사용자 API) | 빈 튜플 |
+    백엔드 원장은 읽기만 한다. 파생 지표는 전부 우리가 계산한다(명세 10.1).
 
-    그래서 이 어댑터만으로는 60거래일이 필요한 위험 지표가 `INSUFFICIENT_DATA`
-    로 떨어진다. 명세대로의 정상 동작이지 버그가 아니다. 시계열 원천이 붙어야
-    풀리며, 없는 값을 지어내지 않는 편이 조용히 틀린 숫자보다 낫다.
+    **아직 §9 에 없는 것**: 입출금 이력과 수수료. 둘 다 백엔드만 아는 값이라
+    지어내지 않고 비운다. 수수료가 0 이면 수익률이 실제보다 좋게 나온다.
+
+    `load` 가 async 인 점에 주의. `LedgerSource` 프로토콜은 동기지만 우리
+    드라이버가 asyncpg 뿐이라(동기 드라이버는 새 의존성이다) DB 를 동기로
+    읽을 방법이 없다. 이 클래스는 프로토콜을 만족하지 않으며, 라우터에 물릴
+    때 호출부를 async 로 바꿔야 한다 — 엔진은 `Ledger` 만 받으므로 그대로다.
     """
 
-    # ponytail: 동기 클라이언트다. LedgerSource.load 가 동기라 async 로 만들면
-    # 엔진·라우터까지 번지는데, 프로토콜 뒤에 숨기는 게 이 설계의 요점이다.
-    # 라우터에 물릴 때 asyncio.to_thread 로 감싸면 이벤트 루프를 막지 않는다.
     _TRADE_PAGE = 100
 
     def __init__(
@@ -181,19 +188,23 @@ class BackendLedgerSource:
         token: str,
         *,
         client: object | None = None,
+        sessions: object | None = None,
         timeout: float = 5.0,
     ) -> None:
         self._base = base_url.rstrip("/")
         self._token = token
         self._client = client
+        # app.core.db 의 엔진은 모듈 전역이라 커넥션 풀이 처음 열린 이벤트 루프에
+        # 묶인다. 테스트가 루프를 갈아 끼우므로 세션 팩토리를 갈아 끼울 수 있게 둔다.
+        self._sessions = sessions
         self._timeout = timeout
         #: load() 가 채운다. 사용자별 데이터라 모든 요청에 사용자 헤더가 실려야 한다.
         self._user_id = ""
 
+    # ── 백엔드 ───────────────────────────────────────────────────────
     def _get(self, path: str, params: Mapping[str, object] | None = None) -> dict:
         import httpx
 
-        # 사용자별 데이터라 사용자 헤더가 함께 가야 한다. 백엔드 명세 §9.
         headers = {
             settings.internal_token_header: self._token,
             settings.trusted_user_header: self._user_id,
@@ -206,35 +217,6 @@ class BackendLedgerSource:
         finally:
             if self._client is None:
                 client.close()
-
-    def load(self, user_id: str) -> Ledger:
-        self._user_id = user_id
-        portfolio = self._get("/internal/v1/portfolio")
-        as_of = _to_date(portfolio["asOf"])
-        round_id = portfolio.get("roundId")
-
-        instruments = {
-            h["stockCode"]: Instrument(h["stockCode"], h["stockName"], "미분류")
-            for h in portfolio.get("holdings", ())
-        }
-        # 시세 시계열이 없다. 스냅샷 하루치만 넣는다 — 위 표 참조.
-        prices = {
-            h["stockCode"]: {as_of: float(h["currentPrice"])}
-            for h in portfolio.get("holdings", ())
-        }
-
-        trades = tuple(self._trades(round_id))
-        # 거래일은 체결일 + 스냅샷 기준일에서 뽑는다. 개장일 달력이 따로 없다.
-        trading_days = tuple(sorted({t.trade_date for t in trades} | {as_of}))
-
-        return Ledger(
-            user_id=user_id,
-            trading_days=trading_days,
-            instruments=instruments,
-            prices=prices,
-            trades=trades,
-            flows=(),  # §9 에 입출금이 없다
-        )
 
     def _trades(self, round_id: object) -> Iterable[Trade]:
         """커서 페이징을 끝까지 따라간다. 기본 100건. 백엔드 명세 §9.2."""
@@ -266,6 +248,90 @@ class BackendLedgerSource:
                 return
             if seen > 100_000:
                 raise RuntimeError("거래 페이징이 끝나지 않는다. 백엔드 커서를 확인하라")
+
+    # ── 조립 ─────────────────────────────────────────────────────────
+    async def load(self, user_id: str) -> Ledger:
+        self._user_id = user_id
+        # 동기 HTTP 라 이벤트 루프를 막는다. 스레드로 뺀다 — app.rag.search 와 같다.
+        portfolio = await asyncio.to_thread(self._get, "/internal/v1/portfolio")
+        holdings = tuple(portfolio.get("holdings", ()))
+        round_id = portfolio.get("roundId")
+        trades = await asyncio.to_thread(lambda: tuple(self._trades(round_id)))
+
+        # 거래한 종목도 시세가 있어야 한다. 전량 매도해 지금은 안 들고 있어도
+        # 그날의 평가액을 다시 계산해야 하기 때문이다.
+        tickers = tuple({h["stockCode"] for h in holdings} | {t.symbol for t in trades})
+        prices, sectors = await _market_data(tickers, self._sessions)
+
+        instruments = {
+            h["stockCode"]: Instrument(
+                h["stockCode"], h["stockName"], sectors.get(h["stockCode"]) or "미분류"
+            )
+            for h in holdings
+        }
+
+        return Ledger(
+            user_id=user_id,
+            trading_days=_common_days(prices),
+            instruments=instruments,
+            prices=prices,
+            trades=trades,
+            flows=(),  # §9 에 입출금이 없다. 백엔드만 아는 값이라 지어내지 않는다.
+        )
+
+
+async def _market_data(
+    tickers: Sequence[str], sessions: object | None = None
+) -> tuple[dict[str, dict[date, float]], dict[str, str | None]]:
+    """우리 DB 의 종가 시계열과 섹터. 종목 마스터·시세는 AI 파트가 자체 구축한다.
+
+    라우터에도 `price_daily` 를 읽는 코드가 있지만 전부 그쪽 전용 헬퍼이고
+    (구간 종가, `(ticker, date)` 키) 모양이 다르다. core 가 api 를 임포트할
+    수도 없어서 여기서 읽는다.
+    """
+    if not tickers:
+        return {}, {}
+
+    from app.core.db import SessionFactory
+    from app.core.models import Instrument as InstrumentRow
+    from app.core.models import PriceDaily
+
+    prices: dict[str, dict[date, float]] = {t: {} for t in tickers}
+    async with (sessions or SessionFactory)() as session:
+        rows = (
+            await session.execute(
+                select(PriceDaily.ticker, PriceDaily.trade_date, PriceDaily.close)
+                .where(PriceDaily.ticker.in_(tickers))
+                .order_by(PriceDaily.trade_date)
+            )
+        ).all()
+        for ticker, day, close in rows:
+            if close:  # 거래정지 구간은 행이 없다. 0 이 섞이면 변동성이 과소 추정된다.
+                prices[ticker][day] = float(close)
+
+        sectors = dict(
+            (
+                await session.execute(
+                    select(InstrumentRow.ticker, InstrumentRow.sector).where(
+                        InstrumentRow.ticker.in_(tickers)
+                    )
+                )
+            ).all()
+        )
+    return prices, sectors
+
+
+def _common_days(prices: Mapping[str, Mapping[date, float]]) -> tuple[date, ...]:
+    """모든 종목에 종가가 있는 날만 거래일로 친다.
+
+    엔진은 거래일마다 보유 종목 전부의 종가를 찾고, 없으면 KeyError 로 죽는다.
+    한 종목이라도 빠진 날을 넣으면 신규 상장·거래정지에서 터진다. 교집합이
+    비면 `trading_days` 가 비고, 호출부는 이미 그것을 데이터 부족으로 다룬다.
+    """
+    series = [set(days) for days in prices.values() if days]
+    if not series or len(series) != len(prices):
+        return ()
+    return tuple(sorted(set.intersection(*series)))
 
 
 def _to_date(value: str) -> date:
