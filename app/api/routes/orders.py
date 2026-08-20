@@ -350,9 +350,12 @@ async def preview(body: PreviewRequest, user_id: CurrentUser, db: DbSession) -> 
     히스토리가 짧으면 진단과 마찬가지로 409로 끊지 않는다. 변동성·상관만 전·후 모두
     null이 되고 집중도·현금 차분은 그대로 유효하다.
     """
-    ledger = _ledger(user_id)
+    ledger = await _ledger(user_id)
     if ledger is None:
-        raise InsufficientData("원장을 읽을 수 없어 주문을 점검할 수 없습니다.")
+        raise InsufficientData(
+            "보유 내역을 불러오지 못해 점검할 수 없습니다.",
+            detail={"reason": "ledger_unavailable"},
+        )
 
     engine = PortfolioEngine(ledger)
     last = ledger.trading_days[-1]
@@ -388,7 +391,9 @@ async def preview(body: PreviewRequest, user_id: CurrentUser, db: DbSession) -> 
 
     client = get_llm_client()
     if isinstance(client, NullLlmClient):
-        raise InsufficientData("LLM 키가 없어 점검 문장을 생성할 수 없습니다.")
+        raise InsufficientData(
+            "지금은 점검 문장을 만들 수 없습니다.", detail={"reason": "llm_key_missing"}
+        )
 
     theses, facts = await _stated_context(db, user_id, {line.ticker for line in body.orders})
     before_measures, after_measures = _measures(before), _measures(after)

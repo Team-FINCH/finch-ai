@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 from datetime import date, timedelta
@@ -851,9 +852,11 @@ def test_시드_원장에서_그대로_조립된다() -> None:
     from app.core.adapters import SeedLedgerSource
     from app.engines.portfolio import PortfolioEngine
 
-    ledger = SeedLedgerSource(
+    source = SeedLedgerSource(
         Path(__file__).resolve().parent / "fixtures" / "seed_portfolio.json"
-    ).load("mixed_with_cash")
+    )
+    # LedgerSource.load 는 async 다. 여기는 루프 밖이라 asyncio.run 이 그대로 된다.
+    ledger = asyncio.run(source.load("mixed_with_cash"))
     engine = PortfolioEngine(ledger)
     last = ledger.trading_days[-1]
 

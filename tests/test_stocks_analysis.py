@@ -95,7 +95,7 @@ async def _no_thesis(*_: Any, **__: Any) -> None:
 
 
 def _post(client: TestClient, body: dict, *, user: str = HOLDER):
-    return client.post(URL, json=body, headers={"Authorization": f"Bearer {user}"})
+    return client.post(URL, json=body, headers={"X-User-Id": user})
 
 
 # ── 기본 동작 ────────────────────────────────────────────
@@ -216,7 +216,7 @@ def test_응답을_저장해_피드백을_받는다(client):
     assert row.endpoint == "stocks.analysis"
     feedback = client.post(
         "/api/ai/v1/feedback",
-        headers={"Authorization": f"Bearer {HOLDER}"},
+        headers={"X-User-Id": HOLDER},
         json={"request_id": request_id, "rating": "up", "reasons": []},
     )
     assert feedback.status_code == 200
@@ -227,16 +227,16 @@ def test_종목코드가_6자리가_아니면_거부한다(client):
     response = client.post(
         "/api/ai/v1/stocks/AAPL/analysis",
         json={},
-        headers={"Authorization": f"Bearer {HOLDER}"},
+        headers={"X-User-Id": HOLDER},
     )
     assert response.status_code == 400
-    assert response.json()["error"]["code"] == "INVALID_REQUEST"
+    assert response.json()["code"] == "INVALID_REQUEST"
 
 
 def test_모르는_섹션은_거부한다(client):
     response = _post(client, {"sections": ["moon_phase"]})
     assert response.status_code == 400
-    assert response.json()["error"]["detail"]["sections"] == ["moon_phase"]
+    assert response.json()["detail"]["sections"] == ["moon_phase"]
 
 
 def test_토큰이_없으면_거부한다(client):
@@ -250,5 +250,8 @@ def test_키가_없으면_지어내지_않고_실패한다(monkeypatch):
     with TestClient(app) as test_client:
         response = _post(test_client, {"sections": ["current"]})
     assert response.status_code == 409
-    assert response.json()["error"]["code"] == "INSUFFICIENT_DATA"
-    assert "LLM 키" in response.json()["error"]["message"]
+    assert response.json()["code"] == "INSUFFICIENT_DATA"
+    body = response.json()
+    # 사유는 detail 로만 나간다. message 는 사용자에게 그대로 보이는 문구다(백엔드 §1.3).
+    assert body["detail"]["reason"] == "llm_key_missing"
+    assert "LLM" not in body["message"]

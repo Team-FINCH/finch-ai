@@ -12,12 +12,13 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateTable
 
 from app.api.main import API_PREFIX, app
+from app.core.config import settings
 from app.core.enums import MetricSource, SegmentType, Unit
 from app.core.models import Base
 from app.core.schemas import DataAsOf, Envelope, Section, Segment
 
 client = TestClient(app)
-AUTH = {"Authorization": "Bearer u_test"}
+AUTH = {"X-User-Id": "u_test"}
 
 EXPECTED_TABLES = {
     "instruments",
@@ -129,14 +130,69 @@ def test_all_endpoints_registered() -> None:
 def test_missing_auth_returns_unauthorized() -> None:
     res = client.post(f"{API_PREFIX}/stocks/005930/analysis", json={})
     assert res.status_code == 401
-    assert res.json()["error"]["code"] == "UNAUTHORIZED"
+    assert res.json()["code"] == "UNAUTHORIZED"
+
+
+def test_blank_trusted_header_returns_unauthorized() -> None:
+    """헤더는 있는데 값이 공백이면 사용자를 특정할 수 없다. 빈 문자열을 id로 쓰면 안 된다."""
+    res = client.post(
+        f"{API_PREFIX}/stocks/005930/analysis",
+        json={},
+        headers={settings.trusted_user_header: "   "},
+    )
+    assert res.status_code == 401
+    assert res.json()["code"] == "UNAUTHORIZED"
+
+
+def test_internal_token_must_match_when_configured(monkeypatch) -> None:
+    """백엔드 명세 §9 — 토큰이 틀리면 사용자 헤더가 멀쩡해도 통과시키지 않는다."""
+    monkeypatch.setattr(settings, "backend_service_token", "s3cret")
+    headers = {settings.trusted_user_header: "u_test"}
+
+    for token in (None, "", "wrong"):
+        sent = dict(headers)
+        if token is not None:
+            sent[settings.internal_token_header] = token
+        res = client.post(f"{API_PREFIX}/stocks/005930/analysis", json={}, headers=sent)
+        assert res.status_code == 401, token
+        assert res.json()["code"] == "UNAUTHORIZED"
+
+    ok = client.post(
+        f"{API_PREFIX}/stocks/005930/analysis",
+        json={},
+        headers={**headers, settings.internal_token_header: "s3cret"},
+    )
+    # 토큰은 통과했다. 그 뒤 실패는 LLM 키가 없어서지 인증 때문이 아니다.
+    assert ok.status_code != 401
+
+
+def test_missing_internal_token_is_rejected_outside_local(monkeypatch) -> None:
+    """운영에서 토큰을 안 넣은 것은 설정 사고다. 열어 두면 인증이 없는 것과 같다."""
+    monkeypatch.setattr(settings, "backend_service_token", "")
+    monkeypatch.setattr(settings, "app_env", "prod")
+    res = client.post(
+        f"{API_PREFIX}/stocks/005930/analysis",
+        json={},
+        headers={settings.trusted_user_header: "u_test"},
+    )
+    assert res.status_code == 401
+
+
+def test_bearer_token_is_no_longer_accepted() -> None:
+    """JWT 검증은 백엔드가 한다. Authorization만 들고 오면 사용자를 알 수 없다."""
+    res = client.post(
+        f"{API_PREFIX}/stocks/005930/analysis",
+        json={},
+        headers={"Authorization": "Bearer u_test"},
+    )
+    assert res.status_code == 401
 
 
 def test_app_error_becomes_structured_response() -> None:
     """AppError가 예외 핸들러를 우회해 500으로 새면 안 된다."""
     res = client.post(f"{API_PREFIX}/stocks/005930/analysis", json={}, headers=AUTH)
     assert res.status_code == 409
-    assert res.json()["error"]["code"] == "INSUFFICIENT_DATA"
+    assert res.json()["code"] == "INSUFFICIENT_DATA"
 
 
 @pytest.mark.parametrize(
@@ -150,7 +206,7 @@ def test_app_error_becomes_structured_response() -> None:
 def test_validation_errors_use_invalid_request(order: dict) -> None:
     res = client.post(f"{API_PREFIX}/orders/preview", json={"orders": [order]}, headers=AUTH)
     assert res.status_code == 400
-    assert res.json()["error"]["code"] == "INVALID_REQUEST"
+    assert res.json()["code"] == "INVALID_REQUEST"
 
 
 def test_briefing_returns_envelope_when_empty() -> None:

@@ -7,13 +7,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Protocol
 
+from sqlalchemy import select
+
+from app.core.config import settings
 from app.core.enums import OrderSide
 
 
@@ -87,9 +92,13 @@ class Ledger:
 
 
 class LedgerSource(Protocol):
-    """원장 읽기 인터페이스. 엔진은 이것만 안다."""
+    """원장 읽기 인터페이스. 엔진은 이것만 안다.
 
-    def load(self, user_id: str) -> Ledger: ...
+    실제 원장은 백엔드 HTTP + 우리 DB 라 async 다. 시드가 파일이라 동기였을 뿐이라
+    프로토콜을 async 로 둔다 — 구현마다 갈리면 호출부가 어느 쪽인지 알아야 한다.
+    """
+
+    async def load(self, user_id: str) -> Ledger: ...
 
 
 class SeedLedgerSource:
@@ -111,7 +120,8 @@ class SeedLedgerSource:
     def user_ids(self) -> Iterable[str]:
         return self._data()["portfolios"].keys()
 
-    def load(self, user_id: str) -> Ledger:
+    async def load(self, user_id: str) -> Ledger:
+        # 파일 읽기라 await 할 것이 없다. 프로토콜을 하나로 유지하려고 async 다.
         data = self._data()
         try:
             portfolio = data["portfolios"][user_id]
@@ -149,3 +159,213 @@ class SeedLedgerSource:
             trades=trades,
             flows=flows,
         )
+
+
+class BackendLedgerSource:
+    """원장은 백엔드에서, 시장 데이터는 우리 DB 에서 읽는 어댑터.
+
+    역할 분담이 있다. 백엔드는 원장(누가 무엇을 얼마나 들고 있나)을 갖고,
+    우리는 시장 데이터(과거 종가·섹터)를 갖는다. 백엔드 명세 §9 가
+    `currentPrice` 한 점만 주는 것은 설계 누락이 아니라 이 분담 때문이다.
+
+    | 데이터 | 출처 |
+    | --- | --- |
+    | 보유·현금·회차 | 백엔드 `GET /internal/v1/portfolio` |
+    | 거래 이력 | 백엔드 `GET /internal/v1/trades` (커서 페이징) |
+    | 과거 일별 종가 | 우리 `price_daily` (ingest/prices.py 가 채운다) |
+    | 섹터 | 우리 `instruments.sector` |
+
+    백엔드 원장은 읽기만 한다. 파생 지표는 전부 우리가 계산한다(명세 10.1).
+
+    **아직 §9 에 없는 것**: 입출금 이력과 수수료. 둘 다 백엔드만 아는 값이라
+    지어내지 않고 비운다. 수수료가 0 이면 수익률이 실제보다 좋게 나온다.
+
+    `load` 가 async 인 점에 주의. `LedgerSource` 프로토콜은 동기지만 우리
+    드라이버가 asyncpg 뿐이라(동기 드라이버는 새 의존성이다) DB 를 동기로
+    읽을 방법이 없다. 이 클래스는 프로토콜을 만족하지 않으며, 라우터에 물릴
+    때 호출부를 async 로 바꿔야 한다 — 엔진은 `Ledger` 만 받으므로 그대로다.
+    """
+
+    _TRADE_PAGE = 100
+
+    def __init__(
+        self,
+        base_url: str,
+        token: str,
+        *,
+        client: object | None = None,
+        sessions: object | None = None,
+        timeout: float = 5.0,
+    ) -> None:
+        self._base = base_url.rstrip("/")
+        self._token = token
+        self._client = client
+        # app.core.db 의 엔진은 모듈 전역이라 커넥션 풀이 처음 열린 이벤트 루프에
+        # 묶인다. 테스트가 루프를 갈아 끼우므로 세션 팩토리를 갈아 끼울 수 있게 둔다.
+        self._sessions = sessions
+        self._timeout = timeout
+        #: load() 가 채운다. 사용자별 데이터라 모든 요청에 사용자 헤더가 실려야 한다.
+        self._user_id = ""
+
+    # ── 백엔드 ───────────────────────────────────────────────────────
+    def _get(self, path: str, params: Mapping[str, object] | None = None) -> dict:
+        import httpx
+
+        headers = {
+            settings.internal_token_header: self._token,
+            settings.trusted_user_header: self._user_id,
+        }
+        client = self._client or httpx.Client(timeout=self._timeout)
+        try:
+            res = client.get(f"{self._base}{path}", params=params, headers=headers)
+            res.raise_for_status()
+            return res.json()
+        except httpx.HTTPError as exc:
+            # 호출부는 원장을 못 읽는 경우를 (KeyError, FileNotFoundError, OSError)
+            # 로 잡는다. httpx 예외는 거기 안 들어가서 그대로 새면 500 이 된다.
+            # 원천을 못 읽은 것이니 OSError 로 옮겨 준다 — 호출부가 httpx 를
+            # 알아야 할 이유가 없다.
+            raise OSError(f"백엔드 원장을 읽지 못했다: {path}") from exc
+        finally:
+            if self._client is None:
+                client.close()
+
+    def _trades(self, round_id: object) -> Iterable[Trade]:
+        """커서 페이징을 끝까지 따라간다. 기본 100건. 백엔드 명세 §9.2."""
+        cursor: str | None = None
+        seen = 0
+        while True:
+            params: dict[str, object] = {"size": self._TRADE_PAGE}
+            if round_id is not None:
+                params["roundId"] = round_id
+            if cursor:
+                params["cursor"] = cursor
+            page = self._get("/internal/v1/trades", params)
+
+            for row in page.get("trades", ()):
+                yield Trade(
+                    trade_date=_to_date(row["executedAt"]),
+                    symbol=row["stockCode"],
+                    side=OrderSide(row["side"].lower()),
+                    quantity=float(row["quantity"]),
+                    price=float(row["price"]),
+                    # §9 에 수수료가 없다. 0 이면 수익률이 실제보다 좋게 나온다.
+                    fee=float(row.get("fee", 0.0)),
+                )
+                seen += 1
+
+            cursor = page.get("nextCursor")
+            # hasNext 가 참인데 커서가 없으면 같은 쪽을 영원히 다시 받는다.
+            if not page.get("hasNext") or not cursor:
+                return
+            if seen > 100_000:
+                raise RuntimeError("거래 페이징이 끝나지 않는다. 백엔드 커서를 확인하라")
+
+    # ── 조립 ─────────────────────────────────────────────────────────
+    async def load(self, user_id: str) -> Ledger:
+        self._user_id = user_id
+        # 동기 HTTP 라 이벤트 루프를 막는다. 스레드로 뺀다 — app.rag.search 와 같다.
+        portfolio = await asyncio.to_thread(self._get, "/internal/v1/portfolio")
+        holdings = tuple(portfolio.get("holdings", ()))
+        round_id = portfolio.get("roundId")
+        trades = await asyncio.to_thread(lambda: tuple(self._trades(round_id)))
+
+        # 거래한 종목도 시세가 있어야 한다. 전량 매도해 지금은 안 들고 있어도
+        # 그날의 평가액을 다시 계산해야 하기 때문이다.
+        tickers = tuple({h["stockCode"] for h in holdings} | {t.symbol for t in trades})
+        prices, sectors = await _market_data(tickers, self._sessions)
+
+        instruments = {
+            h["stockCode"]: Instrument(
+                h["stockCode"], h["stockName"], sectors.get(h["stockCode"]) or "미분류"
+            )
+            for h in holdings
+        }
+
+        return Ledger(
+            user_id=user_id,
+            trading_days=_common_days(prices),
+            instruments=instruments,
+            prices=prices,
+            trades=trades,
+            flows=(),  # §9 에 입출금이 없다. 백엔드만 아는 값이라 지어내지 않는다.
+        )
+
+
+async def _market_data(
+    tickers: Sequence[str], sessions: object | None = None
+) -> tuple[dict[str, dict[date, float]], dict[str, str | None]]:
+    """우리 DB 의 종가 시계열과 섹터. 종목 마스터·시세는 AI 파트가 자체 구축한다.
+
+    라우터에도 `price_daily` 를 읽는 코드가 있지만 전부 그쪽 전용 헬퍼이고
+    (구간 종가, `(ticker, date)` 키) 모양이 다르다. core 가 api 를 임포트할
+    수도 없어서 여기서 읽는다.
+    """
+    if not tickers:
+        return {}, {}
+
+    from app.core.db import SessionFactory
+    from app.core.models import Instrument as InstrumentRow
+    from app.core.models import PriceDaily
+
+    prices: dict[str, dict[date, float]] = {t: {} for t in tickers}
+    async with (sessions or SessionFactory)() as session:
+        rows = (
+            await session.execute(
+                select(PriceDaily.ticker, PriceDaily.trade_date, PriceDaily.close)
+                .where(PriceDaily.ticker.in_(tickers))
+                .order_by(PriceDaily.trade_date)
+            )
+        ).all()
+        for ticker, day, close in rows:
+            if close:  # 거래정지 구간은 행이 없다. 0 이 섞이면 변동성이 과소 추정된다.
+                prices[ticker][day] = float(close)
+
+        sectors = dict(
+            (
+                await session.execute(
+                    select(InstrumentRow.ticker, InstrumentRow.sector).where(
+                        InstrumentRow.ticker.in_(tickers)
+                    )
+                )
+            ).all()
+        )
+    return prices, sectors
+
+
+def _common_days(prices: Mapping[str, Mapping[date, float]]) -> tuple[date, ...]:
+    """모든 종목에 종가가 있는 날만 거래일로 친다.
+
+    엔진은 거래일마다 보유 종목 전부의 종가를 찾고, 없으면 KeyError 로 죽는다.
+    한 종목이라도 빠진 날을 넣으면 신규 상장·거래정지에서 터진다. 교집합이
+    비면 `trading_days` 가 비고, 호출부는 이미 그것을 데이터 부족으로 다룬다.
+    """
+    series = [set(days) for days in prices.values() if days]
+    if not series or len(series) != len(prices):
+        return ()
+    return tuple(sorted(set.intersection(*series)))
+
+
+def _to_date(value: str) -> date:
+    """ISO 8601 날짜/일시에서 날짜만 꺼낸다. 백엔드는 오프셋을 붙여 보낸다."""
+    return datetime.fromisoformat(value).date()
+
+
+@lru_cache
+def ledger_source() -> LedgerSource | None:
+    """설정이 가리키는 원장 어댑터. `none` 이면 None 이다.
+
+    선택은 여기 한 곳에서만 한다. 호출부는 `None` 인지만 보고 어느 어댑터인지
+    알 필요가 없다 — 그게 `LedgerSource` 프로토콜을 둔 이유다.
+
+    `backend` 는 백엔드 `/internal/v1` 이 구현되기 전에는 쓸 수 없다.
+    """
+    match settings.ledger_source:
+        case "seed":
+            return SeedLedgerSource(settings.seed_fixture_path)
+        case "backend":
+            return BackendLedgerSource(
+                settings.backend_base_url, settings.backend_service_token
+            )
+        case _:
+            return None

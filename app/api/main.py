@@ -26,7 +26,7 @@ from app.api.routes import (
 from app.core.config import settings
 from app.core.db import engine
 from app.core.errors import AppError, ErrorCode
-from app.core.schemas import ErrorBody, ErrorResponse, new_request_id
+from app.core.schemas import ErrorResponse, new_request_id
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ def create_app() -> FastAPI:
     @app.exception_handler(AppError)
     async def handle_app_error(_: Request, exc: AppError) -> JSONResponse:
         body = ErrorResponse(
-            error=ErrorBody(code=exc.code, message=exc.message, detail=exc.detail),
+            code=exc.code, message=exc.message, detail=exc.detail,
             request_id=new_request_id(),
         )
         return JSONResponse(
@@ -66,11 +66,9 @@ def create_app() -> FastAPI:
         _: Request, exc: RequestValidationError
     ) -> JSONResponse:
         body = ErrorResponse(
-            error=ErrorBody(
-                code=ErrorCode.INVALID_REQUEST,
-                message="요청 형식이 올바르지 않습니다.",
-                detail={"errors": exc.errors()},
-            ),
+            code=ErrorCode.INVALID_REQUEST,
+            message="요청 형식이 올바르지 않습니다.",
+            detail={"errors": exc.errors()},
             request_id=new_request_id(),
         )
         return JSONResponse(status_code=400, content=body.model_dump(mode="json"))

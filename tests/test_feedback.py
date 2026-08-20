@@ -45,7 +45,7 @@ def _client(session: _Session) -> TestClient:
     return TestClient(app)
 
 
-AUTH = {"Authorization": f"Bearer {HOLDER}"}
+AUTH = {"X-User-Id": HOLDER}
 
 
 def _body(**kw: Any) -> dict:

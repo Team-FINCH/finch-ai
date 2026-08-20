@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -29,4 +30,8 @@ def source() -> LedgerSource:
 
 @pytest.fixture(scope="session")
 def ledgers(source: LedgerSource) -> dict[str, Ledger]:
-    return {user_id: source.load(user_id) for user_id in ALL_PORTFOLIOS}
+    # LedgerSource.load 는 async 다(실제 원장이 HTTP+DB 라서). 여기는 루프 밖의
+    # 동기 픽스처라 asyncio.run 으로 한 번 돌리면 된다.
+    return {
+        user_id: asyncio.run(source.load(user_id)) for user_id in ALL_PORTFOLIOS
+    }

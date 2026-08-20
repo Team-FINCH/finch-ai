@@ -195,7 +195,7 @@ def client(monkeypatch):
 
 def _post(client: TestClient, user: str, orders: list[dict[str, Any]]) -> Any:
     return client.post(
-        URL, headers={"Authorization": f"Bearer {user}"}, json={"orders": orders}
+        URL, headers={"X-User-Id": user}, json={"orders": orders}
     )
 
 
@@ -231,7 +231,7 @@ def test_응답을_저장해_피드백을_받는다(client: TestClient) -> None:
     assert row.endpoint == "orders.preview"
     feedback = client.post(
         "/api/ai/v1/feedback",
-        headers={"Authorization": f"Bearer {HOLDER}"},
+        headers={"X-User-Id": HOLDER},
         json={"request_id": request_id, "rating": "up", "reasons": []},
     )
     assert feedback.status_code == 200
@@ -345,7 +345,10 @@ def test_첫_종목을_담는_경우도_터지지_않는다(monkeypatch: pytest.
         instruments={"005930": Instrument("005930", "삼성전자", "반도체")},
         prices={"005930": dict.fromkeys(days, 70000.0)},
     )
-    monkeypatch.setattr("app.api.routes.orders._ledger", lambda _user: empty)
+    async def _empty(_user):  # _ledger 는 async 다
+        return empty
+
+    monkeypatch.setattr("app.api.routes.orders._ledger", _empty)
     with _make_client(monkeypatch, StubSession()) as client:
         content = _post(client, "fresh", [_buy("005930", 10, price=70000)]).json()["content"]
 
@@ -361,8 +364,8 @@ def test_보유보다_많이_팔면_400(client: TestClient) -> None:
     """조용히 잘라 주면 사용자가 낸 주문과 다른 것을 점검하게 된다."""
     response = _post(client, LONELY, [_sell("005930", 101, price=CLOSE_005930)])
     assert response.status_code == 400
-    assert response.json()["error"]["code"] == "INVALID_REQUEST"
-    assert "매도" in response.json()["error"]["message"]
+    assert response.json()["code"] == "INVALID_REQUEST"
+    assert "매도" in response.json()["message"]
 
 
 def test_보유하지_않은_종목_매도도_400(client: TestClient) -> None:
@@ -376,8 +379,8 @@ def test_종가가_없는_종목은_409(monkeypatch: pytest.MonkeyPatch) -> None
     with _make_client(monkeypatch, StubSession(prices=[])) as client:
         response = _post(client, HOLDER, [_buy("999999", 10)])
     assert response.status_code == 409
-    assert response.json()["error"]["code"] == "INSUFFICIENT_DATA"
-    assert "999999" in response.json()["error"]["message"]
+    assert response.json()["code"] == "INSUFFICIENT_DATA"
+    assert "999999" in response.json()["message"]
 
 
 def test_리밸런싱은_한_번에_점검한다(client: TestClient) -> None:
@@ -451,7 +454,7 @@ def test_다른_종목의_논지는_끌어오지_않는다(monkeypatch: pytest.M
 def test_원장이_없으면_409(client: TestClient) -> None:
     response = _post(client, STRANGER, [_buy(price=214000)])
     assert response.status_code == 409
-    assert response.json()["error"]["code"] == "INSUFFICIENT_DATA"
+    assert response.json()["code"] == "INSUFFICIENT_DATA"
 
 
 def test_LLM_키가_없으면_409(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -461,7 +464,10 @@ def test_LLM_키가_없으면_409(monkeypatch: pytest.MonkeyPatch) -> None:
     with TestClient(app) as client:
         response = _post(client, HOLDER, [_buy(price=214000)])
     assert response.status_code == 409
-    assert "LLM 키" in response.json()["error"]["message"]
+    body = response.json()
+    # 사유는 detail 로만 나간다. message 는 사용자에게 그대로 보이는 문구다(백엔드 §1.3).
+    assert body["detail"]["reason"] == "llm_key_missing"
+    assert "LLM" not in body["message"]
 
 
 def test_주문이_비면_400(client: TestClient) -> None:

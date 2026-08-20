@@ -61,7 +61,9 @@ async def chat(body: ChatRequest, user_id: CurrentUser, db: DbSession) -> Envelo
     client = get_llm_client()
     if isinstance(client, NullLlmClient):
         # 종목 분석과 같은 이유로 같은 자리에서 실패한다. 빈 답변으로 지어내지 않는다.
-        raise InsufficientData("LLM 키가 없어 답변을 생성할 수 없습니다.")
+        raise InsufficientData(
+            "지금은 답변을 만들 수 없습니다.", detail={"reason": "llm_key_missing"}
+        )
 
     ctx = ToolContext(
         user_id=user_id,

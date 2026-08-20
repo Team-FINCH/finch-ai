@@ -398,7 +398,7 @@ def client(monkeypatch):
 
 
 def _post(client: TestClient, user: str, period: str = "1d") -> Any:
-    return client.post(URL, json={"period": period}, headers={"Authorization": f"Bearer {user}"})
+    return client.post(URL, json={"period": period}, headers={"X-User-Id": user})
 
 
 def test_계약대로_돌려준다(client: TestClient) -> None:
@@ -420,7 +420,7 @@ def test_응답을_저장해_피드백을_받는다(client: TestClient) -> None:
     assert row.endpoint == "portfolio.attribution"
     feedback = client.post(
         "/api/ai/v1/feedback",
-        headers={"Authorization": f"Bearer {HOLDER}"},
+        headers={"X-User-Id": HOLDER},
         json={"request_id": request_id, "rating": "up", "reasons": []},
     )
     assert feedback.status_code == 200

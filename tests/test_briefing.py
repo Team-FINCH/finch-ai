@@ -139,7 +139,7 @@ def client(monkeypatch):
 
 
 def _get(client: TestClient, user: str, **params: Any) -> Any:
-    return client.get(URL, headers={"Authorization": f"Bearer {user}"}, params=params)
+    return client.get(URL, headers={"X-User-Id": user}, params=params)
 
 
 def _holding(

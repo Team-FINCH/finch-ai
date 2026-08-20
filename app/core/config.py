@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -66,8 +67,21 @@ class Settings(BaseSettings):
     # ── 백엔드 원장 (읽기 전용) ──────────────────────────
     # 권한이 열리기 전에는 시드 어댑터로 대체해 병렬 진행한다. API 명세 §11 참조.
     backend_base_url: str = "http://localhost:8080"
+    # 서비스 간 공유 토큰. 백엔드가 X-Internal-Token 으로 보내고 우리가 대조한다.
+    # 우리가 백엔드 /internal/v1 을 부를 때 실어 보내는 값이기도 하다 — 같은 토큰이다.
+    # 비어 있으면 로컬에서만 검증을 건너뛴다(deps._check_internal_token).
     backend_service_token: str = ""
-    use_seed_adapter: bool = True
+    # 백엔드가 JWT를 검증한 뒤 사용자 식별자를 실어 보내는 헤더. 백엔드가 다른
+    # 이름을 쓰면 여기 한 줄만 바꾼다. 값을 검증 없이 신뢰하므로 AI 서버는
+    # 내부 네트워크에서만 접근 가능해야 한다 — API 계약 §4 참조.
+    trusted_user_header: str = "X-User-Id"
+    internal_token_header: str = "X-Internal-Token"
+    # 원장을 어디서 읽을지. 백엔드 /internal/v1 이 열리기 전에는 seed 로 병렬 진행한다.
+    #   seed    — tests/fixtures 의 JSON. 지금 기본값이다
+    #   backend — 보유·거래는 백엔드, 시계열·섹터는 우리 DB (BackendLedgerSource)
+    #   none    — 원장 없음. 개인화 섹션이 조용히 비활성된다
+    # Literal 이라 오타는 기동 시점에 걸린다. 불리언 하나로는 세 상태를 못 담는다.
+    ledger_source: Literal["seed", "backend", "none"] = "seed"
     seed_fixture_path: str = "tests/fixtures/seed_portfolio.json"
 
     # ── 엔진 상수 ────────────────────────────────────────

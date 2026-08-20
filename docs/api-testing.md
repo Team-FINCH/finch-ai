@@ -35,24 +35,34 @@ Postman에 컬렉션으로 두고 계속 쓰려는 경우다.
 > 요청은 제한이 없고, 러너만 월 25회로 묶여 있다. 이 문서의 절차는 전부 수동
 > 요청이라 걸릴 일이 없다.
 
-## 3. 토큰 설정
+## 3. 사용자 헤더 설정
 
-인증은 `Authorization: Bearer <token>` 하나뿐이다. **사용자 식별자는 토큰에서만
-읽는다** — 경로나 본문에 사용자 ID를 넣는 자리는 없고, 넣어도 무시된다.
+인증 헤더는 두 개다(백엔드 명세 §9). `X-Internal-Token` 은 호출자가 백엔드인지 확인하고,
+`X-User-Id` 는 누구의 데이터인지 정한다. 운영에서는 **백엔드가 JWT를 검증한 뒤 이 헤더를
+넣어 준다** — AI는 값을 그대로 믿는다. 경로나 본문에 사용자 ID를 넣는 자리는 없고, 넣어도
+무시된다. `Authorization` 은 AI가 읽지 않는다.
 
-스키마에 `bearerAuth`가 선언돼 있어서 Postman이 컬렉션 단위 Bearer 인증을
-자동으로 잡아 준다. 컬렉션 **Authorization** 탭에서 토큰 값만 채우면 하위
-요청이 전부 물려받는다.
+로컬(`APP_ENV=local`)에서 `BACKEND_SERVICE_TOKEN` 이 비어 있으면 `X-Internal-Token` 은
+생략해도 된다. 운영에서는 비워 두면 401이다.
 
-개발 환경에서는 **비어 있지 않은 아무 문자열이나 통과한다.** `u_test`면 된다.
+스키마에 `internalToken` · `trustedUserHeader` 가 apiKey 스킴으로 선언돼 있어서 Postman이 컬렉션 단위로
+자동으로 잡아 준다. 컬렉션 **Authorization** 탭에서 값만 채우면 하위 요청이 전부 물려받는다.
+
+로컬에서는 **비어 있지 않은 아무 문자열이나 통과한다.** `u_test`면 된다.
 값마다 다른 사용자로 취급되니, 위키처럼 사용자별 데이터를 보는 엔드포인트는
-같은 토큰으로 계속 부르는 편이 편하다.
+같은 값으로 계속 부르는 편이 편하다.
 
 ```bash
-curl http://localhost:8000/api/ai/v1/wiki -H "Authorization: Bearer u_test"
+curl http://localhost:8000/api/ai/v1/wiki -H "X-User-Id: u_test"
+# 토큰을 설정했다면
+# curl ... -H "X-Internal-Token: $BACKEND_SERVICE_TOKEN" -H "X-User-Id: u_test"
 ```
 
-토큰을 빼면 401이 온다. 이건 정상 동작이다.
+헤더를 빼면 401이 온다. 이건 정상 동작이다.
+
+> **로컬이라 아무 값이나 통하는 게 아니라, 운영에서도 그렇다.** AI 서버는 이 헤더를
+> 검증하지 않는다. 그래서 AI 서버를 외부에 노출하면 안 된다 —
+> [`docs/api/aiApiSpec.md`](../../docs/api/aiApiSpec.md) §4 참조.
 
 ```json
 {"error": {"code": "UNAUTHORIZED", "message": "인증 토큰이 없습니다.", "detail": {}},

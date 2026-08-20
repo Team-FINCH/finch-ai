@@ -10,15 +10,13 @@ import asyncio
 import logging
 from datetime import date as Date
 from datetime import datetime, time, timedelta
-from functools import lru_cache
 from typing import Any
 
 from fastapi import APIRouter
 from sqlalchemy import or_, select
 
 from app.api.deps import CurrentUser, DbSession
-from app.core.adapters import Ledger, SeedLedgerSource
-from app.core.config import settings
+from app.core.adapters import Ledger, ledger_source
 from app.core.enums import BriefingStatus, MetricSource, RateSensitivity
 from app.core.errors import InsufficientData
 from app.core.models import AIResponse, Event
@@ -56,20 +54,16 @@ _ENDPOINT = "briefing"
 
 
 # ── 원장 ──────────────────────────────────────────────────────────────────────
-@lru_cache
-def _ledger_source() -> SeedLedgerSource:
-    return SeedLedgerSource(settings.seed_fixture_path)
-
-
-def _ledger(user_id: str) -> Ledger | None:
+async def _ledger(user_id: str) -> Ledger | None:
     """원장 스냅샷. 못 읽으면 None이다(§11).
 
     브리핑에서 None은 오류가 아니다 — 진단과 달리 status "empty"로 나간다.
     """
-    if not settings.use_seed_adapter:
+    source = ledger_source()
+    if source is None:
         return None
     try:
-        ledger = _ledger_source().load(user_id)
+        ledger = await source.load(user_id)
     except (KeyError, FileNotFoundError, OSError):
         return None
     return ledger if ledger.trading_days else None
@@ -89,7 +83,7 @@ async def get_briefing(
     그래서 status는 ready 아니면 empty다 — generating을 돌려줄 주체가 없다.
     """
     now = now_kst()
-    ledger = _ledger(user_id)
+    ledger = await _ledger(user_id)
     if ledger is None:
         return await _empty(db, user_id, date, now)
 
@@ -121,7 +115,9 @@ async def get_briefing(
     client = get_llm_client()
     if isinstance(client, NullLlmClient):
         # 키가 없으면 네 건이 같은 이유로 실패한다. 항목마다 null로 흩뿌리지 않는다.
-        raise InsufficientData("LLM 키가 없어 브리핑을 생성할 수 없습니다.")
+        raise InsufficientData(
+            "지금은 브리핑을 만들 수 없습니다.", detail={"reason": "llm_key_missing"}
+        )
 
     outcomes = await asyncio.gather(
         *(

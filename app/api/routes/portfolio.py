@@ -15,7 +15,6 @@ import logging
 from collections import defaultdict
 from collections.abc import Sequence
 from datetime import date, datetime, time, timedelta
-from functools import lru_cache
 from typing import Any
 
 from fastapi import APIRouter
@@ -23,8 +22,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 
 from app.api.deps import CurrentUser, DbSession
-from app.core.adapters import Ledger, SeedLedgerSource
-from app.core.config import settings
+from app.core.adapters import Ledger, ledger_source
 from app.core.enums import MetricSource, Period
 from app.core.errors import InsufficientData, InvalidRequest
 from app.core.models import Event, IndexDaily, Instrument, PriceDaily
@@ -71,22 +69,18 @@ class AttributionRequest(BaseModel):
 
 
 # ── 원장 ──────────────────────────────────────────────────────────────────────
-@lru_cache
-def _ledger_source() -> SeedLedgerSource:
-    return SeedLedgerSource(settings.seed_fixture_path)
-
-
-def _ledger(user_id: str) -> Ledger | None:
+async def _ledger(user_id: str) -> Ledger | None:
     """원장 스냅샷. 못 읽으면 None이다.
 
-    백엔드 원장 읽기가 열리기 전까지는 시드 어댑터만 있다(§11). `stocks.py`는 스냅샷
+    어느 원장을 읽을지는 `ledger_source()` 가 정한다(설정 `LEDGER_SOURCE`). `stocks.py`는 스냅샷
     하나만 필요해서 거기서 끝나지만, Risk Engine은 `prices`와 거래일 전체를 받으므로
     여기서는 `Ledger`를 그대로 들고 나온다.
     """
-    if not settings.use_seed_adapter:
+    source = ledger_source()
+    if source is None:
         return None
     try:
-        ledger = _ledger_source().load(user_id)
+        ledger = await source.load(user_id)
     except (KeyError, FileNotFoundError, OSError):
         return None
     return ledger if ledger.trading_days else None
@@ -231,9 +225,12 @@ async def diagnosis(user_id: CurrentUser, db: DbSession) -> Envelope[dict]:
 
     보유 0종목이거나 원장을 못 읽을 때만 409다 — 진단할 대상 자체가 없는 경우다.
     """
-    ledger = _ledger(user_id)
+    ledger = await _ledger(user_id)
     if ledger is None:
-        raise InsufficientData("원장을 읽을 수 없어 진단할 수 없습니다.")
+        raise InsufficientData(
+            "보유 내역을 불러오지 못해 진단할 수 없습니다.",
+            detail={"reason": "ledger_unavailable"},
+        )
 
     engine = PortfolioEngine(ledger)
     last = ledger.trading_days[-1]
@@ -256,7 +253,9 @@ async def diagnosis(user_id: CurrentUser, db: DbSession) -> Envelope[dict]:
     client = get_llm_client()
     if isinstance(client, NullLlmClient):
         # 키가 없으면 전 항목이 같은 이유로 실패한다. 항목마다 null로 흩뿌리지 않는다.
-        raise InsufficientData("LLM 키가 없어 진단을 생성할 수 없습니다.")
+        raise InsufficientData(
+            "지금은 진단을 만들 수 없습니다.", detail={"reason": "llm_key_missing"}
+        )
 
     indicators = _indicator_segments(result)
     ordered = list(result.findings)
@@ -328,9 +327,12 @@ async def attribution(
     `app.engines.attribution` 모듈 설명에 적혀 있다. 원장을 못 읽거나 구간에 거래일이
     없으면 409, 지원하지 않는 기간이면 400이다.
     """
-    ledger = _ledger(user_id)
+    ledger = await _ledger(user_id)
     if ledger is None:
-        raise InsufficientData("원장을 읽을 수 없어 분해할 수 없습니다.")
+        raise InsufficientData(
+            "보유 내역을 불러오지 못해 분해할 수 없습니다.",
+            detail={"reason": "ledger_unavailable"},
+        )
 
     rows = PortfolioEngine(ledger).daily_returns()
     if not rows:
@@ -369,7 +371,9 @@ async def attribution(
 
     client = get_llm_client()
     if isinstance(client, NullLlmClient):
-        raise InsufficientData("LLM 키가 없어 요약을 생성할 수 없습니다.")
+        raise InsufficientData(
+            "지금은 요약을 만들 수 없습니다.", detail={"reason": "llm_key_missing"}
+        )
 
     outcome = await generate_section(
         _SUMMARY_KEY,

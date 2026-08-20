@@ -4,7 +4,7 @@ AI Part · Interface Contract
 
 AI 파트가 프론트엔드에 제공하는 6개 기능의 인터페이스, 그리고 그 기능들이 성립하기 위해 백엔드에 요구하는 데이터 계약을 함께 정의한다. 국내 주식 전용, 앱 내 가상 포트폴리오를 전제로 한다.
 
-**Base** /api/ai/v1 · **Auth** Bearer JWT · **Format** JSON · UTF-8 · **Runtime** FastAPI (별도 서비스)
+**Base** /api/ai/v1 · **Auth** 내부 토큰 + 신뢰 헤더 (내부 전용) · **Format** JSON · UTF-8 · **Runtime** FastAPI (별도 서비스)
 
 ## §1 개요와 전제
 
@@ -64,7 +64,7 @@ AI 서비스는 백엔드와 분리된 독립 서버로 동작한다. 포트폴�
 | 항목 | 규약 |
 | --- | --- |
 | Base URL | `/api/ai/v1` |
-| 인증 | `Authorization: Bearer <JWT>` — 사용자 식별자는 토큰에서 추출하며 **경로·본문에 넣지 않는다** |
+| 인증 | `X-Internal-Token` + `X-User-Id` 두 개 (백엔드 명세 §9). 앞은 호출자가 백엔드임을 확인하는 서비스 간 공유 토큰이고, 뒤는 백엔드가 JWT를 검증한 뒤 넣어 주는 사용자 식별자다. AI 서버는 JWT를 다시 검증하지 않으며 사용자 식별자를 **경로·본문에 넣지 않는다**. 사용자 식별자를 검증 없이 신뢰하므로 **AI 서버는 내부 네트워크에서만 접근 가능해야 한다** |
 | 시각 | ISO 8601, KST 오프셋 명시 (`2026-08-19T14:32:09+09:00`) |
 | 비율 | **0~1 사이 소수**로 전달 (`0.4168`). 백분율 변환은 `metrics.display`가 담당 |
 | 금액 | 원 단위 정수. 소수점 없음 |
@@ -170,63 +170,41 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 | `engine` | 자체 계산 결과 (외부 URL 없음) |
 | `wiki` | 사용자가 기록한 투자 논지 |
 
-### 2.5 SSE 스트리밍
+### 2.5 스트리밍 — MVP 범위 밖
 
-`Accept: text/event-stream`을 보내면 스트리밍으로 응답한다. 대화와 종목 분석이 지원한다.
-
-```
-event: meta
-data: {"request_id":"req_01JQZ8M3T7K2","data_as_of":{...}}
-
-event: tool_call
-data: {"tool":"calc_risk_metrics","status":"running","label":"포트폴리오 위험도 계산 중"}
-
-event: tool_call
-data: {"tool":"calc_risk_metrics","status":"done","duration_ms":412}
-
-event: delta
-data: {"text":"반도체 관련 자산이 포트폴리오의 "}
-
-event: delta
-data: {"text":"42.3%","segment":{"type":"metric","raw":0.423,"unit":"ratio",
-       "source":"risk_engine","direction":null}}
-
-event: delta
-data: {"text":"를 차지합니다."}
-
-event: citations
-data: [{"id":"cit_1","type":"engine","title":"섹터 집중도 계산"}]
-
-event: done
-data: {"finish_reason":"stop","tokens":{"input":8412,"output":623}}
-```
-
-`tool_call`을 노출하는 이유는 대기 구간의 UX 때문이다. 도구 호출에 수 초가 걸리므로 `label`을 그대로 로딩 문구로 표시한다. **`delta`는 이미 치환이 끝난 문자열**이므로 클라이언트는 이어 붙이기만 하면 된다. 수치가 포함된 조각에는 `segment`가 함께 실려 오며 스타일링이 필요할 때만 쓴다. 서버는 자리표시자가 열려 있는 동안 출력을 보류했다가 치환 후 내보내므로 `{{ }}`가 클라이언트에 노출되지 않는다.
+> **결정**
+> **SSE 스트리밍은 MVP 에서 하지 않는다.** 모든 응답은 [§2.2](#envelope)의 JSON 봉투를 한 번에 돌려준다. `Accept` 값은 보지 않는다.
+> 이 절에는 `meta`/`tool_call`/`delta`/`citations`/`done` 이벤트 규약이 있었다. 걷어낸 이유는 셋이다. 팀 featureSpec §10.2 의 MVP 3종(종목 분석 · 용어 설명 · 보유 종목 요약) 어디에도 스트리밍 요구가 없고, 백엔드 명세에도 스트리밍 설계가 없다. 그리고 호출 경로가 프론트 → 백엔드 → AI 로 확정되어 **스트리밍을 하려면 백엔드가 스트리밍 프록시를 먼저 만들어야 한다** — 계획에 없는 작업이다. 아무도 만들지 않을 기능을 문서가 약속하고 있었고, 실제로 프론트가 붙였다가 동작하지 않았다.
+> 다시 논의한다면 순서는 **백엔드 스트리밍 프록시가 먼저**다. 그 전에는 AI 쪽만 구현해도 프론트까지 닿지 않는다.
 
 ### 2.6 에러 · 캐시 · 호출 한도
 
 ```
 {
-  "error": {
-    "code": "INSUFFICIENT_DATA",
-    "message": "위험 지표를 계산하기에 가격 히스토리가 부족합니다.",
-    "detail": { "required_days": 60, "available_days": 23, "ticker": "462870" }
-  },
+  "code": "INSUFFICIENT_DATA",
+  "message": "위험 지표를 계산하기에 가격 히스토리가 부족합니다.",
+  "detail": { "required_days": 60, "available_days": 23, "ticker": "462870" },
   "request_id": "req_01JQZ8M3T7K2"
 }
 ```
+
+> **문구 규약**
+> `message`는 **사용자에게 그대로 보여도 되는 한국어 문구**다. 백엔드 명세 §1.3 이 이 값을 화면에 그대로 노출하는 전제이므로, "LLM 키가 없습니다" 같은 내부 사정은 담지 않는다. 기계가 분기할 사유는 `detail.reason`으로 보낸다 (예: `llm_key_missing`, `ledger_unavailable`). `request_id`는 §1.3 에 없지만 남긴다 — `POST /feedback`이 이 값으로 응답을 찾으므로 에러에서만 빠지면 제보를 응답에 맞출 수 없다.
 
 | HTTP | code | 발생 조건 | 프론트 처리 |
 | --- | --- | --- | --- |
 | 400 | `INVALID_REQUEST` | 스키마 위반 | 개발 오류. 사용자 노출 금지 |
 | 400 | `UNSUPPORTED_MARKET` | 해외 종목 요청 | "현재 국내 종목만 지원합니다" |
-| 401 | `UNAUTHORIZED` | 토큰 만료·누락 | 재로그인 |
+| 401 | `UNAUTHORIZED` | 내부 토큰 불일치, 신뢰 헤더 누락·공백 | 재로그인 |
 | 404 | `INSTRUMENT_NOT_FOUND` | 미상장·폐지 종목 | 종목 페이지 자체 처리 |
 | 409 | `INSUFFICIENT_DATA` | 보유 종목 0개, 가격 히스토리 60거래일 미만 | **AI 영역만 대체 문구로 숨김.** 화면 전체 실패 아님 |
 | 422 | `GUARDRAIL_BLOCKED` | 투자 권유·가격 예측 요구, 수치 검증 실패 | 차단 사유 문구 표시 |
 | 429 | `RATE_LIMITED` | 호출 한도 초과 | `Retry-After` 헤더만큼 대기 |
-| 502 | `RETRIEVAL_FAILED` | DART·뉴스 검색 실패 | 재시도 버튼 |
+| 502 | `RETRIEVAL_FAILED` | 임베딩 제공자 없음·질의 임베딩 실패·벡터 저장소 오류 | 재시도 버튼 |
 | 504 | `LLM_TIMEOUT` | 생성 시간 초과 (30초) | 재시도 버튼 |
+
+> **구분**
+> **"근거를 못 찾았다"와 "검색이 고장났다"는 다른 응답이다.** 맞는 자료가 없으면 생성을 계속하고 **200**으로 "관련 자료를 찾지 못했습니다"를 담아 보낸다 (프롬프트 정책 §7). 임베딩 제공자가 없거나 질의 임베딩·벡터 조회가 실패하면 답을 만들지 않고 `RETRIEVAL_FAILED`를 보낸다. 둘을 같은 화면으로 처리하면 검색이 죽은 동안 사용자는 자료가 없는 줄 안다 — 앞은 재시도가 무의미하고 뒤는 재시도가 유효하다.
 
 > **중요**
 > `INSUFFICIENT_DATA`는 정상 상황이다. 신규 가입자는 보유 종목이 없고, 신규 상장 종목은 히스토리가 짧다. **AI 영역만 비활성 상태로 표시하고 기존 화면 기능은 그대로 동작해야 한다.**
@@ -246,7 +224,7 @@ data: {"finish_reason":"stop","tokens":{"input":8412,"output":623}}
 
 **POST** `/api/ai/v1/stocks/{ticker}/analysis`  —  Phase 1
 
-종목 상세 화면의 AI 분석. 투자 논지 점검을 섹션으로 포함한다. SSE 지원.
+종목 상세 화면의 AI 분석. 투자 논지 점검을 섹션으로 포함한다.
 
 #### Request
 
@@ -325,7 +303,7 @@ data: {"finish_reason":"stop","tokens":{"input":8412,"output":623}}
 
 ## §4 AI 대화
 
-**POST** `/api/ai/v1/chat`  —  SSE · Phase 1
+**POST** `/api/ai/v1/chat`  —  Phase 1
 
 유일한 도구 호출 에이전트. 나머지 기능의 파이프라인을 Tool로 노출해 재사용한다.
 
@@ -342,7 +320,23 @@ data: {"finish_reason":"stop","tokens":{"input":8412,"output":623}}
 }
 ```
 
-`conversation_id`를 생략하면 새 대화를 시작하고 응답 `meta` 이벤트로 발급한다. `context`는 화면 맥락으로, 사용자가 "이거 어때?"처럼 대명사로 물을 때 지시 대상을 해소한다. `screen`은 `home · portfolio · stock_detail · order · chat` 중 하나.
+`conversation_id`를 생략하면 새 대화를 시작하고 응답 `content.conversation_id`로 발급한다. `context`는 화면 맥락으로, 사용자가 "이거 어때?"처럼 대명사로 물을 때 지시 대상을 해소한다. `screen`은 `home · portfolio · stock_detail · order · chat` 중 하나. `message`는 공백만으로는 안 되고 2,000자를 넘으면 `INVALID_REQUEST`다 — 그보다 긴 것은 대화가 아니라 문서 붙여넣기다.
+
+#### Response — content
+
+```
+{
+  "conversation_id": "conv_01JQZ7X4M9",
+  "answer": {
+    "title": "답변",
+    "text": "삼성전자는 포트폴리오의 41.7%를 차지합니다. …",
+    "segments": [ ]
+  },
+  "tools_used": ["get_portfolio", "calc_risk_metrics"]
+}
+```
+
+`answer`는 [§2.3](#narrative)의 Section과 같은 모양이라 종목 분석의 섹션과 같은 방식으로 렌더링한다. `tools_used`는 이번 답변에서 실제로 호출된 Tool 이름이며, 근거를 되짚을 때 쓴다 — 호출 순서는 보장하지 않는다. 투자 용어 질의(featureSpec §10.2 "용어 설명")도 이 엔드포인트가 담당하고, 도구가 필요 없는 질문은 Tool 없이 답하므로 `tools_used`가 빈 배열이 된다.
 
 #### 에이전트 Tool 목록
 

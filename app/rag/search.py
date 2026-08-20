@@ -14,8 +14,10 @@ import asyncio
 import logging
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.db import SessionFactory, engine
+from app.core.errors import RetrievalFailed
 from app.core.models import Document, DocumentChunk
 from app.rag.embedding import NullEmbedder, get_embedder
 
@@ -79,16 +81,22 @@ async def search(query: str, *, top_k: int = 5, ticker: str | None = None) -> li
 
     코사인 거리(`<=>`)를 쓴다. 조각과 함께 원문 제목·공시일을 붙여, 호출부가
     근거를 구성할 때 문서를 다시 조회하지 않아도 되게 한다.
+
+    **빈 리스트는 "맞는 자료가 없다"는 뜻이지 "검색이 고장났다"가 아니다.**
+    둘을 같은 값으로 돌려주면 호출부가 구분할 수 없어, 검색이 죽은 동안
+    "관련 자료를 찾지 못했습니다"(프롬프트 정책 §7)라는 태연한 답이 나간다.
+    그래서 검색 자체가 불가능한 경우는 RetrievalFailed로 올린다 — 재시도하면
+    풀릴 수 있는 실패라 API 명세 §2.6의 502에 해당한다.
     """
     embedder = get_embedder()
     if isinstance(embedder, NullEmbedder):
         log.error("임베딩 제공자가 없다. 검색을 수행할 수 없다")
-        return []
+        raise RetrievalFailed("근거 검색을 사용할 수 없습니다.")
 
     vec = (await asyncio.to_thread(embedder.embed, [query]))[0]
     if vec is None:
         log.error("질의 임베딩에 실패했다")
-        return []
+        raise RetrievalFailed("근거 검색에 실패했습니다.")
 
     distance = DocumentChunk.embedding.cosine_distance(vec)
     stmt = (
@@ -107,8 +115,14 @@ async def search(query: str, *, top_k: int = 5, ticker: str | None = None) -> li
     if ticker:
         stmt = stmt.where(Document.ticker == ticker)
 
-    async with SessionFactory() as session:
-        rows = (await session.execute(stmt)).all()
+    try:
+        async with SessionFactory() as session:
+            rows = (await session.execute(stmt)).all()
+    except SQLAlchemyError as exc:
+        # 벡터 저장소가 흔들린 것도 근거 검색 실패다. 500으로 새어 나가면
+        # 프런트가 재시도 가능한 실패인지 알 수 없다(§2.6).
+        log.exception("근거 검색 질의에 실패했다")
+        raise RetrievalFailed("근거 검색에 실패했습니다.") from exc
 
     return [
         {
