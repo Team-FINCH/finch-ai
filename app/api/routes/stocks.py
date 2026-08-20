@@ -14,15 +14,13 @@ import asyncio
 import logging
 import re
 from datetime import datetime, time
-from functools import lru_cache
 from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser, DbSession
-from app.core.adapters import SeedLedgerSource
-from app.core.config import settings
+from app.core.adapters import ledger_source
 from app.core.enums import MetricSource, WikiSource
 from app.core.errors import InsufficientData, InvalidRequest
 from app.core.response_log import record
@@ -73,21 +71,18 @@ class AnalysisRequest(BaseModel):
 
 
 # ── 원장 ─────────────────────────────────────────────────
-@lru_cache
-def _ledger_source() -> SeedLedgerSource:
-    return SeedLedgerSource(settings.seed_fixture_path)
-
-
 async def _snapshot(user_id: str) -> PortfolioSnapshot | None:
     """마지막 거래일 기준 스냅샷. 원장을 못 읽으면 None이다.
 
-    백엔드 원장 읽기가 열리기 전까지는 시드 어댑터만 있다(§11). 없는 것을
-    억지로 만들지 않고 개인화 섹션만 조용히 비운다 — §3이 정한 동작이다.
+    어느 원장을 읽을지는 `ledger_source()` 가 정한다(설정 `LEDGER_SOURCE`).
+    원천이 없거나(`none`) 읽기에 실패하면 없는 것을 억지로 만들지 않고 개인화
+    섹션만 조용히 비운다 — §3이 정한 동작이다.
     """
-    if not settings.use_seed_adapter:
+    source = ledger_source()
+    if source is None:
         return None
     try:
-        ledger = await _ledger_source().load(user_id)
+        ledger = await source.load(user_id)
     except (KeyError, FileNotFoundError, OSError):
         return None
     if not ledger.trading_days:

@@ -22,7 +22,6 @@ import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
-from functools import lru_cache
 from typing import Any
 
 from pydantic import ValidationError
@@ -48,8 +47,7 @@ from app.api.routes.portfolio import (
     _market_cap_ranks,
     _period_start,
 )
-from app.core.adapters import Ledger, SeedLedgerSource
-from app.core.config import settings
+from app.core.adapters import Ledger, ledger_source
 from app.core.enums import MetricSource, OrderSide, Period, Screen, WikiSource
 from app.core.errors import AppError
 from app.core.schemas import Segment
@@ -260,17 +258,13 @@ class ToolContext:
     db_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
 
-@lru_cache
-def _ledger_source() -> SeedLedgerSource:
-    return SeedLedgerSource(settings.seed_fixture_path)
-
-
 async def _snapshot(user_id: str) -> PortfolioSnapshot | None:
     """마지막 거래일 기준 스냅샷. 원장을 못 읽으면 None이다."""
-    if not settings.use_seed_adapter:
+    source = ledger_source()
+    if source is None:
         return None
     try:
-        ledger = await _ledger_source().load(user_id)
+        ledger = await source.load(user_id)
     except (KeyError, FileNotFoundError, OSError):
         return None
     if not ledger.trading_days:
@@ -351,11 +345,12 @@ async def _get_price_history(ctx: ToolContext, args: dict[str, Any]) -> dict[str
     ticker = str(args.get("ticker") or ctx.ticker or "").strip()
     if not ticker:
         return {"unavailable": "종목코드가 필요합니다."}
-    if not settings.use_seed_adapter:
+    source = ledger_source()
+    if source is None:
         return {"unavailable": "시세 원천이 연결되지 않았습니다."}
 
     try:
-        ledger = await _ledger_source().load(ctx.user_id)
+        ledger = await source.load(ctx.user_id)
     except (KeyError, FileNotFoundError, OSError):
         return {"unavailable": "이 사용자의 원장을 읽을 수 없습니다."}
 

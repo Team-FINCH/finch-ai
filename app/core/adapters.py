@@ -12,6 +12,7 @@ import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Protocol
 
@@ -219,6 +220,12 @@ class BackendLedgerSource:
             res = client.get(f"{self._base}{path}", params=params, headers=headers)
             res.raise_for_status()
             return res.json()
+        except httpx.HTTPError as exc:
+            # 호출부는 원장을 못 읽는 경우를 (KeyError, FileNotFoundError, OSError)
+            # 로 잡는다. httpx 예외는 거기 안 들어가서 그대로 새면 500 이 된다.
+            # 원천을 못 읽은 것이니 OSError 로 옮겨 준다 — 호출부가 httpx 를
+            # 알아야 할 이유가 없다.
+            raise OSError(f"백엔드 원장을 읽지 못했다: {path}") from exc
         finally:
             if self._client is None:
                 client.close()
@@ -342,3 +349,23 @@ def _common_days(prices: Mapping[str, Mapping[date, float]]) -> tuple[date, ...]
 def _to_date(value: str) -> date:
     """ISO 8601 날짜/일시에서 날짜만 꺼낸다. 백엔드는 오프셋을 붙여 보낸다."""
     return datetime.fromisoformat(value).date()
+
+
+@lru_cache
+def ledger_source() -> LedgerSource | None:
+    """설정이 가리키는 원장 어댑터. `none` 이면 None 이다.
+
+    선택은 여기 한 곳에서만 한다. 호출부는 `None` 인지만 보고 어느 어댑터인지
+    알 필요가 없다 — 그게 `LedgerSource` 프로토콜을 둔 이유다.
+
+    `backend` 는 백엔드 `/internal/v1` 이 구현되기 전에는 쓸 수 없다.
+    """
+    match settings.ledger_source:
+        case "seed":
+            return SeedLedgerSource(settings.seed_fixture_path)
+        case "backend":
+            return BackendLedgerSource(
+                settings.backend_base_url, settings.backend_service_token
+            )
+        case _:
+            return None

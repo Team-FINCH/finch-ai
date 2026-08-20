@@ -204,6 +204,14 @@ AI 서버는 `X-User-Id` 를 **검증 없이 그대로 신뢰합니다.** 외부
 
 백엔드는 원장을 갖고 AI 는 시장 데이터를 갖습니다.
 
+### 전환 스위치 — `LEDGER_SOURCE`
+
+`seed` · `backend` · `none` 셋 중 하나이고 기본값은 `seed` 입니다. 선택은 `ledger_source()` 한 곳에서만 합니다.
+
+**`backend` 는 `/internal/v1` 이 열리면 설정 한 줄로 켭니다.** 코드 변경은 필요 없습니다. 열리기 전에 켜면 원장을 못 읽어 개인화 섹션이 비활성되고 진단은 `INSUFFICIENT_DATA` 로 나갑니다 — 조용히 틀린 숫자를 내는 것보다 낫습니다.
+
+백엔드가 응답하지 않을 때도 같은 경로입니다. 500 이 아니라 개인화만 비활성되거나 `INSUFFICIENT_DATA` 입니다.
+
 ### 알려진 결함 — 종가가 빠지면 엔진이 죽습니다 (별도 티켓)
 
 `app/engines/portfolio.py` 가 거래일마다 `ledger.price(symbol, day)` 를 무방비로 부릅니다. `Ledger.price` 는 없으면 `KeyError` 를 던지므로, 보유 종목 중 하나라도 그날 종가가 없으면 **엔진이 그대로 죽습니다.** 500 이 나가고 `INSUFFICIENT_DATA` 로 잡히지 않습니다.

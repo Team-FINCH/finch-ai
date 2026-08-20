@@ -15,7 +15,6 @@ import logging
 from collections import defaultdict
 from collections.abc import Sequence
 from datetime import date, datetime, time, timedelta
-from functools import lru_cache
 from typing import Any
 
 from fastapi import APIRouter
@@ -23,8 +22,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 
 from app.api.deps import CurrentUser, DbSession
-from app.core.adapters import Ledger, SeedLedgerSource
-from app.core.config import settings
+from app.core.adapters import Ledger, ledger_source
 from app.core.enums import MetricSource, Period
 from app.core.errors import InsufficientData, InvalidRequest
 from app.core.models import Event, IndexDaily, Instrument, PriceDaily
@@ -71,22 +69,18 @@ class AttributionRequest(BaseModel):
 
 
 # ── 원장 ──────────────────────────────────────────────────────────────────────
-@lru_cache
-def _ledger_source() -> SeedLedgerSource:
-    return SeedLedgerSource(settings.seed_fixture_path)
-
-
 async def _ledger(user_id: str) -> Ledger | None:
     """원장 스냅샷. 못 읽으면 None이다.
 
-    백엔드 원장 읽기가 열리기 전까지는 시드 어댑터만 있다(§11). `stocks.py`는 스냅샷
+    어느 원장을 읽을지는 `ledger_source()` 가 정한다(설정 `LEDGER_SOURCE`). `stocks.py`는 스냅샷
     하나만 필요해서 거기서 끝나지만, Risk Engine은 `prices`와 거래일 전체를 받으므로
     여기서는 `Ledger`를 그대로 들고 나온다.
     """
-    if not settings.use_seed_adapter:
+    source = ledger_source()
+    if source is None:
         return None
     try:
-        ledger = await _ledger_source().load(user_id)
+        ledger = await source.load(user_id)
     except (KeyError, FileNotFoundError, OSError):
         return None
     return ledger if ledger.trading_days else None

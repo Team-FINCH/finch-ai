@@ -14,7 +14,12 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from app.core.adapters import BackendLedgerSource, _common_days
+from app.core.adapters import (
+    BackendLedgerSource,
+    SeedLedgerSource,
+    _common_days,
+    ledger_source,
+)
 from app.core.config import settings
 from app.core.enums import OrderSide
 
@@ -89,6 +94,31 @@ def _source(client: _FakeClient, sessions: Any = None) -> BackendLedgerSource:
     return BackendLedgerSource(
         "http://backend:8080/", "s3cret", client=client, sessions=sessions
     )
+
+
+# ── 어댑터 선택 ──────────────────────────────────────────────────────────
+@pytest.mark.parametrize(
+    ("mode", "expected"),
+    [("seed", SeedLedgerSource), ("backend", BackendLedgerSource), ("none", type(None))],
+)
+def test_설정이_어댑터를_고른다(monkeypatch, mode, expected):
+    """선택은 ledger_source() 한 곳에서만 한다. 호출부는 None 인지만 본다."""
+    monkeypatch.setattr(settings, "ledger_source", mode)
+    ledger_source.cache_clear()
+    try:
+        assert type(ledger_source()) is expected
+    finally:
+        ledger_source.cache_clear()
+
+
+def test_설정에_없는_값은_기동_때_걸린다():
+    """Literal 이라 오타가 런타임까지 못 간다. 불리언 하나로는 세 상태를 못 담는다."""
+    from pydantic import ValidationError
+
+    from app.core.config import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(ledger_source="seedd")
 
 
 # ── 백엔드에서 오는 것 ────────────────────────────────────────────────────
@@ -209,3 +239,20 @@ async def test_입출금과_수수료는_지어내지_않는다(sessions):
 
     assert ledger.flows == ()
     assert ledger.trades[0].fee == 0.0
+
+
+@pytest.mark.asyncio
+async def test_백엔드가_죽으면_OSError로_나간다(sessions):
+    """호출부는 (KeyError, FileNotFoundError, OSError) 로 잡는다.
+
+    httpx 예외가 그대로 새면 500 이 나가고, 개인화 섹션만 비우는 정상 경로를
+    타지 못한다. 호출부가 httpx 를 알아야 할 이유도 없다.
+    """
+    import httpx
+
+    class _Down:
+        def get(self, *_: Any, **__: Any):
+            raise httpx.ConnectError("연결 실패")
+
+    with pytest.raises(OSError):
+        await _source(_Down(), sessions).load("1")

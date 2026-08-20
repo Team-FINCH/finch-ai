@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -75,7 +76,12 @@ class Settings(BaseSettings):
     # 내부 네트워크에서만 접근 가능해야 한다 — API 계약 §4 참조.
     trusted_user_header: str = "X-User-Id"
     internal_token_header: str = "X-Internal-Token"
-    use_seed_adapter: bool = True
+    # 원장을 어디서 읽을지. 백엔드 /internal/v1 이 열리기 전에는 seed 로 병렬 진행한다.
+    #   seed    — tests/fixtures 의 JSON. 지금 기본값이다
+    #   backend — 보유·거래는 백엔드, 시계열·섹터는 우리 DB (BackendLedgerSource)
+    #   none    — 원장 없음. 개인화 섹션이 조용히 비활성된다
+    # Literal 이라 오타는 기동 시점에 걸린다. 불리언 하나로는 세 상태를 못 담는다.
+    ledger_source: Literal["seed", "backend", "none"] = "seed"
     seed_fixture_path: str = "tests/fixtures/seed_portfolio.json"
 
     # ── 엔진 상수 ────────────────────────────────────────

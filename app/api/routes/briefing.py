@@ -10,15 +10,13 @@ import asyncio
 import logging
 from datetime import date as Date
 from datetime import datetime, time, timedelta
-from functools import lru_cache
 from typing import Any
 
 from fastapi import APIRouter
 from sqlalchemy import or_, select
 
 from app.api.deps import CurrentUser, DbSession
-from app.core.adapters import Ledger, SeedLedgerSource
-from app.core.config import settings
+from app.core.adapters import Ledger, ledger_source
 from app.core.enums import BriefingStatus, MetricSource, RateSensitivity
 from app.core.errors import InsufficientData
 from app.core.models import AIResponse, Event
@@ -56,20 +54,16 @@ _ENDPOINT = "briefing"
 
 
 # ── 원장 ──────────────────────────────────────────────────────────────────────
-@lru_cache
-def _ledger_source() -> SeedLedgerSource:
-    return SeedLedgerSource(settings.seed_fixture_path)
-
-
 async def _ledger(user_id: str) -> Ledger | None:
     """원장 스냅샷. 못 읽으면 None이다(§11).
 
     브리핑에서 None은 오류가 아니다 — 진단과 달리 status "empty"로 나간다.
     """
-    if not settings.use_seed_adapter:
+    source = ledger_source()
+    if source is None:
         return None
     try:
-        ledger = await _ledger_source().load(user_id)
+        ledger = await source.load(user_id)
     except (KeyError, FileNotFoundError, OSError):
         return None
     return ledger if ledger.trading_days else None

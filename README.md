@@ -40,6 +40,25 @@ AI 기능의 구현은 AI 파트가 전부 소유합니다. 다른 파트에 계
 신규 화면 개발도 요청하지 않습니다. 타 파트 의존은 **기존 원장 조회 API의 읽기 권한** 하나뿐이며,
 그마저 시드 데이터 어댑터로 대체해 병렬 진행합니다.
 
+### 원장을 어디서 읽는가 — `LEDGER_SOURCE`
+
+거래·보유는 백엔드가 소유하고 AI 는 읽기만 합니다. 어디서 읽을지는 설정 하나로 정하며,
+선택은 `app/core/adapters.py` 의 `ledger_source()` 한 곳에서만 합니다.
+
+| 값 | 동작 | 언제 |
+|---|---|---|
+| `seed` (기본) | `tests/fixtures/seed_portfolio.json` | 지금. 백엔드가 열리기 전 병렬 진행용 |
+| `backend` | 보유·거래는 백엔드 `/internal/v1`, **시계열·섹터는 우리 DB** | 백엔드가 `/internal/v1` 을 구현한 뒤 |
+| `none` | 원장 없음 | 원장 없이 종목 분석만 돌릴 때 |
+
+`none` 이면 개인화 섹션(`my_impact` · `thesis_check`)이 조용히 비활성되고, 포트폴리오
+진단은 `INSUFFICIENT_DATA` 로 나갑니다. 에러가 아니라 설계된 동작입니다.
+
+**`backend` 는 백엔드가 `/internal/v1` 을 구현하기 전에는 쓸 수 없습니다.** 지금 켜면
+원장을 못 읽어 위와 같은 비활성 경로를 탑니다. 시계열과 섹터는 백엔드가 주지 않고
+우리가 `price_daily` · `instruments` 에 적재한 것을 씁니다 — 자세한 분담은
+[`docs/api-contract-proposal.md`](docs/api-contract-proposal.md) §4.1 에 있습니다.
+
 ### ⚠️ 배포 조건 — AI 서버는 외부에 노출하지 않습니다
 
 호출 경로는 **프런트 → 백엔드 → AI** 입니다. JWT 검증은 백엔드가 끝내고, AI 는 백엔드가 넘긴
