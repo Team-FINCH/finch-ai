@@ -95,7 +95,7 @@ async def _no_thesis(*_: Any, **__: Any) -> None:
 
 
 def _post(client: TestClient, body: dict, *, user: str = HOLDER):
-    return client.post(URL, json=body, headers={"Authorization": f"Bearer {user}"})
+    return client.post(URL, json=body, headers={"X-User-Id": user})
 
 
 # ── 기본 동작 ────────────────────────────────────────────
@@ -216,7 +216,7 @@ def test_응답을_저장해_피드백을_받는다(client):
     assert row.endpoint == "stocks.analysis"
     feedback = client.post(
         "/api/ai/v1/feedback",
-        headers={"Authorization": f"Bearer {HOLDER}"},
+        headers={"X-User-Id": HOLDER},
         json={"request_id": request_id, "rating": "up", "reasons": []},
     )
     assert feedback.status_code == 200
@@ -227,7 +227,7 @@ def test_종목코드가_6자리가_아니면_거부한다(client):
     response = client.post(
         "/api/ai/v1/stocks/AAPL/analysis",
         json={},
-        headers={"Authorization": f"Bearer {HOLDER}"},
+        headers={"X-User-Id": HOLDER},
     )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "INVALID_REQUEST"

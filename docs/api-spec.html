@@ -472,7 +472,7 @@
         </p>
         <div class="meta-strip">
           <span><b>Base</b> /api/ai/v1</span>
-          <span><b>Auth</b> Bearer JWT</span>
+          <span><b>Auth</b> 백엔드 신뢰 헤더 (내부 전용)</span>
           <span><b>Format</b> JSON · UTF-8</span>
           <span><b>Runtime</b> FastAPI (별도 서비스)</span>
         </div>
@@ -551,7 +551,7 @@
           <thead><tr><th>항목</th><th>규약</th></tr></thead>
           <tbody>
             <tr><td>Base URL</td><td><code>/api/ai/v1</code></td></tr>
-            <tr><td>인증</td><td><code>Authorization: Bearer &lt;JWT&gt;</code> — 사용자 식별자는 토큰에서 추출하며 <strong>경로·본문에 넣지 않는다</strong></td></tr>
+            <tr><td>인증</td><td><code>X-User-Id: &lt;사용자 식별자&gt;</code> — 백엔드가 JWT를 검증한 뒤 넣어 주는 신뢰 헤더다. AI 서버는 JWT를 다시 검증하지 않으며, 사용자 식별자를 <strong>경로·본문에 넣지 않는다</strong>. 값을 검증 없이 신뢰하므로 <strong>AI 서버는 내부 네트워크에서만 접근 가능해야 한다</strong></td></tr>
             <tr><td>시각</td><td>ISO 8601, KST 오프셋 명시 (<code>2026-08-19T14:32:09+09:00</code>)</td></tr>
             <tr><td>비율</td><td><strong>0~1 사이 소수</strong>로 전달 (<code>0.4168</code>). 백분율 변환은 <code>metrics.display</code>가 담당</td></tr>
             <tr><td>금액</td><td>원 단위 정수. 소수점 없음</td></tr>

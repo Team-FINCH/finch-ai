@@ -23,22 +23,27 @@ import sys
 from pathlib import Path
 from typing import Any
 
+# app.api.main과 달리 설정 모듈은 DB 엔진을 만들지 않아 여기서 바로 임포트해도 된다.
+# 헤더 이름을 스크립트에 다시 적으면 config와 어긋나므로 한 곳에서만 읽는다.
+from app.core.config import settings
+
 OUT = Path(__file__).resolve().parent.parent / "docs" / "openapi.json"
 
 # 로컬 개발 서버. FastAPI는 servers를 비워 두는데, 그러면 Postman이 baseUrl을
 # 빈 값으로 잡아 임포트 직후 아무 요청도 보낼 수 없다.
 SERVERS = [{"url": "http://localhost:8000", "description": "로컬 개발 서버"}]
 
-BEARER_AUTH = {
-    "type": "http",
-    "scheme": "bearer",
+TRUSTED_HEADER_AUTH = {
+    "type": "apiKey",
+    "in": "header",
+    "name": settings.trusted_user_header,
     "description": (
-        "사용자 식별자는 토큰에서만 읽는다. 경로나 본문으로 받지 않는다. "
-        "개발 환경에서는 비어 있지 않은 아무 문자열이나 통과한다."
+        "백엔드가 JWT를 검증한 뒤 넣어 주는 사용자 식별자. 경로나 본문으로는 받지 않는다. "
+        "AI 서버는 이 값을 검증 없이 신뢰하므로 내부 네트워크에서만 접근 가능해야 한다."
     ),
 }
 
-# 인증이 필요 없는 경로. 나머지는 전부 Bearer 토큰을 요구한다.
+# 인증이 필요 없는 경로. 나머지는 전부 신뢰 헤더를 요구한다.
 PUBLIC_PATHS = {"/health"}
 
 
@@ -62,20 +67,23 @@ def build() -> dict[str, Any]:
     schema["servers"] = SERVERS
 
     # 인증은 평범한 Header 의존성이라 FastAPI가 스키마에 적어 주지 않는다.
-    # 그대로 내보내면 Postman이 Authorization을 붙이지 않아 전부 401로 떨어지고,
+    # 그대로 내보내면 Postman이 신뢰 헤더를 붙이지 않아 전부 401로 떨어지고,
     # 읽는 사람은 내보낸 스키마가 깨진 줄 안다. 여기서 한 번 채운다.
-    schema.setdefault("components", {})["securitySchemes"] = {"bearerAuth": BEARER_AUTH}
-    schema["security"] = [{"bearerAuth": []}]
+    schema.setdefault("components", {})["securitySchemes"] = {
+        "trustedUserHeader": TRUSTED_HEADER_AUTH
+    }
+    schema["security"] = [{"trustedUserHeader": []}]
     for path in PUBLIC_PATHS & schema["paths"].keys():
         for op in schema["paths"][path].values():
             op["security"] = []
 
-    # 같은 이유로 authorization이 오퍼레이션마다 헤더 파라미터로도 잡혀 있다.
+    # 같은 이유로 신뢰 헤더가 오퍼레이션마다 헤더 파라미터로도 잡혀 있다.
     # 위에서 securitySchemes로 선언했으니 남겨 두면 Postman이 요청 12개마다
     # 인증 입력을 두 벌 보여 준다. 인증은 한 군데서만 말한다.
+    header = settings.trusted_user_header.lower()
     for ops in schema["paths"].values():
         for op in ops.values():
-            params = [q for q in op.get("parameters", []) if q["name"].lower() != "authorization"]
+            params = [q for q in op.get("parameters", []) if q["name"].lower() != header]
             if params:
                 op["parameters"] = params
             else:

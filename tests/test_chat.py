@@ -107,7 +107,7 @@ def portfolio_client(monkeypatch):
 
 
 def _post(client: TestClient, body: dict, *, user: str = HOLDER):
-    return client.post(URL, json=body, headers={"Authorization": f"Bearer {user}"})
+    return client.post(URL, json=body, headers={"X-User-Id": user})
 
 
 # ── 기본 동작 ────────────────────────────────────────────────────────────────
@@ -137,7 +137,7 @@ def test_응답을_저장해_피드백을_받는다(portfolio_client):
     assert row.endpoint == "chat"
     feedback = portfolio_client.post(
         "/api/ai/v1/feedback",
-        headers={"Authorization": f"Bearer {HOLDER}"},
+        headers={"X-User-Id": HOLDER},
         json={"request_id": request_id, "rating": "up", "reasons": []},
     )
     assert feedback.status_code == 200

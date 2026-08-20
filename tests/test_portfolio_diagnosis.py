@@ -138,7 +138,7 @@ def client(monkeypatch):
 
 
 def _get(client: TestClient, user: str) -> Any:
-    return client.post(URL, headers={"Authorization": f"Bearer {user}"})
+    return client.post(URL, headers={"X-User-Id": user})
 
 
 # ── 통과 경로 ─────────────────────────────────────────────────────────────────

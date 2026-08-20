@@ -195,7 +195,7 @@ def client(monkeypatch):
 
 def _post(client: TestClient, user: str, orders: list[dict[str, Any]]) -> Any:
     return client.post(
-        URL, headers={"Authorization": f"Bearer {user}"}, json={"orders": orders}
+        URL, headers={"X-User-Id": user}, json={"orders": orders}
     )
 
 
@@ -231,7 +231,7 @@ def test_응답을_저장해_피드백을_받는다(client: TestClient) -> None:
     assert row.endpoint == "orders.preview"
     feedback = client.post(
         "/api/ai/v1/feedback",
-        headers={"Authorization": f"Bearer {HOLDER}"},
+        headers={"X-User-Id": HOLDER},
         json={"request_id": request_id, "rating": "up", "reasons": []},
     )
     assert feedback.status_code == 200

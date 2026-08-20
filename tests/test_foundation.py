@@ -12,12 +12,13 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateTable
 
 from app.api.main import API_PREFIX, app
+from app.core.config import settings
 from app.core.enums import MetricSource, SegmentType, Unit
 from app.core.models import Base
 from app.core.schemas import DataAsOf, Envelope, Section, Segment
 
 client = TestClient(app)
-AUTH = {"Authorization": "Bearer u_test"}
+AUTH = {"X-User-Id": "u_test"}
 
 EXPECTED_TABLES = {
     "instruments",
@@ -130,6 +131,27 @@ def test_missing_auth_returns_unauthorized() -> None:
     res = client.post(f"{API_PREFIX}/stocks/005930/analysis", json={})
     assert res.status_code == 401
     assert res.json()["error"]["code"] == "UNAUTHORIZED"
+
+
+def test_blank_trusted_header_returns_unauthorized() -> None:
+    """헤더는 있는데 값이 공백이면 사용자를 특정할 수 없다. 빈 문자열을 id로 쓰면 안 된다."""
+    res = client.post(
+        f"{API_PREFIX}/stocks/005930/analysis",
+        json={},
+        headers={settings.trusted_user_header: "   "},
+    )
+    assert res.status_code == 401
+    assert res.json()["error"]["code"] == "UNAUTHORIZED"
+
+
+def test_bearer_token_is_no_longer_accepted() -> None:
+    """JWT 검증은 백엔드가 한다. Authorization만 들고 오면 사용자를 알 수 없다."""
+    res = client.post(
+        f"{API_PREFIX}/stocks/005930/analysis",
+        json={},
+        headers={"Authorization": "Bearer u_test"},
+    )
+    assert res.status_code == 401
 
 
 def test_app_error_becomes_structured_response() -> None:
