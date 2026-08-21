@@ -200,8 +200,9 @@ class BackendLedgerSource:
 
     백엔드 원장은 읽기만 한다. 파생 지표는 전부 우리가 계산한다(명세 10.1).
 
-    **아직 §9 에 없는 것**: 입출금 이력과 수수료. 둘 다 백엔드만 아는 값이라
-    지어내지 않고 비운다. 수수료가 0 이면 수익률이 실제보다 좋게 나온다.
+    **아직 §9 에 없는 것**: 입출금 이력과 수수료. 수수료는 지어내지 않고 0으로
+    두며, 외부 현금흐름은 현재 현금에서 역산한 기초 입금 한 건으로 복원한다.
+    입금 시점은 첫 거래일로 가정하므로 회차 중간 충전은 정확히 반영하지 못한다.
 
     `load` 가 async 인 점에 주의. `LedgerSource` 프로토콜은 동기지만 우리
     드라이버가 asyncpg 뿐이라(동기 드라이버는 새 의존성이다) DB 를 동기로
@@ -297,6 +298,7 @@ class BackendLedgerSource:
         # 그날의 평가액을 다시 계산해야 하기 때문이다.
         tickers = tuple({h["stockCode"] for h in holdings} | {t.symbol for t in trades})
         prices, sectors = await _market_data(tickers, self._sessions)
+        trading_days = _common_days(prices)
 
         instruments = {
             h["stockCode"]: Instrument(
@@ -305,13 +307,27 @@ class BackendLedgerSource:
             for h in holdings
         }
 
+        flows: tuple[CashFlow, ...] = ()
+        if trading_days:
+            opening_cash = float(portfolio["cashBalance"])
+            trading_day_set = set(trading_days)
+            for trade in (row for row in trades if row.trade_date in trading_day_set):
+                gross = trade.quantity * trade.price
+                opening_cash += (
+                    gross + trade.fee if trade.side is OrderSide.BUY else -gross + trade.fee
+                )
+            # ponytail: 입금 시점을 모르니 전액을 첫 거래일로 몰아넣는다. 회차 중간
+            # 충전이 있으면 시간가중수익률이 낮게 나온다. 백엔드 /internal/v1 이
+            # 입출금 이력을 내주면(aiApiSpec §5 결정항목 7) 이 복원을 걷어낸다.
+            flows = (CashFlow(trading_days[0], opening_cash),)
+
         return Ledger(
             user_id=user_id,
-            trading_days=_common_days(prices),
+            trading_days=trading_days,
             instruments=instruments,
             prices=prices,
             trades=trades,
-            flows=(),  # §9 에 입출금이 없다. 백엔드만 아는 값이라 지어내지 않는다.
+            flows=flows,
         )
 
 

@@ -11,6 +11,7 @@ from datetime import date
 from typing import Any
 
 import pytest
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -22,6 +23,7 @@ from app.core.adapters import (
 )
 from app.core.config import settings
 from app.core.enums import OrderSide
+from app.core.models import PriceDaily
 
 #: 시드 시세가 들어 있는 종목. price_daily 에 60거래일 이상 있다.
 TICKER = "005930"
@@ -94,6 +96,13 @@ def _source(client: _FakeClient, sessions: Any = None) -> BackendLedgerSource:
     return BackendLedgerSource(
         "http://backend:8080/", "s3cret", client=client, sessions=sessions
     )
+
+
+async def _skip_without_prices(sessions: Any) -> None:
+    async with sessions() as session:
+        count = await session.scalar(select(func.count()).select_from(PriceDaily))
+    if not count:
+        pytest.skip("price_daily 적재가 필요한 통합 테스트")
 
 
 # ── 어댑터 선택 ──────────────────────────────────────────────────────────
@@ -186,6 +195,7 @@ async def test_시계열은_우리_price_daily에서_온다(sessions):
 
     위험 지표가 60거래일을 요구하므로 이게 비면 진단이 통째로 비활성된다.
     """
+    await _skip_without_prices(sessions)
     ledger = await _source(_FakeClient(), sessions).load("1")
 
     assert len(ledger.trading_days) >= settings.min_history_days
@@ -196,6 +206,7 @@ async def test_시계열은_우리_price_daily에서_온다(sessions):
 @pytest.mark.asyncio
 async def test_섹터는_우리_instruments에서_온다(sessions):
     """DART 로 채운 값이다. §9 에는 섹터가 없다."""
+    await _skip_without_prices(sessions)
     ledger = await _source(_FakeClient(), sessions).load("1")
     assert ledger.instrument(TICKER).sector != "미분류"
 
@@ -232,12 +243,23 @@ def test_거래일은_모든_종목의_교집합이다():
 
 # ── 없는 것 ──────────────────────────────────────────────────────────────
 @pytest.mark.asyncio
-async def test_입출금과_수수료는_지어내지_않는다(sessions):
-    """§9 에 없고 백엔드만 아는 값이다. 채우면 조용히 틀린 숫자가 나온다."""
-    pages = [{"trades": [TRADE], "nextCursor": None, "hasNext": False}]
-    ledger = await _source(_FakeClient(pages), sessions).load("1")
+async def test_현재_현금에서_기초현금을_복원하고_수수료는_지어내지_않는다(monkeypatch):
+    async def market_data(*_args, **_kwargs):
+        return {TICKER: {date(2026, 8, 18): 73_500.0}}, {TICKER: "반도체"}
 
-    assert ledger.flows == ()
+    monkeypatch.setattr("app.core.adapters._market_data", market_data)
+    excluded = TRADE | {
+        "tradeId": 102,
+        "executedAt": "2026-08-17T10:12:44+09:00",
+        "quantity": 1,
+        "price": 100,
+    }
+    pages = [{"trades": [TRADE, excluded], "nextCursor": None, "hasNext": False}]
+    ledger = await _source(_FakeClient(pages)).load("1")
+
+    # 엔진이 재생하지 않는 8월 17일 거래는 기초현금 역산에서도 제외한다.
+    assert len(ledger.trades) == 2
+    assert ledger.flows[0].amount == 1_250_000 + 712_000
     assert ledger.trades[0].fee == 0.0
 
 
