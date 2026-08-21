@@ -13,6 +13,7 @@ from datetime import datetime, time, timedelta
 from typing import Any
 
 from fastapi import APIRouter
+from pydantic import BaseModel
 from sqlalchemy import or_, select
 
 from app.api.deps import CurrentUser, DbSession
@@ -53,6 +54,25 @@ _SHIFT_LOOKBACK_DAYS = 30
 _ENDPOINT = "briefing"
 
 
+class BriefingItem(BaseModel):
+    rank: int
+    category: str
+    relevance_score: float | int
+    title: str
+    text: str
+    segments: list[Segment]
+    related_tickers: list[str]
+    deeplink: str
+    citations: list[str]
+
+
+class BriefingContent(BaseModel):
+    date: Date | None
+    status: str
+    generated_at: datetime
+    items: list[BriefingItem]
+
+
 # ── 원장 ──────────────────────────────────────────────────────────────────────
 async def _ledger(user_id: str) -> Ledger | None:
     """원장 스냅샷. 못 읽으면 None이다(§11).
@@ -73,7 +93,7 @@ async def _ledger(user_id: str) -> Ledger | None:
 @router.get("")
 async def get_briefing(
     user_id: CurrentUser, db: DbSession, date: Date | None = None
-) -> Envelope[dict]:
+) -> Envelope[BriefingContent]:
     """그날 알아야 할 일 최대 4건(§8).
 
     보유 종목이 없거나 유의미한 항목이 없으면 409가 아니라 200 + status "empty"다.
@@ -145,7 +165,7 @@ async def get_briefing(
             continue
         items.append(_item_payload(item, outcome.section.model_dump(mode="json"), len(items) + 1))
 
-    envelope = Envelope[dict](
+    envelope = Envelope[BriefingContent](
         content={
             "date": day.isoformat(),
             "status": (BriefingStatus.READY if items else BriefingStatus.EMPTY).value,
@@ -162,9 +182,9 @@ async def get_briefing(
 # ── 응답 조립 ─────────────────────────────────────────────────────────────────
 async def _empty(
     db: DbSession, user_id: str, day: Date | None, now: datetime
-) -> Envelope[dict]:
+) -> Envelope[BriefingContent]:
     """보유 종목이 없거나 내보낼 항목이 없을 때. 오류가 아니다."""
-    envelope = Envelope[dict](
+    envelope = Envelope[BriefingContent](
         content={
             "date": day.isoformat() if day else None,
             "status": BriefingStatus.EMPTY.value,

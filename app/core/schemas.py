@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 from app.core.config import settings
 from app.core.enums import (
@@ -37,6 +37,31 @@ def now_kst() -> datetime:
 
 def new_request_id() -> str:
     return f"req_{uuid.uuid4().hex[:16]}"
+
+
+# ── content 모델 공통 ────────────────────────────────────
+class ContentModel(BaseModel):
+    """기능별 `content` 모델의 바탕.
+
+    `extra="forbid"` 가 핵심이다. 라우터가 넣는 키를 모델이 빠뜨리면 pydantic 은
+    조용히 지우고, 응답에서 필드 하나가 사라져도 아무 로그가 남지 않는다. 여기서
+    막으면 그 실수가 500 으로 즉시 드러난다 — 프런트가 필드를 잃는 것보다 낫다.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class OptionalKeysModel(ContentModel):
+    """라우터가 조건에 따라 넣기도 하고 빼기도 하는 키를 가진 모델.
+
+    키를 선언해 두되(그래야 스키마에 나온다) 채우지 않은 것은 응답에서 뺀다.
+    기본값 null 로 내보내면 "값이 없다"와 "키가 아예 없다"를 구분하던 기존 응답이
+    달라진다 — 이 작업은 타입만 붙이고 본문은 그대로 두는 것이 조건이다.
+    """
+
+    @model_serializer(mode="wrap")
+    def _drop_unset(self, handler: Any) -> dict[str, Any]:
+        return {key: value for key, value in handler(self).items() if key in self.model_fields_set}
 
 
 # ── 응답 조각 ────────────────────────────────────────────

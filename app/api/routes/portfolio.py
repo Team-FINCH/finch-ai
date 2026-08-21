@@ -18,7 +18,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 
 from app.api.deps import CurrentUser, DbSession
@@ -27,7 +27,7 @@ from app.core.enums import MetricSource, Period
 from app.core.errors import InsufficientData, InvalidRequest
 from app.core.models import Event, IndexDaily, Instrument, PriceDaily
 from app.core.response_log import last_risk_level, record
-from app.core.schemas import DataAsOf, Envelope, Segment
+from app.core.schemas import DataAsOf, Envelope, Section, Segment
 from app.engines.attribution import (
     AttributionResult,
     BenchmarkDay,
@@ -44,6 +44,7 @@ from app.llm.guard import Feature
 log = logging.getLogger("app.api.portfolio")
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
+Number = float | int
 
 #: 벤치마크는 §3.4 베타 계산용이다. `index_daily`가 KOSPI로 적재되어 있다.
 _BENCHMARK_CODE = "KOSPI"
@@ -66,6 +67,93 @@ _FINDING_TITLES: dict[str, str] = {
 class AttributionRequest(BaseModel):
     period: Period = Period.D1
     benchmark: str | None = None
+
+
+class DiagnosisFinding(BaseModel):
+    id: str
+    category: str
+    severity: str
+    title: str
+    text: str | None
+    segments: list[Segment] | None
+    evidence: dict[str, Any]
+
+
+class DiagnosisIndicators(BaseModel):
+    hhi: Number
+    top1_weight: Number
+    top3_weight: Number
+    sector_hhi: Number
+    annualized_volatility: Number | None
+    max_drawdown_1y: Number
+    cash_ratio: Number
+    rate_sensitivity: str
+    beta: Number | None
+    large_cap_weight: Number | None
+    diversification_ratio: Number | None
+
+
+class DiagnosisContent(BaseModel):
+    risk_level: str | None
+    risk_score: int | None
+    insufficient_history: str | None
+    summary: Section | None
+    findings: list[DiagnosisFinding]
+    indicators: DiagnosisIndicators
+
+
+class AttributionBreakdown(BaseModel):
+    market: Number
+    sector: Number
+    selection: Number
+
+
+class AttributionEvent(BaseModel):
+    citation_id: str | None
+    type: str
+    title: str
+    summary: str
+    event_date: date
+    matched_confidence: Number
+
+
+class AttributionContributor(BaseModel):
+    ticker: str
+    name: str
+    sector: str
+    weight: Number
+    return_: Number = Field(alias="return", serialization_alias="return")
+    contribution: Number
+    held_at_start: bool
+    events: list[AttributionEvent]
+
+
+class AttributionSector(BaseModel):
+    sector: str
+    portfolio_weight: Number
+    benchmark_weight: Number
+    allocation: Number
+    selection: Number
+    proxy: bool
+
+
+class AttributionContent(BaseModel):
+    period: str
+    start: date
+    end: date
+    trading_days: int
+    portfolio_return: Number
+    total_return: Number
+    benchmark_return: Number
+    excess_return: Number
+    breakdown: AttributionBreakdown
+    contributors: list[AttributionContributor]
+    detractors: list[AttributionContributor]
+    sectors: list[AttributionSector]
+    notes: list[str]
+    summary: Section | None
+    text: str | None
+    segments: list[Segment] | None
 
 
 # ── 원장 ──────────────────────────────────────────────────────────────────────
@@ -215,7 +303,7 @@ def _summary_request(result: RiskAssessment) -> str:
 
 # ── 라우터 ────────────────────────────────────────────────────────────────────
 @router.post("/diagnosis")
-async def diagnosis(user_id: CurrentUser, db: DbSession) -> Envelope[dict]:
+async def diagnosis(user_id: CurrentUser, db: DbSession) -> Envelope[DiagnosisContent]:
     """위험 지표를 계산하고 상위 항목을 설명한다(§5).
 
     히스토리가 짧으면 409로 끊지 않는다. 집중도·현금·금리민감도 진단은 그대로 유효해서
@@ -295,7 +383,7 @@ async def diagnosis(user_id: CurrentUser, db: DbSession) -> Envelope[dict]:
             continue
         sections[outcome.key] = outcome.section.model_dump(mode="json")
 
-    envelope = Envelope[dict](
+    envelope = Envelope[DiagnosisContent](
         content={
             "risk_level": result.risk_level.value if result.risk_level is not None else None,
             "risk_score": round(result.risk_score) if result.risk_score is not None else None,
@@ -320,7 +408,7 @@ async def diagnosis(user_id: CurrentUser, db: DbSession) -> Envelope[dict]:
 @router.post("/attribution")
 async def attribution(
     body: AttributionRequest, user_id: CurrentUser, db: DbSession
-) -> Envelope[dict]:
+) -> Envelope[AttributionContent]:
     """기간 수익률을 시장·섹터·선택으로 분해한다(§6).
 
     벤치마크는 시가총액으로 합성한 시장 전체다 — 왜 업종지수를 쓰지 않는지는
@@ -389,7 +477,7 @@ async def attribution(
     summary = outcome.section.model_dump(mode="json") if outcome.section else None
 
     last = PortfolioEngine(ledger).snapshot(days[-1])
-    envelope = Envelope[dict](
+    envelope = Envelope[AttributionContent](
         content={
             "period": body.period.value,
             "start": days[0].isoformat(),

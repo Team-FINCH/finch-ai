@@ -18,7 +18,7 @@ from app.api.deps import CurrentUser, DbSession
 from app.core.enums import Screen
 from app.core.errors import GuardrailBlocked, InsufficientData, InvalidRequest
 from app.core.response_log import record
-from app.core.schemas import DataAsOf, Envelope
+from app.core.schemas import ContentModel, DataAsOf, Envelope, Section
 from app.llm.agent import answer
 from app.llm.client import NullLlmClient, get_llm_client
 from app.llm.tools import ToolContext
@@ -44,8 +44,18 @@ class ChatRequest(BaseModel):
     context: ChatContext = ChatContext()
 
 
+class ChatContent(ContentModel):
+    """§4 답변 본문."""
+
+    conversation_id: str
+    answer: Section
+    tools_used: list[str]
+
+
 @router.post("")
-async def chat(body: ChatRequest, user_id: CurrentUser, db: DbSession) -> Envelope[dict]:
+async def chat(
+    body: ChatRequest, user_id: CurrentUser, db: DbSession
+) -> Envelope[ChatContent]:
     question = body.message.strip()
     if not question:
         raise InvalidRequest("질문이 비어 있습니다.")
@@ -78,12 +88,12 @@ async def chat(body: ChatRequest, user_id: CurrentUser, db: DbSession) -> Envelo
         log.warning("답변 차단 · %s", "; ".join(outcome.reasons))
         raise GuardrailBlocked("답변을 생성하지 못했습니다. 질문을 조금 더 구체적으로 적어 주세요.")
 
-    envelope = Envelope[dict](
-        content={
-            "conversation_id": body.conversation_id or f"conv_{uuid.uuid4().hex[:16]}",
-            "answer": outcome.section.model_dump(mode="json"),
-            "tools_used": list(outcome.tools_used),
-        },
+    envelope = Envelope[ChatContent](
+        content=ChatContent(
+            conversation_id=body.conversation_id or f"conv_{uuid.uuid4().hex[:16]}",
+            answer=outcome.section,
+            tools_used=list(outcome.tools_used),
+        ),
         citations=list(outcome.citations),
         data_as_of=DataAsOf(
             portfolio=ctx.portfolio_as_of,

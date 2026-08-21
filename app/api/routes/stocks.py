@@ -24,7 +24,7 @@ from app.core.adapters import ledger_source
 from app.core.enums import MetricSource, WikiSource
 from app.core.errors import InsufficientData, InvalidRequest
 from app.core.response_log import record
-from app.core.schemas import DataAsOf, Envelope, Segment
+from app.core.schemas import DataAsOf, Envelope, OptionalKeysModel, Segment
 from app.engines.portfolio import Holding, PortfolioEngine, PortfolioSnapshot
 from app.llm.client import NullLlmClient, get_llm_client
 from app.llm.generate import (
@@ -70,6 +70,30 @@ class AnalysisRequest(BaseModel):
     personalize: bool = True
 
 
+class ThesisRecord(BaseModel):
+    text: str
+    recorded_at: datetime
+    source: str
+
+
+class AnalysisSection(OptionalKeysModel):
+    title: str | None = None
+    text: str
+    segments: list[Segment]
+    cached: bool = False
+    cached_at: datetime | None = None
+    thesis: ThesisRecord | None = None
+    supporting: list[Any] | None = None
+    challenging: list[Any] | None = None
+    events: list[Any] | None = None
+
+
+class AnalysisContent(BaseModel):
+    ticker: str
+    name: str
+    sections: dict[str, AnalysisSection | None]
+
+
 # ── 원장 ─────────────────────────────────────────────────
 async def _snapshot(user_id: str) -> PortfolioSnapshot | None:
     """마지막 거래일 기준 스냅샷. 원장을 못 읽으면 None이다.
@@ -113,7 +137,7 @@ async def create_analysis(
     body: AnalysisRequest,
     user_id: CurrentUser,
     db: DbSession,
-) -> Envelope[dict]:
+) -> Envelope[AnalysisContent]:
     if not _TICKER_RE.fullmatch(ticker):
         raise InvalidRequest("종목코드는 6자리 숫자입니다.", detail={"ticker": ticker})
 
@@ -197,7 +221,7 @@ async def create_analysis(
         # ponytail: 일정 캘린더 원천이 아직 없다. 수집기가 붙으면 여기를 채운다.
         sections["next_events"]["events"] = []
 
-    envelope = Envelope[dict](
+    envelope = Envelope[AnalysisContent](
         content={
             "ticker": ticker,
             "name": _display_name(snapshot, ticker),
