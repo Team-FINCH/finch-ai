@@ -456,6 +456,7 @@
       <a href="#internal" class="sub">외부 의존과 자체 조달</a>
       <a href="#types" class="sub">공통 타입</a>
       <a href="#phases" class="sub">단계별 인도 범위</a>
+      <a href="#sources" class="sub">구현 대조 근거</a>
     </nav>
   </aside>
 
@@ -570,7 +571,8 @@
     "price":     "2026-08-19T14:30:00+09:00",
     "portfolio": "2026-08-19T14:32:09+09:00",
     "filings":   "2026-08-19T09:00:00+09:00",
-    "news":      "2026-08-19T13:50:00+09:00"
+    "news":      "2026-08-19T13:50:00+09:00",
+    "macro":     null
   },
   "model": "claude-opus-5",
   "cached": false,
@@ -584,11 +586,23 @@
           <tbody>
             <tr><td><code>request_id</code></td><td>string</td><td>피드백·로그 추적 키. 프론트는 이 값을 <code>POST /feedback</code>에 그대로 전달</td></tr>
             <tr><td><code>data_as_of</code></td><td>object</td><td><strong>데이터 원천별 기준 시각.</strong> UI에 반드시 노출한다. 시세는 지연될 수 있으므로 생성 시각과 별도로 관리</td></tr>
-            <tr><td><code>cached</code></td><td>boolean</td><td>응답 전체 또는 일부가 캐시에서 왔는지</td></tr>
+            <tr><td><code>model</code></td><td>string</td><td>문장 생성에 쓴 LLM 모델 이름. 서버 설정값을 그대로 싣는다</td></tr>
+            <tr><td><code>cached</code></td><td>boolean</td><td>응답 전체 또는 일부가 캐시에서 왔는지. <strong>캐시 계층이 아직 없어 현재는 항상 <code>false</code></strong></td></tr>
+            <tr><td><code>content</code></td><td>object</td><td>엔드포인트별 본문. 이 아래 §3–§8이 각각의 모양을 정의한다</td></tr>
+            <tr><td><code>citations</code></td><td>array</td><td><a href="#citations">§2.4</a> 근거 목록. 근거를 싣지 않는 엔드포인트에서는 빈 배열</td></tr>
             <tr><td><code>disclaimer</code></td><td>string</td><td>고지 문구. 하드코딩하지 말고 응답 값을 표시할 것 (규제 문구 변경 대응)</td></tr>
           </tbody>
         </table>
       </div>
+      <p>
+        봉투의 여덟 키와 <code>data_as_of</code>의 다섯 키(<code>price · portfolio · filings · news · macro</code>)는
+        <strong>항상 모두 실려 나온다.</strong> 그 응답이 어떤 원천을 읽지 않았으면 키가 빠지는 것이 아니라 값이 <code>null</code>이다.
+        프론트는 키 존재 여부가 아니라 <code>null</code> 여부로 분기한다.
+      </p>
+      <p class="ep-note">
+        이 문서의 예시에서 <code>…</code>와 <code>"segments": [ ]</code>는 <strong>지면상 줄인 자리</strong>다.
+        키가 없다는 뜻이 아니며, 실제 응답에서 <code>segments</code>가 빈 배열인 경우는 그 문장에 수치 조각이 없을 때다.
+      </p>
 
       <h3 id="narrative">2.3 서술과 수치의 분리 — 핵심 규약</h3>
       <p>
@@ -600,13 +614,16 @@
       <pre><code>{
   "text": "반도체 관련 자산이 포트폴리오의 42.3%를 차지합니다. 종목은 3개로 나뉘어 있으나 동일한 업황 사이클에 함께 노출되어 있어 분산 효과는 제한적입니다.",
   "segments": [
-    { "type": "text",   "value": "반도체 관련 자산이 포트폴리오의 " },
+    { "type": "text",   "value": "반도체 관련 자산이 포트폴리오의 ",
+      "raw": null, "unit": null, "source": null, "direction": null },
     { "type": "metric", "value": "42.3%", "raw": 0.423, "unit": "ratio",
       "source": "risk_engine", "direction": null },
-    { "type": "text",   "value": "를 차지합니다. 종목은 " },
+    { "type": "text",   "value": "를 차지합니다. 종목은 ",
+      "raw": null, "unit": null, "source": null, "direction": null },
     { "type": "metric", "value": "3개", "raw": 3, "unit": "count",
       "source": "portfolio_engine", "direction": null },
-    { "type": "text",   "value": "로 나뉘어 있으나 동일한 업황 사이클에 …" }
+    { "type": "text",   "value": "로 나뉘어 있으나 동일한 업황 사이클에 함께 노출되어 있어 분산 효과는 제한적입니다.",
+      "raw": null, "unit": null, "source": null, "direction": null }
   ]
 }</code></pre>
       <div class="t-wrap">
@@ -616,13 +633,19 @@
             <tr><td><code>text</code></td><td><strong>완성된 문장.</strong> 이것만 출력해도 정상 동작한다. 기본 렌더링 경로</td></tr>
             <tr><td><code>segments</code></td><td>선택 사항. 등락 색·강조·툴팁 등 수치 스타일링이 필요할 때만 순회한다</td></tr>
             <tr><td><code>segments[].raw</code></td><td>원시 값. 차트·정렬 등 2차 가공이 필요할 때 사용</td></tr>
-            <tr><td><code>segments[].direction</code></td><td><code>up</code> / <code>down</code>. 국내 관례에 따라 각각 적색·청색</td></tr>
+            <tr><td><code>segments[].direction</code></td><td><code>up</code> / <code>down</code>. 국내 관례에 따라 각각 적색·청색. 방향이 없는 수치는 <code>null</code></td></tr>
+            <tr><td><code>segments[].unit</code> · <code>source</code></td><td><code>metric</code> 조각에서만 채워진다. <code>source</code>는 <code>metric</code>에 필수</td></tr>
           </tbody>
         </table>
       </div>
       <p>
         <code>segments</code>는 <code>text</code>를 잘라 놓은 것일 뿐 다른 정보가 아니다. 이어 붙이면 <code>text</code>와 정확히 일치한다.
         프론트가 <code>segments</code>를 무시해도 표시 내용은 동일하며, <strong>숫자 정확도는 어느 쪽을 쓰든 서버가 보장한다.</strong>
+      </p>
+      <p>
+        조각의 여섯 키(<code>type · value · raw · unit · source · direction</code>)는 <strong><code>text</code> 조각에도 전부 실려 나온다</strong> —
+        <code>value</code>를 뺀 나머지 넷이 <code>null</code>일 뿐이다. 위 예시처럼 <code>text</code> 조각에서 <code>null</code> 넷이 보이는 것이 정상이며,
+        아래 §3·§5·§8 예시도 같은 모양이다.
       </p>
 
       <h4>서버 내부 검증 — 클라이언트와 무관</h4>
@@ -776,55 +799,79 @@
       "title": "현재 상황",
       "text": "메모리 업황 회복 국면에서 …",
       "segments": [ ],
-      "cached": true,
-      "cached_at": "2026-08-19T09:00:00+09:00"
+      "cached": false,
+      "cached_at": null
     },
-    "changes":   { "title": "최근 변화" },
-    "attention": { "title": "시장이 주목하는 요인" },
-    "risks":     { "title": "확인된 위험 요인" },
+    "changes":   { "title": "최근 변화",            "text": "…", "segments": [ ], "cached": false, "cached_at": null },
+    "attention": { "title": "시장이 주목하는 요인",  "text": "…", "segments": [ ], "cached": false, "cached_at": null },
+    "risks":     { "title": "확인된 위험 요인",      "text": "…", "segments": [ ], "cached": false, "cached_at": null },
     "my_impact": {
       "title": "내 포트폴리오 영향",
       "text": "이 종목은 포트폴리오의 41.7%를 차지하며 평균 매입가 대비 +10.1% 상태입니다.",
       "segments": [
-        { "type": "text",   "value": "이 종목은 포트폴리오의 " },
+        { "type": "text",   "value": "이 종목은 포트폴리오의 ",
+          "raw": null, "unit": null, "source": null, "direction": null },
         { "type": "metric", "value": "41.7%", "raw": 0.4168, "unit": "ratio",
           "source": "portfolio_engine", "direction": null },
-        { "type": "text",   "value": "를 차지하며 평균 매입가 대비 " },
+        { "type": "text",   "value": "를 차지하며 평균 매입가 대비 ",
+          "raw": null, "unit": null, "source": null, "direction": null },
         { "type": "metric", "value": "+10.1%", "raw": 0.1011, "unit": "ratio",
           "source": "portfolio_engine", "direction": "up" },
-        { "type": "text",   "value": " 상태입니다." }
+        { "type": "text",   "value": " 상태입니다.",
+          "raw": null, "unit": null, "source": null, "direction": null }
       ],
-      "cached": false
+      "cached": false,
+      "cached_at": null
     },
     "thesis_check": {
       "title": "투자 논지 점검",
+      "text": "매수 시점에 언급하신 근거와 관련해 …",
+      "segments": [ ],
+      "cached": false,
+      "cached_at": null,
       "thesis": {
         "text": "HBM 구조적 성장에 베팅",
         "recorded_at": "2026-03-11T10:22:00+09:00",
         "source": "user_stated"
       },
-      "supporting": [
-        { "summary": "3분기 HBM 매출 비중 확대", "citation_id": "cit_1" }
-      ],
-      "challenging": [
-        { "summary": "파운드리 부문 적자 지속", "citation_id": "cit_3" }
-      ],
-      "text": "매수 시점에 언급하신 근거와 관련해 …",
-      "segments": [ ]
+      "supporting": [ ],
+      "challenging": [ ]
     },
     "next_events": {
       "title": "다음에 확인할 일정",
-      "events": [
-        { "type": "earnings", "label": "3분기 실적 발표", "date": "2026-10-08", "confirmed": false },
-        { "type": "dividend", "label": "분기 배당 기준일", "date": "2026-09-30", "confirmed": true }
-      ]
+      "text": "…",
+      "segments": [ ],
+      "cached": false,
+      "cached_at": null,
+      "events": [ ]
     }
   }
 }</code></pre>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>키</th><th>실제 출력</th></tr></thead>
+          <tbody>
+            <tr><td><code>sections</code></td><td>요청한 <code>sections</code>의 키가 <strong>그대로 전부</strong> 들어온다. 값이 없는 섹션은 키가 빠지는 것이 아니라 <code>null</code>이다</td></tr>
+            <tr><td>섹션 공통</td><td>모든 섹션은 <a href="#types">§12</a> Section 다섯 키(<code>title · text · segments · cached · cached_at</code>)를 갖는다. <code>changes</code>·<code>attention</code>·<code>risks</code>도 예외가 아니다</td></tr>
+            <tr><td><code>my_impact</code></td><td><code>personalize: true</code>이고 <strong>보유 중일 때만</strong> 값이 찬다. 아니면 <code>null</code></td></tr>
+            <tr><td><code>thesis_check</code></td><td>기록된 활성 논지가 있을 때만 값이 차고, 그때 Section 다섯 키에 <code>thesis</code>·<code>supporting</code>·<code>challenging</code>이 더 붙는다</td></tr>
+            <tr><td><code>next_events</code></td><td>Section 다섯 키에 <code>events</code>가 더 붙는다</td></tr>
+            <tr><td><code>cached</code> · <code>cached_at</code></td><td>캐시 계층이 아직 없어 항상 <code>false</code> / <code>null</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="rule-box warn">
+        <span class="label">아직 비어 있는 자리</span>
+        <p>
+          <code>thesis_check.supporting</code>·<code>challenging</code>과 <code>next_events.events</code>는
+          <strong>키는 있으나 현재 구현에서 항상 빈 배열</strong>이다. 근거를 지지·반박으로 가르는 추출 패스와 일정 캘린더 원천이 아직 없다.
+          서술만으로도 화면이 성립하므로 빈 배열로 두고, 원천이 붙을 때 채운다. 프론트는 <strong>이 배열이 비어 있는 것을 정상으로</strong> 다뤄야 한다.
+        </p>
+      </div>
 
       <div class="rule-box">
         <span class="label">비용 설계</span>
-        <p><code>current</code>·<code>changes</code>·<code>attention</code>·<code>risks</code>·<code>next_events</code>는 사용자와 무관하므로 <strong>종목 단위로 캐시</strong>한다(TTL 6시간). <code>my_impact</code>·<code>thesis_check</code>만 사용자별로 생성한다. 이 분리가 없으면 인기 종목에서 동일 분석을 수천 번 재생성한다.</p>
+        <p><code>current</code>·<code>changes</code>·<code>attention</code>·<code>risks</code>·<code>next_events</code>는 사용자와 무관하므로 <strong>종목 단위로 캐시</strong>한다(TTL 6시간). <code>my_impact</code>·<code>thesis_check</code>만 사용자별로 생성한다. 이 분리가 없으면 인기 종목에서 동일 분석을 수천 번 재생성한다. <strong>아직 구현하지 않은 설계다</strong> — 현재 동작은 <a href="#sources">§14</a>를 보라.</p>
       </div>
 
       <p><code>attention</code>·<code>risks</code>의 명칭은 규제 대응이다. "긍정 요인 / 부정 요인"은 의견 제시로 읽힐 수 있어
@@ -865,12 +912,19 @@
       <pre><code>{
   "conversation_id": "conv_01JQZ7X4M9",
   "answer": {
-    "title": "답변",
+    "title": null,
     "text": "삼성전자는 포트폴리오의 41.7%를 차지합니다. …",
-    "segments": [ ]
+    "segments": [ ],
+    "cached": false,
+    "cached_at": null
   },
   "tools_used": ["get_portfolio", "calc_risk_metrics"]
 }</code></pre>
+      <p>
+        <code>answer</code>는 <a href="#types">§12</a> Section 다섯 키를 그대로 쓴다. 다만 대화에는 붙일 제목이 없어
+        <strong><code>answer.title</code>은 항상 <code>null</code></strong>이고, 캐시 계층이 없어 <code>cached</code>/<code>cached_at</code>도
+        <code>false</code>/<code>null</code>로 고정이다. 말풍선 제목이 필요하면 프론트가 정한다.
+      </p>
       <p>
         <code>answer</code>는 <a href="#narrative">&sect;2.3</a>의 Section과 같은 모양이라 종목 분석의 섹션과 같은 방식으로 렌더링한다.
         <code>tools_used</code>는 이번 답변에서 실제로 호출된 Tool 이름이며, 근거를 되짚을 때 쓴다 &mdash; 호출 순서는 보장하지 않는다.
@@ -919,27 +973,37 @@
       <pre><code>{
   "risk_level": "high",
   "risk_score": 72,
+  "insufficient_history": null,
   "summary": {
+    "title": "종합 진단",
     "text": "가장 큰 위험은 반도체 업종 집중도입니다. …",
-    "segments": [ ]
+    "segments": [ ],
+    "cached": false,
+    "cached_at": null
   },
   "findings": [
     {
       "id": "sector_concentration",
       "category": "concentration",
       "severity": "high",
-      "title": "반도체 업종 집중",
+      "title": "업종 집중",
       "text": "삼성전자, SK하이닉스, 한미반도체를 합산하면 42.3%입니다. …",
       "segments": [
-        { "type": "text",   "value": "삼성전자, SK하이닉스, 한미반도체를 합산하면 " },
+        { "type": "text",   "value": "삼성전자, SK하이닉스, 한미반도체를 합산하면 ",
+          "raw": null, "unit": null, "source": null, "direction": null },
         { "type": "metric", "value": "42.3%", "raw": 0.423, "unit": "ratio",
           "source": "risk_engine", "direction": null },
-        { "type": "text",   "value": "입니다. …" }
+        { "type": "text",   "value": "입니다. …",
+          "raw": null, "unit": null, "source": null, "direction": null }
       ],
       "evidence": {
         "tickers": ["005930", "000660", "042700"],
+        "metric": "top_sector_weight",
+        "value": 0.4230,
+        "threshold": 0.3500,
         "hhi": 0.2841,
-        "avg_pairwise_corr": 0.78
+        "avg_pairwise_corr": 0.78,
+        "sector": "반도체"
       }
     }
   ],
@@ -947,23 +1011,45 @@
     "hhi": 0.2841,
     "top1_weight": 0.4168,
     "top3_weight": 0.7204,
+    "sector_hhi": 0.3120,
     "annualized_volatility": 0.2837,
     "max_drawdown_1y": -0.2214,
     "cash_ratio": 0.081,
-    "rate_sensitivity": "high"
+    "rate_sensitivity": "high",
+    "beta": 1.14,
+    "large_cap_weight": 0.8320,
+    "diversification_ratio": 1.18
   }
 }</code></pre>
       <div class="t-wrap">
         <table>
           <thead><tr><th>필드</th><th>값</th><th>설명</th></tr></thead>
           <tbody>
-            <tr><td><code>risk_level</code></td><td><code>low · moderate · high</code></td><td>규칙 엔진 판정. LLM이 정하지 않는다</td></tr>
-            <tr><td><code>risk_score</code></td><td>0–100 정수</td><td>구성 지표 가중합. 산식은 별도 문서</td></tr>
+            <tr><td><code>risk_level</code></td><td><code>low · moderate · high</code> · <code>null</code></td><td>규칙 엔진 판정. LLM이 정하지 않는다. 판정을 보류하면 <code>null</code></td></tr>
+            <tr><td><code>risk_score</code></td><td>0–100 정수 · <code>null</code></td><td>구성 지표 가중합. 산식은 별도 문서. 판정 보류 시 <code>null</code></td></tr>
+            <tr><td><code>insufficient_history</code></td><td>string · <code>null</code></td><td>변동성·상관을 계산하지 못한 이유. 정상일 때 <code>null</code></td></tr>
+            <tr><td><code>summary</code></td><td>Section · <code>null</code></td><td><a href="#types">§12</a> Section 다섯 키. 문장 생성이 막히면 <code>null</code>이고 지표는 그대로 나간다</td></tr>
             <tr><td><code>findings[].severity</code></td><td><code>info · medium · high</code></td><td>정렬 순서가 곧 중요도 순위</td></tr>
+            <tr><td><code>findings[].text</code> · <code>segments</code></td><td>string · array · <code>null</code></td><td>Section 전체가 아니라 이 두 키만 펼쳐 담는다. 생성이 막히면 둘 다 <code>null</code></td></tr>
             <tr><td><code>evidence</code></td><td>object</td><td>LLM 입력으로 쓰인 원시 지표. 디버깅·평가용으로 응답에 포함</td></tr>
           </tbody>
         </table>
       </div>
+      <p>
+        <code>evidence</code>의 고정 키는 <code>tickers · metric · value · threshold · hhi</code> 다섯이다. 나머지는 조건부로 붙는다 —
+        상관 지표를 계산했으면 <code>avg_pairwise_corr</code>, <code>id</code>가 <code>sector_concentration</code>이면 <code>sector</code>,
+        <code>macro_exposure</code>면 <code>rate_sensitivity</code>가 더 들어온다.
+      </p>
+      <p>
+        <code>indicators</code>의 열한 키는 항상 실려 나오며, <strong>계산되지 않은 지표는 0이 아니라 <code>null</code></strong>이다.
+        공통 거래일이 60일에 못 미치면 <code>annualized_volatility</code>·<code>diversification_ratio</code>가 <code>null</code>이 되고
+        <code>insufficient_history</code>에 사유 문자열이 담기며, 이때 <code>risk_level</code>·<code>risk_score</code>도 <code>null</code>이 될 수 있다.
+        집중도·현금 비중은 그대로 유효하므로 <strong>409로 끊지 않는다.</strong>
+      </p>
+      <p>
+        <code>findings[].id</code>는 <code>ticker_concentration · sector_concentration · volatility · correlation · liquidity · macro_exposure</code>
+        여섯 중 하나이며, 걸린 항목만 중요도 순으로 배열에 담긴다.
+      </p>
       <p><code>findings[].category</code>는 <code>concentration · volatility · correlation · style_tilt · macro_exposure · liquidity</code>
       중 하나다. 국가 집중도와 통화 노출은 국내 단일 시장이므로 정의하지 않는다.</p>
 
@@ -982,11 +1068,23 @@
 
       <h4>Request</h4>
       <pre><code>{ "period": "1d", "benchmark": "KOSPI" }</code></pre>
-      <p><code>period</code>는 <code>1d · 1w · 1m · 3m · ytd</code>. <code>benchmark</code>는 <code>KOSPI · KOSDAQ</code>이며 생략 시 보유 비중 가중으로 자동 결정한다.</p>
+      <p><code>period</code>는 <code>1d · 1w · 1m · 3m · ytd</code>이며 생략 시 <code>1d</code>다. 다른 값은 <code>INVALID_REQUEST</code>다.</p>
+      <div class="rule-box warn">
+        <span class="label">구현과 다름</span>
+        <p>
+          <code>benchmark</code>는 요청 본문에 <strong>받기만 하고 쓰이지 않는다.</strong> 벤치마크는 항상 보유 종목 유니버스를
+          시가총액으로 합성한 시장 전체이며, <code>"KOSPI"</code>를 보내든 생략하든 결과가 같다.
+          지수 선택을 지원할 계획이 없다면 이 필드는 요청 스키마에서 빼는 편이 맞다 — 사양이 아니라 <strong>미해결 사항</strong>으로 남긴다.
+        </p>
+      </div>
 
       <h4>Response — content</h4>
       <pre><code>{
   "period": "1d",
+  "start": "2025-09-11",
+  "end": "2025-09-12",
+  "trading_days": 2,
+  "portfolio_return": 0.0213,
   "total_return": 0.0213,
   "benchmark_return": 0.0140,
   "excess_return": 0.0073,
@@ -999,19 +1097,62 @@
     {
       "ticker": "000660",
       "name": "SK하이닉스",
+      "sector": "반도체",
       "weight": 0.1820,
       "return": 0.0512,
       "contribution": 0.0093,
+      "held_at_start": true,
       "events": [
-        { "citation_id": "cit_1", "type": "news",
-          "summary": "HBM 공급 계약 관련 보도", "matched_confidence": 0.72 }
+        { "citation_id": "cit_1", "type": "news", "title": "HBM 공급 계약 관련 보도",
+          "summary": "HBM 공급 계약 관련 보도", "event_date": "2025-09-12",
+          "matched_confidence": 0.72 }
       ]
     }
   ],
   "detractors": [ ],
+  "sectors": [
+    {
+      "sector": "반도체",
+      "portfolio_weight": 0.4230,
+      "benchmark_weight": 0.2810,
+      "allocation": 0.0019,
+      "selection": 0.0042,
+      "proxy": false
+    }
+  ],
+  "notes": [ "…" ],
+  "summary": {
+    "title": "성과 요인",
+    "text": "오늘 상승분의 상당 부분은 시장 전체 상승에서 왔습니다. …",
+    "segments": [ ],
+    "cached": false,
+    "cached_at": null
+  },
   "text": "오늘 상승분의 상당 부분은 시장 전체 상승에서 왔습니다. …",
   "segments": [ ]
 }</code></pre>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>키</th><th>실제 출력</th></tr></thead>
+          <tbody>
+            <tr><td><code>start</code> · <code>end</code> · <code>trading_days</code></td><td>실제로 되짚은 구간과 그 안의 거래일 수. 달력 기준으로 자른 뒤 거래일만 남긴 결과라 <code>period</code>만으로는 알 수 없다</td></tr>
+            <tr><td><code>portfolio_return</code> · <code>total_return</code></td><td><strong>같은 값이 두 키로 나간다</strong> (아래 참조)</td></tr>
+            <tr><td><code>contributors</code> · <code>detractors</code></td><td>기여도 부호로 가른 같은 모양의 행. 각 행에 <code>sector</code>·<code>held_at_start</code>가 함께 온다</td></tr>
+            <tr><td><code>events[].title</code> · <code>summary</code></td><td><strong>같은 문자열이 두 키로 나간다.</strong> 별도 요약 패스가 없어 제목을 그대로 쓴다</td></tr>
+            <tr><td><code>sectors</code></td><td>섹터별 배분·선택 효과. <code>proxy</code>는 그 섹터 벤치마크를 대체 지표로 채웠다는 뜻</td></tr>
+            <tr><td><code>notes</code></td><td>계산 중 붙은 단서 문자열 배열. 없으면 빈 배열</td></tr>
+            <tr><td><code>summary</code> · <code>text</code> · <code>segments</code></td><td><strong>같은 내용이 두 자리로 나간다.</strong> <code>summary</code>가 <a href="#types">§12</a> Section 전체이고, <code>text</code>·<code>segments</code>는 그중 두 키를 최상위로 다시 펼친 것이다. 생성이 막히면 셋 다 <code>null</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="rule-box warn">
+        <span class="label">중복 키 — 미해결</span>
+        <p>
+          <code>portfolio_return</code>/<code>total_return</code>, <code>summary</code>/<code>text</code>+<code>segments</code>,
+          <code>events[].title</code>/<code>summary</code> 세 쌍은 <strong>같은 값을 두 이름으로 내보낸다.</strong>
+          지금은 구현이 그렇게 동작하므로 그대로 적었다. 소비자가 붙기 전에 한쪽으로 줄이는 것이 맞고, 그 결정은 이 문서 밖이다.
+        </p>
+      </div>
 
       <div class="rule-box warn">
         <span class="label">기획서 대비 변경</span>
@@ -1046,43 +1187,85 @@
 
       <h4>Response — content</h4>
       <pre><code>{
+  "order_summary": [
+    { "ticker": "000660", "side": "buy", "quantity": 40, "price": 214000, "amount": 8560000 }
+  ],
   "orders_value": 8560000,
   "feasible": true,
-  "changes": [
+  "shortfall": null,
+  "before": {
+    "hhi": 0.2841, "top1_weight": 0.4168, "top3_weight": 0.7204, "sector_hhi": 0.3120,
+    "annualized_volatility": 0.2837, "max_drawdown_1y": -0.2214, "cash_ratio": 0.0810,
+    "rate_sensitivity": "high", "beta": 1.14, "large_cap_weight": 0.8320,
+    "diversification_ratio": 1.18, "top_sector_weight": 0.4230
+  },
+  "after": {
+    "hhi": 0.3392, "top1_weight": 0.4168, "top3_weight": 0.7511, "sector_hhi": 0.3680,
+    "annualized_volatility": 0.3105, "max_drawdown_1y": -0.2214, "cash_ratio": 0.0593,
+    "rate_sensitivity": "high", "beta": 1.19, "large_cap_weight": 0.8460,
+    "diversification_ratio": 1.11, "top_sector_weight": 0.5044
+  },
+  "delta": {
+    "hhi": 0.0551, "top1_weight": 0.0, "top3_weight": 0.0307, "sector_hhi": 0.0560,
+    "annualized_volatility": 0.0268, "max_drawdown_1y": 0.0, "cash_ratio": -0.0217,
+    "beta": 0.05, "large_cap_weight": 0.0140, "diversification_ratio": -0.07,
+    "top_sector_weight": 0.0814
+  },
+  "warnings": [
     {
-      "key": "ticker_weight",
-      "label": "SK하이닉스 비중",
-      "before": 0.1820, "after": 0.2634, "delta": 0.0814,
-      "significance": "high"
-    },
-    {
-      "key": "sector_weight_semiconductor",
-      "label": "반도체 업종 비중",
-      "before": 0.4230, "after": 0.5044, "delta": 0.0814,
-      "significance": "high"
-    },
-    { "key": "cash_ratio", "label": "현금 비중",
-      "before": 0.0810, "after": 0.0593, "delta": -0.0217, "significance": "medium" },
-    { "key": "hhi", "label": "집중도",
-      "before": 0.2841, "after": 0.3392, "delta": 0.0551, "significance": "high" },
-    { "key": "annualized_volatility", "label": "예상 변동성",
-      "before": 0.2837, "after": 0.3105, "delta": 0.0268, "significance": "medium" }
-  ],
-  "wiki_conflicts": [
-    {
-      "fact": "분산 투자를 중시하며 단일 업종 40% 이상을 피하고 싶다고 하셨습니다",
-      "source": "user_stated",
-      "recorded_at": "2026-04-02T20:11:00+09:00",
-      "conflict": "이 주문은 반도체 업종 비중을 해당 기준 위로 올립니다"
+      "id": "sector_concentration",
+      "severity": "high",
+      "title": "업종 집중",
+      "metric": "top_sector_weight",
+      "before": 0.4230,
+      "after": 0.5044,
+      "threshold": 0.3500,
+      "text": "이 주문은 반도체 업종 비중을 50.4%로 올립니다. …",
+      "segments": [ ]
     }
   ],
-  "text": "이 주문을 실행하면 …",
-  "segments": [ ]
+  "thesis_conflicts": [
+    {
+      "id": "6f1c8a2e-4b90-4d1e-9a3f-2c7d5e081b64",
+      "ticker": "000660",
+      "fact": "HBM 구조적 성장에 베팅",
+      "source": "user_stated",
+      "recorded_at": "2026-03-11T10:22:00+09:00",
+      "conflict": "기록하신 논지와 이 주문의 방향이 어긋납니다. …",
+      "segments": [ ]
+    }
+  ],
+  "summary": {
+    "title": "주문 요약",
+    "text": "이 주문을 실행하면 …",
+    "segments": [ ],
+    "cached": false,
+    "cached_at": null
+  }
 }</code></pre>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>키</th><th>실제 출력</th></tr></thead>
+          <tbody>
+            <tr><td><code>order_summary</code></td><td>체결을 가정한 주문 한 줄씩. <code>price</code>를 생략했으면 여기 채워진 값이 실제 사용된 단가다</td></tr>
+            <tr><td><code>before</code> · <code>after</code></td><td><a href="#ep-diagnosis">§5</a> <code>indicators</code> 열한 키에 <code>top_sector_weight</code>를 더한 <strong>열두 키</strong>. 양쪽 키 구성은 같다</td></tr>
+            <tr><td><code>delta</code></td><td><code>after − before</code>. <strong>숫자인 지표만 담긴다</strong> — <code>rate_sensitivity</code>처럼 문자열이거나 한쪽이 <code>null</code>인 지표는 키째로 빠진다</td></tr>
+            <tr><td><code>warnings</code></td><td>이 주문 때문에 <strong>새로 걸렸거나 등급이 올라간</strong> 항목만. 나아진 항목은 요약이 말한다. 첫 발생이면 <code>before</code>가 <code>null</code></td></tr>
+            <tr><td><code>thesis_conflicts</code></td><td>주문에 오른 종목의 <code>user_stated</code> 논지 중 어긋난 것만. 충돌이 없으면 빈 배열</td></tr>
+            <tr><td><code>summary</code></td><td><a href="#types">§12</a> Section 다섯 키. 생성이 막히면 <code>null</code></td></tr>
+          </tbody>
+        </table>
+      </div>
       <p>
-        <code>feasible</code>이 <code>false</code>면 현금 부족이며 <code>detail.shortfall</code>에 부족액이 담긴다.
-        <code>wiki_conflicts</code>는 <strong>사용자가 직접 진술한 항목(<code>user_stated</code>)만</strong> 사용한다.
+        <code>feasible</code>이 <code>false</code>면 현금 부족이며 부족액은 <strong>최상위 <code>shortfall</code></strong>에 담긴다
+        (에러가 아니라 200 응답의 본문이다. 부족하지 않으면 <code>null</code>).
+        <code>thesis_conflicts</code>는 <strong>사용자가 직접 진술한 항목(<code>user_stated</code>)만</strong> 사용한다.
         AI가 추론한 성향으로 주문에 이의를 제기하면 근거 없는 참견이 된다.
+      </p>
+      <p>
+        히스토리가 60거래일에 못 미쳐도 409로 끊지 않는다. <code>annualized_volatility</code>·<code>diversification_ratio</code>가
+        <code>before</code>·<code>after</code> 양쪽에서 <code>null</code>이 되고 <code>delta</code>에서 빠질 뿐, 집중도·현금 차분은 그대로 유효하다.
+        <code>max_drawdown_1y</code>의 <code>delta</code>가 <code>0.0</code>인 것도 정상이다 — 아직 내지 않은 주문이 지난 낙폭을 바꾸지는 않으므로 전·후에 같은 시계열을 넘긴다.
       </p>
 
       <h2 id="ep-briefing"><span class="num">§8</span>데일리 브리핑</h2>
@@ -1111,17 +1294,20 @@
       "title": "SK하이닉스 강세",
       "text": "포트폴리오에서 18.2%를 차지하는 SK하이닉스가 +5.12% 상승했습니다. …",
       "segments": [
-        { "type": "text",   "value": "포트폴리오에서 " },
+        { "type": "text",   "value": "포트폴리오에서 ",
+          "raw": null, "unit": null, "source": null, "direction": null },
         { "type": "metric", "value": "18.2%", "raw": 0.1820, "unit": "ratio",
           "source": "portfolio_engine", "direction": null },
-        { "type": "text",   "value": "를 차지하는 SK하이닉스가 " },
+        { "type": "text",   "value": "를 차지하는 SK하이닉스가 ",
+          "raw": null, "unit": null, "source": null, "direction": null },
         { "type": "metric", "value": "+5.12%", "raw": 0.0512, "unit": "ratio",
-          "source": "price", "direction": "up" },
-        { "type": "text",   "value": " 상승했습니다. …" }
+          "source": "portfolio_engine", "direction": "up" },
+        { "type": "text",   "value": " 상승했습니다. …",
+          "raw": null, "unit": null, "source": null, "direction": null }
       ],
       "related_tickers": ["000660"],
       "deeplink": "/stocks/000660?tab=ai",
-      "citations": ["cit_1"]
+      "citations": [ ]
     }
   ]
 }</code></pre>
@@ -1130,12 +1316,21 @@
           <thead><tr><th><code>status</code></th><th>의미</th><th>프론트 처리</th></tr></thead>
           <tbody>
             <tr><td><code>ready</code></td><td>생성 완료</td><td>정상 표시</td></tr>
-            <tr><td><code>generating</code></td><td>배치 진행 중</td><td>스켈레톤 표시 후 30초 뒤 재조회</td></tr>
+            <tr><td><code>generating</code></td><td>배치 진행 중</td><td>스켈레톤 표시 후 30초 뒤 재조회. <strong>현재 구현은 요청 시점에 생성하므로 이 값을 내보내지 않는다</strong></td></tr>
             <tr><td><code>empty</code></td><td>보유 종목 없음 또는 유의미한 이벤트 없음</td><td>영역 숨김</td></tr>
           </tbody>
         </table>
       </div>
       <p><code>category</code>는 <code>holding_move · earnings · filing · macro_event · portfolio_shift</code> 중 하나이며 최대 4건을 반환한다.</p>
+      <p>
+        <code>date</code>·<code>status</code>·<code>generated_at</code>·<code>items</code> 네 키는 항상 실려 나온다.
+        보유 종목이 없거나 내보낼 항목이 없으면 <code>status: "empty"</code>에 <code>items: [ ]</code>이며 오류가 아니다.
+        이때 <code>date</code>는 <code>null</code>일 수 있다(조회 시 <code>date</code>를 주지 않았고 기준 거래일도 못 잡은 경우).
+      </p>
+      <p>
+        <code>items[].citations</code>는 <strong>현재 구현에서 항상 빈 배열</strong>이다. 이 기능은 일정·시세에서 항목을 뽑을 뿐
+        문서를 조회하지 않아 인용할 원문이 없다. 봉투의 <code>citations</code>도 같은 이유로 비어 있다.
+      </p>
 
       <div class="rule-box">
         <span class="label">비용 설계</span>
@@ -1328,10 +1523,13 @@
   "source":    "portfolio_engine | risk_engine | attribution_engine | price | filing",
   "direction": "up | down | null"
 }</code></pre>
-      <p><code>type: "text"</code>인 조각은 <code>value</code>만 가진다. 나머지 필드는 <code>metric</code>에서만 채워진다.</p>
+      <p>
+        여섯 키는 <strong>두 종류 모두에 실려 나온다.</strong> <code>type: "text"</code>인 조각은 <code>value</code> 외 넷이 <code>null</code>일 뿐
+        키가 빠지지는 않는다. <code>metric</code>에서는 <code>raw</code>와 <code>source</code>가 필수이고, <code>unit</code>·<code>direction</code>은 없으면 <code>null</code>이다.
+      </p>
       <h4>Section</h4>
       <pre><code>{
-  "title":     "string",
+  "title":     "string | null",
   "text":      "string",
   "segments":  [ ],
   "cached":    false,
@@ -1343,6 +1541,7 @@
   "type":         "filing | financial | news | price | macro | engine | wiki",
   "title":        "string",
   "source":       "string",
+  "publisher":    "string | null",
   "url":          "string | null",
   "published_at": "string | null",
   "snippet":      "string | null",
@@ -1381,6 +1580,59 @@
       <div class="rule-box">
         <span class="label">착수 조건</span>
         <p>타 파트 의존은 <a href="#internal">기존 조회 API의 서버 간 접근 권한</a> 하나뿐이고, 그마저 시드 데이터 어댑터로 대체해 병렬 진행할 수 있다. 종목 마스터·시세·공시·뉴스는 전부 AI 파트가 직접 적재하므로 <strong>다른 파트의 일정에 막히는 지점이 없다.</strong> 오늘 바로 착수 가능하다.</p>
+      </div>
+
+      <h2 id="sources"><span class="num">§14</span>구현 대조 근거</h2>
+      <p>
+        <strong>이 문서의 응답 예시는 코드에서 확인한 것이다.</strong> 예시와 구현이 어긋나면 구현이 맞고 이 문서가 틀린 것이므로,
+        다시 대조할 때 어디를 열어야 하는지를 남긴다. 봉투·조각·근거의 키 구성은 <code>app/core/schemas.py</code>의
+        Pydantic 모델이 정하고, <code>content</code> 안쪽은 각 라우터가 <code>dict</code>로 직접 조립한다.
+        라우터에 <code>response_model</code>을 걸지 않으므로 <strong>선언된 키는 값이 <code>None</code>이어도 빠지지 않고 <code>null</code>로 나간다.</strong>
+      </p>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>§</th><th>엔드포인트</th><th><code>content</code> 조립 위치</th></tr></thead>
+          <tbody>
+            <tr><td>§3</td><td><code>POST /stocks/{ticker}/analysis</code></td><td><code>app/api/routes/stocks.py</code> · <code>create_analysis</code> (섹션 키는 <code>SECTION_TITLES</code>)</td></tr>
+            <tr><td>§4</td><td><code>POST /chat</code></td><td><code>app/api/routes/chat.py</code> · <code>chat</code></td></tr>
+            <tr><td>§5</td><td><code>POST /portfolio/diagnosis</code></td><td><code>app/api/routes/portfolio.py</code> · <code>diagnosis</code>, <code>_finding_payload</code>, <code>_evidence</code>, <code>_indicators</code></td></tr>
+            <tr><td>§6</td><td><code>POST /portfolio/attribution</code></td><td><code>app/api/routes/portfolio.py</code> · <code>attribution</code>, <code>_contributor_payload</code></td></tr>
+            <tr><td>§7</td><td><code>POST /orders/preview</code></td><td><code>app/api/routes/orders.py</code> · <code>preview</code>, <code>_measures</code>, <code>_delta</code>, <code>_raised</code>, <code>_section_fields</code></td></tr>
+            <tr><td>§8</td><td><code>GET /briefing</code></td><td><code>app/api/routes/briefing.py</code> · <code>_item_payload</code>, <code>_values</code>, <code>_empty</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>공통 요소</th><th>출처</th></tr></thead>
+          <tbody>
+            <tr><td>봉투 · <code>data_as_of</code></td><td><code>app/core/schemas.py</code> · <code>Envelope</code>, <code>DataAsOf</code></td></tr>
+            <tr><td>Segment · Section · Citation</td><td><code>app/core/schemas.py</code> · <code>Segment</code>, <code>Section</code>, <code>Citation</code></td></tr>
+            <tr><td>에러 코드 · HTTP 상태</td><td><code>app/core/errors.py</code> · <code>ErrorCode</code>, <code>STATUS_BY_CODE</code></td></tr>
+            <tr><td><code>unit</code> · <code>source</code> · <code>category</code> 등 열거값</td><td><code>app/core/enums.py</code></td></tr>
+            <tr><td>기계 판독용 스키마</td><td><code>docs/openapi.json</code> (FastAPI 생성본. <code>scripts/check.sh</code>가 최신 여부를 검사한다)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="rule-box warn">
+        <span class="label">문서가 앞서 나간 자리</span>
+        <p>
+          아래는 <strong>이 문서가 약속하지만 구현이 아직 하지 않는</strong> 항목이다. 구현을 문서에 맞추는 것이 아니라
+          문서가 현재 동작을 먼저 정확히 적고, 채울 때 이 목록을 지운다.
+        </p>
+      </div>
+      <div class="t-wrap">
+        <table>
+          <thead><tr><th>약속</th><th>현재 동작</th><th>응답에서 보이는 모습</th></tr></thead>
+          <tbody>
+            <tr><td>캐시 (<a href="#errors">§2.6</a> TTL 표 · <a href="#ep-analysis">§3</a> 종목 단위 캐시)</td><td>캐시 계층 없음</td><td>봉투와 모든 Section의 <code>cached</code>가 항상 <code>false</code>, <code>cached_at</code>이 <code>null</code></td></tr>
+            <tr><td>호출 한도 (<a href="#errors">§2.6</a>)</td><td><code>RATE_LIMITED</code>는 정의돼 있으나 세는 곳이 없음</td><td>429가 나가지 않는다</td></tr>
+            <tr><td>브리핑 배치 생성</td><td>조회 시점에 생성</td><td><code>status</code>가 <code>ready</code> 아니면 <code>empty</code>. <code>generating</code>은 나오지 않는다</td></tr>
+            <tr><td>논지 근거 분류 · 일정 캘린더</td><td>추출 패스와 원천 없음</td><td><code>thesis_check.supporting</code>·<code>challenging</code>, <code>next_events.events</code>가 항상 빈 배열</td></tr>
+            <tr><td>인용 원문 (<a href="#ep-briefing">§8</a>)</td><td>문서를 조회하지 않음</td><td><code>items[].citations</code>와 봉투 <code>citations</code>가 항상 빈 배열</td></tr>
+            <tr><td><code>benchmark</code> 선택 (<a href="#ep-attribution">§6</a>)</td><td>요청 필드를 받기만 하고 쓰지 않음</td><td>어떤 값을 보내도 결과가 같다</td></tr>
+          </tbody>
+        </table>
       </div>
 
       <footer>
