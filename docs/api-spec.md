@@ -84,7 +84,8 @@ AI 서비스는 백엔드와 분리된 독립 서버로 동작한다. 포트폴�
     "price":     "2026-08-19T14:30:00+09:00",
     "portfolio": "2026-08-19T14:32:09+09:00",
     "filings":   "2026-08-19T09:00:00+09:00",
-    "news":      "2026-08-19T13:50:00+09:00"
+    "news":      "2026-08-19T13:50:00+09:00",
+    "macro":     null
   },
   "model": "claude-opus-5",
   "cached": false,
@@ -98,8 +99,15 @@ AI 서비스는 백엔드와 분리된 독립 서버로 동작한다. 포트폴�
 | --- | --- | --- |
 | `request_id` | string | 피드백·로그 추적 키. 프론트는 이 값을 `POST /feedback`에 그대로 전달 |
 | `data_as_of` | object | **데이터 원천별 기준 시각.** UI에 반드시 노출한다. 시세는 지연될 수 있으므로 생성 시각과 별도로 관리 |
-| `cached` | boolean | 응답 전체 또는 일부가 캐시에서 왔는지 |
+| `model` | string | 문장 생성에 쓴 LLM 모델 이름. 서버 설정값을 그대로 싣는다 |
+| `cached` | boolean | 응답 전체 또는 일부가 캐시에서 왔는지. **캐시 계층이 아직 없어 현재는 항상 `false`** |
+| `content` | object | 엔드포인트별 본문. 이 아래 §3–§8이 각각의 모양을 정의한다 |
+| `citations` | array | [§2.4](#citations) 근거 목록. 근거를 싣지 않는 엔드포인트에서는 빈 배열 |
 | `disclaimer` | string | 고지 문구. 하드코딩하지 말고 응답 값을 표시할 것 (규제 문구 변경 대응) |
+
+봉투의 여덟 키와 `data_as_of`의 다섯 키(`price · portfolio · filings · news · macro`)는 **항상 모두 실려 나온다.** 그 응답이 어떤 원천을 읽지 않았으면 키가 빠지는 것이 아니라 값이 `null`이다. 프론트는 키 존재 여부가 아니라 `null` 여부로 분기한다.
+
+이 문서의 예시에서 `…`와 `"segments": [ ]`는 **지면상 줄인 자리**다. 키가 없다는 뜻이 아니며, 실제 응답에서 `segments`가 빈 배열인 경우는 그 문장에 수치 조각이 없을 때다.
 
 ### 2.3 서술과 수치의 분리 — 핵심 규약
 
@@ -109,13 +117,16 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 {
   "text": "반도체 관련 자산이 포트폴리오의 42.3%를 차지합니다. 종목은 3개로 나뉘어 있으나 동일한 업황 사이클에 함께 노출되어 있어 분산 효과는 제한적입니다.",
   "segments": [
-    { "type": "text",   "value": "반도체 관련 자산이 포트폴리오의 " },
+    { "type": "text",   "value": "반도체 관련 자산이 포트폴리오의 ",
+      "raw": null, "unit": null, "source": null, "direction": null },
     { "type": "metric", "value": "42.3%", "raw": 0.423, "unit": "ratio",
       "source": "risk_engine", "direction": null },
-    { "type": "text",   "value": "를 차지합니다. 종목은 " },
+    { "type": "text",   "value": "를 차지합니다. 종목은 ",
+      "raw": null, "unit": null, "source": null, "direction": null },
     { "type": "metric", "value": "3개", "raw": 3, "unit": "count",
       "source": "portfolio_engine", "direction": null },
-    { "type": "text",   "value": "로 나뉘어 있으나 동일한 업황 사이클에 …" }
+    { "type": "text",   "value": "로 나뉘어 있으나 동일한 업황 사이클에 함께 노출되어 있어 분산 효과는 제한적입니다.",
+      "raw": null, "unit": null, "source": null, "direction": null }
   ]
 }
 ```
@@ -125,9 +136,12 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 | `text` | **완성된 문장.** 이것만 출력해도 정상 동작한다. 기본 렌더링 경로 |
 | `segments` | 선택 사항. 등락 색·강조·툴팁 등 수치 스타일링이 필요할 때만 순회한다 |
 | `segments[].raw` | 원시 값. 차트·정렬 등 2차 가공이 필요할 때 사용 |
-| `segments[].direction` | `up` / `down`. 국내 관례에 따라 각각 적색·청색 |
+| `segments[].direction` | `up` / `down`. 국내 관례에 따라 각각 적색·청색. 방향이 없는 수치는 `null` |
+| `segments[].unit` · `source` | `metric` 조각에서만 채워진다. `source`는 `metric`에 필수 |
 
 `segments`는 `text`를 잘라 놓은 것일 뿐 다른 정보가 아니다. 이어 붙이면 `text`와 정확히 일치한다. 프론트가 `segments`를 무시해도 표시 내용은 동일하며, **숫자 정확도는 어느 쪽을 쓰든 서버가 보장한다.**
+
+조각의 여섯 키(`type · value · raw · unit · source · direction`)는 **`text` 조각에도 전부 실려 나온다** — `value`를 뺀 나머지 넷이 `null`일 뿐이다. 위 예시처럼 `text` 조각에서 `null` 넷이 보이는 것이 정상이며, 아래 §3·§5·§8 예시도 같은 모양이다.
 
 #### 서버 내부 검증 — 클라이언트와 무관
 
@@ -249,55 +263,70 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
       "title": "현재 상황",
       "text": "메모리 업황 회복 국면에서 …",
       "segments": [ ],
-      "cached": true,
-      "cached_at": "2026-08-19T09:00:00+09:00"
+      "cached": false,
+      "cached_at": null
     },
-    "changes":   { "title": "최근 변화" },
-    "attention": { "title": "시장이 주목하는 요인" },
-    "risks":     { "title": "확인된 위험 요인" },
+    "changes":   { "title": "최근 변화",            "text": "…", "segments": [ ], "cached": false, "cached_at": null },
+    "attention": { "title": "시장이 주목하는 요인",  "text": "…", "segments": [ ], "cached": false, "cached_at": null },
+    "risks":     { "title": "확인된 위험 요인",      "text": "…", "segments": [ ], "cached": false, "cached_at": null },
     "my_impact": {
       "title": "내 포트폴리오 영향",
       "text": "이 종목은 포트폴리오의 41.7%를 차지하며 평균 매입가 대비 +10.1% 상태입니다.",
       "segments": [
-        { "type": "text",   "value": "이 종목은 포트폴리오의 " },
+        { "type": "text",   "value": "이 종목은 포트폴리오의 ",
+          "raw": null, "unit": null, "source": null, "direction": null },
         { "type": "metric", "value": "41.7%", "raw": 0.4168, "unit": "ratio",
           "source": "portfolio_engine", "direction": null },
-        { "type": "text",   "value": "를 차지하며 평균 매입가 대비 " },
+        { "type": "text",   "value": "를 차지하며 평균 매입가 대비 ",
+          "raw": null, "unit": null, "source": null, "direction": null },
         { "type": "metric", "value": "+10.1%", "raw": 0.1011, "unit": "ratio",
           "source": "portfolio_engine", "direction": "up" },
-        { "type": "text",   "value": " 상태입니다." }
+        { "type": "text",   "value": " 상태입니다.",
+          "raw": null, "unit": null, "source": null, "direction": null }
       ],
-      "cached": false
+      "cached": false,
+      "cached_at": null
     },
     "thesis_check": {
       "title": "투자 논지 점검",
+      "text": "매수 시점에 언급하신 근거와 관련해 …",
+      "segments": [ ],
+      "cached": false,
+      "cached_at": null,
       "thesis": {
         "text": "HBM 구조적 성장에 베팅",
         "recorded_at": "2026-03-11T10:22:00+09:00",
         "source": "user_stated"
       },
-      "supporting": [
-        { "summary": "3분기 HBM 매출 비중 확대", "citation_id": "cit_1" }
-      ],
-      "challenging": [
-        { "summary": "파운드리 부문 적자 지속", "citation_id": "cit_3" }
-      ],
-      "text": "매수 시점에 언급하신 근거와 관련해 …",
-      "segments": [ ]
+      "supporting": [ ],
+      "challenging": [ ]
     },
     "next_events": {
       "title": "다음에 확인할 일정",
-      "events": [
-        { "type": "earnings", "label": "3분기 실적 발표", "date": "2026-10-08", "confirmed": false },
-        { "type": "dividend", "label": "분기 배당 기준일", "date": "2026-09-30", "confirmed": true }
-      ]
+      "text": "…",
+      "segments": [ ],
+      "cached": false,
+      "cached_at": null,
+      "events": [ ]
     }
   }
 }
 ```
 
+| 키 | 실제 출력 |
+| --- | --- |
+| `sections` | 요청한 `sections`의 키가 **그대로 전부** 들어온다. 값이 없는 섹션은 키가 빠지는 것이 아니라 `null`이다 |
+| 섹션 공통 | 모든 섹션은 [§12](#types) Section 다섯 키(`title · text · segments · cached · cached_at`)를 갖는다. `changes`·`attention`·`risks`도 예외가 아니다 |
+| `my_impact` | `personalize: true`이고 **보유 중일 때만** 값이 찬다. 아니면 `null` |
+| `thesis_check` | 기록된 활성 논지가 있을 때만 값이 차고, 그때 Section 다섯 키에 `thesis`·`supporting`·`challenging`이 더 붙는다 |
+| `next_events` | Section 다섯 키에 `events`가 더 붙는다 |
+| `cached` · `cached_at` | 캐시 계층이 아직 없어 항상 `false` / `null` |
+
+> **아직 비어 있는 자리**
+> `thesis_check.supporting`·`challenging`과 `next_events.events`는 **키는 있으나 현재 구현에서 항상 빈 배열**이다. 근거를 지지·반박으로 가르는 추출 패스와 일정 캘린더 원천이 아직 없다. 서술만으로도 화면이 성립하므로 빈 배열로 두고, 원천이 붙을 때 채운다. 프론트는 **이 배열이 비어 있는 것을 정상으로** 다뤄야 한다.
+
 > **비용 설계**
-> `current`·`changes`·`attention`·`risks`·`next_events`는 사용자와 무관하므로 **종목 단위로 캐시**한다(TTL 6시간). `my_impact`·`thesis_check`만 사용자별로 생성한다. 이 분리가 없으면 인기 종목에서 동일 분석을 수천 번 재생성한다.
+> `current`·`changes`·`attention`·`risks`·`next_events`는 사용자와 무관하므로 **종목 단위로 캐시**한다(TTL 6시간). `my_impact`·`thesis_check`만 사용자별로 생성한다. 이 분리가 없으면 인기 종목에서 동일 분석을 수천 번 재생성한다. **아직 구현하지 않은 설계다** — 현재 동작은 [§14](#sources)를 보라.
 
 `attention`·`risks`의 명칭은 규제 대응이다. "긍정 요인 / 부정 요인"은 의견 제시로 읽힐 수 있어 **시장이 주목하는 요인 / 공시·실적에서 확인된 위험 요인**이라는 출처 귀속형으로 고정한다. 목표주가와 투자의견은 어떤 섹션에서도 생성하지 않는다.
 
@@ -328,13 +357,17 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 {
   "conversation_id": "conv_01JQZ7X4M9",
   "answer": {
-    "title": "답변",
+    "title": null,
     "text": "삼성전자는 포트폴리오의 41.7%를 차지합니다. …",
-    "segments": [ ]
+    "segments": [ ],
+    "cached": false,
+    "cached_at": null
   },
   "tools_used": ["get_portfolio", "calc_risk_metrics"]
 }
 ```
+
+`answer`는 [§12](#types) Section 다섯 키를 그대로 쓴다. 다만 대화에는 붙일 제목이 없어 **`answer.title`은 항상 `null`**이고, 캐시 계층이 없어 `cached`/`cached_at`도 `false`/`null`로 고정이다. 말풍선 제목이 필요하면 프론트가 정한다.
 
 `answer`는 [§2.3](#narrative)의 Section과 같은 모양이라 종목 분석의 섹션과 같은 방식으로 렌더링한다. `tools_used`는 이번 답변에서 실제로 호출된 Tool 이름이며, 근거를 되짚을 때 쓴다 — 호출 순서는 보장하지 않는다. 투자 용어 질의(featureSpec §10.2 "용어 설명")도 이 엔드포인트가 담당하고, 도구가 필요 없는 질문은 Tool 없이 답하므로 `tools_used`가 빈 배열이 된다.
 
@@ -369,27 +402,37 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 {
   "risk_level": "high",
   "risk_score": 72,
+  "insufficient_history": null,
   "summary": {
+    "title": "종합 진단",
     "text": "가장 큰 위험은 반도체 업종 집중도입니다. …",
-    "segments": [ ]
+    "segments": [ ],
+    "cached": false,
+    "cached_at": null
   },
   "findings": [
     {
       "id": "sector_concentration",
       "category": "concentration",
       "severity": "high",
-      "title": "반도체 업종 집중",
+      "title": "업종 집중",
       "text": "삼성전자, SK하이닉스, 한미반도체를 합산하면 42.3%입니다. …",
       "segments": [
-        { "type": "text",   "value": "삼성전자, SK하이닉스, 한미반도체를 합산하면 " },
+        { "type": "text",   "value": "삼성전자, SK하이닉스, 한미반도체를 합산하면 ",
+          "raw": null, "unit": null, "source": null, "direction": null },
         { "type": "metric", "value": "42.3%", "raw": 0.423, "unit": "ratio",
           "source": "risk_engine", "direction": null },
-        { "type": "text",   "value": "입니다. …" }
+        { "type": "text",   "value": "입니다. …",
+          "raw": null, "unit": null, "source": null, "direction": null }
       ],
       "evidence": {
         "tickers": ["005930", "000660", "042700"],
+        "metric": "top_sector_weight",
+        "value": 0.4230,
+        "threshold": 0.3500,
         "hhi": 0.2841,
-        "avg_pairwise_corr": 0.78
+        "avg_pairwise_corr": 0.78,
+        "sector": "반도체"
       }
     }
   ],
@@ -397,20 +440,33 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
     "hhi": 0.2841,
     "top1_weight": 0.4168,
     "top3_weight": 0.7204,
+    "sector_hhi": 0.3120,
     "annualized_volatility": 0.2837,
     "max_drawdown_1y": -0.2214,
     "cash_ratio": 0.081,
-    "rate_sensitivity": "high"
+    "rate_sensitivity": "high",
+    "beta": 1.14,
+    "large_cap_weight": 0.8320,
+    "diversification_ratio": 1.18
   }
 }
 ```
 
 | 필드 | 값 | 설명 |
 | --- | --- | --- |
-| `risk_level` | `low · moderate · high` | 규칙 엔진 판정. LLM이 정하지 않는다 |
-| `risk_score` | 0–100 정수 | 구성 지표 가중합. 산식은 별도 문서 |
+| `risk_level` | `low · moderate · high` · `null` | 규칙 엔진 판정. LLM이 정하지 않는다. 판정을 보류하면 `null` |
+| `risk_score` | 0–100 정수 · `null` | 구성 지표 가중합. 산식은 별도 문서. 판정 보류 시 `null` |
+| `insufficient_history` | string · `null` | 변동성·상관을 계산하지 못한 이유. 정상일 때 `null` |
+| `summary` | Section · `null` | [§12](#types) Section 다섯 키. 문장 생성이 막히면 `null`이고 지표는 그대로 나간다 |
 | `findings[].severity` | `info · medium · high` | 정렬 순서가 곧 중요도 순위 |
+| `findings[].text` · `segments` | string · array · `null` | Section 전체가 아니라 이 두 키만 펼쳐 담는다. 생성이 막히면 둘 다 `null` |
 | `evidence` | object | LLM 입력으로 쓰인 원시 지표. 디버깅·평가용으로 응답에 포함 |
+
+`evidence`의 고정 키는 `tickers · metric · value · threshold · hhi` 다섯이다. 나머지는 조건부로 붙는다 — 상관 지표를 계산했으면 `avg_pairwise_corr`, `id`가 `sector_concentration`이면 `sector`, `macro_exposure`면 `rate_sensitivity`가 더 들어온다.
+
+`indicators`의 열한 키는 항상 실려 나오며, **계산되지 않은 지표는 0이 아니라 `null`**이다. 공통 거래일이 60일에 못 미치면 `annualized_volatility`·`diversification_ratio`가 `null`이 되고 `insufficient_history`에 사유 문자열이 담기며, 이때 `risk_level`·`risk_score`도 `null`이 될 수 있다. 집중도·현금 비중은 그대로 유효하므로 **409로 끊지 않는다.**
+
+`findings[].id`는 `ticker_concentration · sector_concentration · volatility · correlation · liquidity · macro_exposure` 여섯 중 하나이며, 걸린 항목만 중요도 순으로 배열에 담긴다.
 
 `findings[].category`는 `concentration · volatility · correlation · style_tilt · macro_exposure · liquidity` 중 하나다. 국가 집중도와 통화 노출은 국내 단일 시장이므로 정의하지 않는다.
 
@@ -426,13 +482,20 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 { "period": "1d", "benchmark": "KOSPI" }
 ```
 
-`period`는 `1d · 1w · 1m · 3m · ytd`. `benchmark`는 `KOSPI · KOSDAQ`이며 생략 시 보유 비중 가중으로 자동 결정한다.
+`period`는 `1d · 1w · 1m · 3m · ytd`이며 생략 시 `1d`다. 다른 값은 `INVALID_REQUEST`다.
+
+> **구현과 다름**
+> `benchmark`는 요청 본문에 **받기만 하고 쓰이지 않는다.** 벤치마크는 항상 보유 종목 유니버스를 시가총액으로 합성한 시장 전체이며, `"KOSPI"`를 보내든 생략하든 결과가 같다. 지수 선택을 지원할 계획이 없다면 이 필드는 요청 스키마에서 빼는 편이 맞다 — 사양이 아니라 **미해결 사항**으로 남긴다.
 
 #### Response — content
 
 ```
 {
   "period": "1d",
+  "start": "2025-09-11",
+  "end": "2025-09-12",
+  "trading_days": 2,
+  "portfolio_return": 0.0213,
   "total_return": 0.0213,
   "benchmark_return": 0.0140,
   "excess_return": 0.0073,
@@ -445,20 +508,54 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
     {
       "ticker": "000660",
       "name": "SK하이닉스",
+      "sector": "반도체",
       "weight": 0.1820,
       "return": 0.0512,
       "contribution": 0.0093,
+      "held_at_start": true,
       "events": [
-        { "citation_id": "cit_1", "type": "news",
-          "summary": "HBM 공급 계약 관련 보도", "matched_confidence": 0.72 }
+        { "citation_id": "cit_1", "type": "news", "title": "HBM 공급 계약 관련 보도",
+          "summary": "HBM 공급 계약 관련 보도", "event_date": "2025-09-12",
+          "matched_confidence": 0.72 }
       ]
     }
   ],
   "detractors": [ ],
+  "sectors": [
+    {
+      "sector": "반도체",
+      "portfolio_weight": 0.4230,
+      "benchmark_weight": 0.2810,
+      "allocation": 0.0019,
+      "selection": 0.0042,
+      "proxy": false
+    }
+  ],
+  "notes": [ "…" ],
+  "summary": {
+    "title": "성과 요인",
+    "text": "오늘 상승분의 상당 부분은 시장 전체 상승에서 왔습니다. …",
+    "segments": [ ],
+    "cached": false,
+    "cached_at": null
+  },
   "text": "오늘 상승분의 상당 부분은 시장 전체 상승에서 왔습니다. …",
   "segments": [ ]
 }
 ```
+
+| 키 | 실제 출력 |
+| --- | --- |
+| `start` · `end` · `trading_days` | 실제로 되짚은 구간과 그 안의 거래일 수. 달력 기준으로 자른 뒤 거래일만 남긴 결과라 `period`만으로는 알 수 없다 |
+| `portfolio_return` · `total_return` | **같은 값이 두 키로 나간다** (아래 참조) |
+| `contributors` · `detractors` | 기여도 부호로 가른 같은 모양의 행. 각 행에 `sector`·`held_at_start`가 함께 온다 |
+| `events[].title` · `summary` | **같은 문자열이 두 키로 나간다.** 별도 요약 패스가 없어 제목을 그대로 쓴다 |
+| `sectors` | 섹터별 배분·선택 효과. `proxy`는 그 섹터 벤치마크를 대체 지표로 채웠다는 뜻 |
+| `notes` | 계산 중 붙은 단서 문자열 배열. 없으면 빈 배열 |
+| `summary` · `text` · `segments` | **같은 내용이 두 자리로 나간다.** `summary`가 [§12](#types) Section 전체이고, `text`·`segments`는 그중 두 키를 최상위로 다시 펼친 것이다. 생성이 막히면 셋 다 `null` |
+
+> **중복 키 — 미해결**
+> `portfolio_return`/`total_return`, `summary`/`text`+`segments`, `events[].title`/`summary` 세 쌍은 **같은 값을 두 이름으로 내보낸다.** 지금은 구현이 그렇게 동작하므로 그대로 적었다. 소비자가 붙기 전에 한쪽으로 줄이는 것이 맞고, 그 결정은 이 문서 밖이다.
 
 > **기획서 대비 변경**
 > 원안의 **환율(FX) 기여도 항목을 제거**했다. 국내 단일 시장에서는 성립하지 않는다. 대신 `market` / `selection` 분해를 넣어 "장이 좋았던 것인지, 종목 선택이 좋았던 것인지"에 답한다. 국내 사용자에게 체감 가치가 더 크다.
@@ -487,42 +584,76 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 
 ```
 {
+  "order_summary": [
+    { "ticker": "000660", "side": "buy", "quantity": 40, "price": 214000, "amount": 8560000 }
+  ],
   "orders_value": 8560000,
   "feasible": true,
-  "changes": [
+  "shortfall": null,
+  "before": {
+    "hhi": 0.2841, "top1_weight": 0.4168, "top3_weight": 0.7204, "sector_hhi": 0.3120,
+    "annualized_volatility": 0.2837, "max_drawdown_1y": -0.2214, "cash_ratio": 0.0810,
+    "rate_sensitivity": "high", "beta": 1.14, "large_cap_weight": 0.8320,
+    "diversification_ratio": 1.18, "top_sector_weight": 0.4230
+  },
+  "after": {
+    "hhi": 0.3392, "top1_weight": 0.4168, "top3_weight": 0.7511, "sector_hhi": 0.3680,
+    "annualized_volatility": 0.3105, "max_drawdown_1y": -0.2214, "cash_ratio": 0.0593,
+    "rate_sensitivity": "high", "beta": 1.19, "large_cap_weight": 0.8460,
+    "diversification_ratio": 1.11, "top_sector_weight": 0.5044
+  },
+  "delta": {
+    "hhi": 0.0551, "top1_weight": 0.0, "top3_weight": 0.0307, "sector_hhi": 0.0560,
+    "annualized_volatility": 0.0268, "max_drawdown_1y": 0.0, "cash_ratio": -0.0217,
+    "beta": 0.05, "large_cap_weight": 0.0140, "diversification_ratio": -0.07,
+    "top_sector_weight": 0.0814
+  },
+  "warnings": [
     {
-      "key": "ticker_weight",
-      "label": "SK하이닉스 비중",
-      "before": 0.1820, "after": 0.2634, "delta": 0.0814,
-      "significance": "high"
-    },
-    {
-      "key": "sector_weight_semiconductor",
-      "label": "반도체 업종 비중",
-      "before": 0.4230, "after": 0.5044, "delta": 0.0814,
-      "significance": "high"
-    },
-    { "key": "cash_ratio", "label": "현금 비중",
-      "before": 0.0810, "after": 0.0593, "delta": -0.0217, "significance": "medium" },
-    { "key": "hhi", "label": "집중도",
-      "before": 0.2841, "after": 0.3392, "delta": 0.0551, "significance": "high" },
-    { "key": "annualized_volatility", "label": "예상 변동성",
-      "before": 0.2837, "after": 0.3105, "delta": 0.0268, "significance": "medium" }
-  ],
-  "wiki_conflicts": [
-    {
-      "fact": "분산 투자를 중시하며 단일 업종 40% 이상을 피하고 싶다고 하셨습니다",
-      "source": "user_stated",
-      "recorded_at": "2026-04-02T20:11:00+09:00",
-      "conflict": "이 주문은 반도체 업종 비중을 해당 기준 위로 올립니다"
+      "id": "sector_concentration",
+      "severity": "high",
+      "title": "업종 집중",
+      "metric": "top_sector_weight",
+      "before": 0.4230,
+      "after": 0.5044,
+      "threshold": 0.3500,
+      "text": "이 주문은 반도체 업종 비중을 50.4%로 올립니다. …",
+      "segments": [ ]
     }
   ],
-  "text": "이 주문을 실행하면 …",
-  "segments": [ ]
+  "thesis_conflicts": [
+    {
+      "id": "6f1c8a2e-4b90-4d1e-9a3f-2c7d5e081b64",
+      "ticker": "000660",
+      "fact": "HBM 구조적 성장에 베팅",
+      "source": "user_stated",
+      "recorded_at": "2026-03-11T10:22:00+09:00",
+      "conflict": "기록하신 논지와 이 주문의 방향이 어긋납니다. …",
+      "segments": [ ]
+    }
+  ],
+  "summary": {
+    "title": "주문 요약",
+    "text": "이 주문을 실행하면 …",
+    "segments": [ ],
+    "cached": false,
+    "cached_at": null
+  }
 }
 ```
 
-`feasible`이 `false`면 현금 부족이며 `detail.shortfall`에 부족액이 담긴다. `wiki_conflicts`는 **사용자가 직접 진술한 항목(`user_stated`)만** 사용한다. AI가 추론한 성향으로 주문에 이의를 제기하면 근거 없는 참견이 된다.
+| 키 | 실제 출력 |
+| --- | --- |
+| `order_summary` | 체결을 가정한 주문 한 줄씩. `price`를 생략했으면 여기 채워진 값이 실제 사용된 단가다 |
+| `before` · `after` | [§5](#ep-diagnosis) `indicators` 열한 키에 `top_sector_weight`를 더한 **열두 키**. 양쪽 키 구성은 같다 |
+| `delta` | `after − before`. **숫자인 지표만 담긴다** — `rate_sensitivity`처럼 문자열이거나 한쪽이 `null`인 지표는 키째로 빠진다 |
+| `warnings` | 이 주문 때문에 **새로 걸렸거나 등급이 올라간** 항목만. 나아진 항목은 요약이 말한다. 첫 발생이면 `before`가 `null` |
+| `thesis_conflicts` | 주문에 오른 종목의 `user_stated` 논지 중 어긋난 것만. 충돌이 없으면 빈 배열 |
+| `summary` | [§12](#types) Section 다섯 키. 생성이 막히면 `null` |
+
+`feasible`이 `false`면 현금 부족이며 부족액은 **최상위 `shortfall`**에 담긴다 (에러가 아니라 200 응답의 본문이다. 부족하지 않으면 `null`). `thesis_conflicts`는 **사용자가 직접 진술한 항목(`user_stated`)만** 사용한다. AI가 추론한 성향으로 주문에 이의를 제기하면 근거 없는 참견이 된다.
+
+히스토리가 60거래일에 못 미쳐도 409로 끊지 않는다. `annualized_volatility`·`diversification_ratio`가 `before`·`after` 양쪽에서 `null`이 되고 `delta`에서 빠질 뿐, 집중도·현금 차분은 그대로 유효하다. `max_drawdown_1y`의 `delta`가 `0.0`인 것도 정상이다 — 아직 내지 않은 주문이 지난 낙폭을 바꾸지는 않으므로 전·후에 같은 시계열을 넘긴다.
 
 ## §8 데일리 브리핑
 
@@ -545,17 +676,20 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
       "title": "SK하이닉스 강세",
       "text": "포트폴리오에서 18.2%를 차지하는 SK하이닉스가 +5.12% 상승했습니다. …",
       "segments": [
-        { "type": "text",   "value": "포트폴리오에서 " },
+        { "type": "text",   "value": "포트폴리오에서 ",
+          "raw": null, "unit": null, "source": null, "direction": null },
         { "type": "metric", "value": "18.2%", "raw": 0.1820, "unit": "ratio",
           "source": "portfolio_engine", "direction": null },
-        { "type": "text",   "value": "를 차지하는 SK하이닉스가 " },
+        { "type": "text",   "value": "를 차지하는 SK하이닉스가 ",
+          "raw": null, "unit": null, "source": null, "direction": null },
         { "type": "metric", "value": "+5.12%", "raw": 0.0512, "unit": "ratio",
-          "source": "price", "direction": "up" },
-        { "type": "text",   "value": " 상승했습니다. …" }
+          "source": "portfolio_engine", "direction": "up" },
+        { "type": "text",   "value": " 상승했습니다. …",
+          "raw": null, "unit": null, "source": null, "direction": null }
       ],
       "related_tickers": ["000660"],
       "deeplink": "/stocks/000660?tab=ai",
-      "citations": ["cit_1"]
+      "citations": [ ]
     }
   ]
 }
@@ -564,10 +698,14 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 | `status` | 의미 | 프론트 처리 |
 | --- | --- | --- |
 | `ready` | 생성 완료 | 정상 표시 |
-| `generating` | 배치 진행 중 | 스켈레톤 표시 후 30초 뒤 재조회 |
+| `generating` | 배치 진행 중 | 스켈레톤 표시 후 30초 뒤 재조회. **현재 구현은 요청 시점에 생성하므로 이 값을 내보내지 않는다** |
 | `empty` | 보유 종목 없음 또는 유의미한 이벤트 없음 | 영역 숨김 |
 
 `category`는 `holding_move · earnings · filing · macro_event · portfolio_shift` 중 하나이며 최대 4건을 반환한다.
+
+`date`·`status`·`generated_at`·`items` 네 키는 항상 실려 나온다. 보유 종목이 없거나 내보낼 항목이 없으면 `status: "empty"`에 `items: [ ]`이며 오류가 아니다. 이때 `date`는 `null`일 수 있다(조회 시 `date`를 주지 않았고 기준 거래일도 못 잡은 경우).
+
+`items[].citations`는 **현재 구현에서 항상 빈 배열**이다. 이 기능은 일정·시세에서 항목을 뽑을 뿐 문서를 조회하지 않아 인용할 원문이 없다. 봉투의 `citations`도 같은 이유로 비어 있다.
 
 > **비용 설계**
 > `relevance_score` 산출은 **LLM이 아니라 규칙 엔진**이 한다(보유 여부 × 비중 × 이벤트 중요도). LLM은 상위 4건의 문장만 생성한다. 랭킹까지 LLM에 맡기면 사용자 수에 비례해 비용이 선형 증가한다.
@@ -720,13 +858,13 @@ AI 품질 지표 수집. 모든 AI 응답 영역에 노출한다.
 }
 ```
 
-`type: "text"`인 조각은 `value`만 가진다. 나머지 필드는 `metric`에서만 채워진다.
+여섯 키는 **두 종류 모두에 실려 나온다.** `type: "text"`인 조각은 `value` 외 넷이 `null`일 뿐 키가 빠지지는 않는다. `metric`에서는 `raw`와 `source`가 필수이고, `unit`·`direction`은 없으면 `null`이다.
 
 #### Section
 
 ```
 {
-  "title":     "string",
+  "title":     "string | null",
   "text":      "string",
   "segments":  [ ],
   "cached":    false,
@@ -742,6 +880,7 @@ AI 품질 지표 수집. 모든 AI 응답 영역에 노출한다.
   "type":         "filing | financial | news | price | macro | engine | wiki",
   "title":        "string",
   "source":       "string",
+  "publisher":    "string | null",
   "url":          "string | null",
   "published_at": "string | null",
   "snippet":      "string | null",
@@ -776,6 +915,39 @@ Event Ranking | `/portfolio/attribution`
 
 > **착수 조건**
 > 타 파트 의존은 [기존 조회 API의 서버 간 접근 권한](#internal) 하나뿐이고, 그마저 시드 데이터 어댑터로 대체해 병렬 진행할 수 있다. 종목 마스터·시세·공시·뉴스는 전부 AI 파트가 직접 적재하므로 **다른 파트의 일정에 막히는 지점이 없다.** 오늘 바로 착수 가능하다.
+
+## §14 구현 대조 근거
+
+**이 문서의 응답 예시는 코드에서 확인한 것이다.** 예시와 구현이 어긋나면 구현이 맞고 이 문서가 틀린 것이므로, 다시 대조할 때 어디를 열어야 하는지를 남긴다. 봉투·조각·근거의 키 구성은 `app/core/schemas.py`의 Pydantic 모델이 정하고, `content` 안쪽은 각 라우터가 `dict`로 직접 조립한다. 라우터에 `response_model`을 걸지 않으므로 **선언된 키는 값이 `None`이어도 빠지지 않고 `null`로 나간다.**
+
+| § | 엔드포인트 | `content` 조립 위치 |
+| --- | --- | --- |
+| §3 | `POST /stocks/{ticker}/analysis` | `app/api/routes/stocks.py` · `create_analysis` (섹션 키는 `SECTION_TITLES`) |
+| §4 | `POST /chat` | `app/api/routes/chat.py` · `chat` |
+| §5 | `POST /portfolio/diagnosis` | `app/api/routes/portfolio.py` · `diagnosis`, `_finding_payload`, `_evidence`, `_indicators` |
+| §6 | `POST /portfolio/attribution` | `app/api/routes/portfolio.py` · `attribution`, `_contributor_payload` |
+| §7 | `POST /orders/preview` | `app/api/routes/orders.py` · `preview`, `_measures`, `_delta`, `_raised`, `_section_fields` |
+| §8 | `GET /briefing` | `app/api/routes/briefing.py` · `_item_payload`, `_values`, `_empty` |
+
+| 공통 요소 | 출처 |
+| --- | --- |
+| 봉투 · `data_as_of` | `app/core/schemas.py` · `Envelope`, `DataAsOf` |
+| Segment · Section · Citation | `app/core/schemas.py` · `Segment`, `Section`, `Citation` |
+| 에러 코드 · HTTP 상태 | `app/core/errors.py` · `ErrorCode`, `STATUS_BY_CODE` |
+| `unit` · `source` · `category` 등 열거값 | `app/core/enums.py` |
+| 기계 판독용 스키마 | `docs/openapi.json` (FastAPI 생성본. `scripts/check.sh`가 최신 여부를 검사한다) |
+
+> **문서가 앞서 나간 자리**
+> 아래는 **이 문서가 약속하지만 구현이 아직 하지 않는** 항목이다. 구현을 문서에 맞추는 것이 아니라 문서가 현재 동작을 먼저 정확히 적고, 채울 때 이 목록을 지운다.
+
+| 약속 | 현재 동작 | 응답에서 보이는 모습 |
+| --- | --- | --- |
+| 캐시 ([§2.6](#errors) TTL 표 · [§3](#ep-analysis) 종목 단위 캐시) | 캐시 계층 없음 | 봉투와 모든 Section의 `cached`가 항상 `false`, `cached_at`이 `null` |
+| 호출 한도 ([§2.6](#errors)) | `RATE_LIMITED`는 정의돼 있으나 세는 곳이 없음 | 429가 나가지 않는다 |
+| 브리핑 배치 생성 | 조회 시점에 생성 | `status`가 `ready` 아니면 `empty`. `generating`은 나오지 않는다 |
+| 논지 근거 분류 · 일정 캘린더 | 추출 패스와 원천 없음 | `thesis_check.supporting`·`challenging`, `next_events.events`가 항상 빈 배열 |
+| 인용 원문 ([§8](#ep-briefing)) | 문서를 조회하지 않음 | `items[].citations`와 봉투 `citations`가 항상 빈 배열 |
+| `benchmark` 선택 ([§6](#ep-attribution)) | 요청 필드를 받기만 하고 쓰지 않음 | 어떤 값을 보내도 결과가 같다 |
 
 ---
 
