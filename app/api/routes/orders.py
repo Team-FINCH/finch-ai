@@ -38,7 +38,7 @@ from app.core.enums import MetricSource, OrderSide, ThesisStatus, WikiSource
 from app.core.errors import InsufficientData, InvalidRequest
 from app.core.models import Instrument, PriceDaily
 from app.core.response_log import record
-from app.core.schemas import DataAsOf, Envelope, Segment
+from app.core.schemas import DataAsOf, Envelope, Section, Segment
 from app.engines.portfolio import Holding, PortfolioEngine, PortfolioSnapshot
 from app.engines.risk import Finding, RiskAssessment, assess
 from app.llm.client import NullLlmClient, get_llm_client
@@ -49,6 +49,7 @@ from app.wiki.store import list_facts, list_theses
 log = logging.getLogger("app.api.orders")
 
 router = APIRouter(prefix="/orders", tags=["orders"])
+Number = float | int
 
 _SOURCE = MetricSource.RISK_ENGINE
 _SUMMARY_KEY = "summary"
@@ -76,6 +77,64 @@ class OrderLine(BaseModel):
 
 class PreviewRequest(BaseModel):
     orders: list[OrderLine] = Field(min_length=1)
+
+
+class OrderSummaryLine(BaseModel):
+    ticker: str
+    side: str
+    quantity: int
+    price: int
+    amount: int
+
+
+class PreviewMeasures(BaseModel):
+    hhi: Number
+    top1_weight: Number
+    top3_weight: Number
+    sector_hhi: Number
+    annualized_volatility: Number | None
+    max_drawdown_1y: Number
+    cash_ratio: Number
+    rate_sensitivity: str
+    beta: Number | None
+    large_cap_weight: Number | None
+    diversification_ratio: Number | None
+    top_sector_weight: Number
+
+
+class PreviewWarning(BaseModel):
+    id: str
+    severity: str
+    title: str
+    metric: str
+    before: Number | None
+    after: Number
+    threshold: Number
+    text: str | None
+    segments: list[Segment] | None
+
+
+class ThesisConflict(BaseModel):
+    id: str
+    ticker: str
+    fact: str
+    source: str
+    recorded_at: str
+    conflict: str
+    segments: list[Segment]
+
+
+class PreviewContent(BaseModel):
+    order_summary: list[OrderSummaryLine]
+    orders_value: int
+    feasible: bool
+    shortfall: int | None
+    before: PreviewMeasures
+    after: PreviewMeasures
+    delta: dict[str, Number]
+    warnings: list[PreviewWarning]
+    thesis_conflicts: list[ThesisConflict]
+    summary: Section | None
 
 
 # ── 호가 ──────────────────────────────────────────────────────────────────────
@@ -342,7 +401,9 @@ async def _stated_context(
 
 # ── 라우터 ────────────────────────────────────────────────────────────────────
 @router.post("/preview")
-async def preview(body: PreviewRequest, user_id: CurrentUser, db: DbSession) -> Envelope[dict]:
+async def preview(
+    body: PreviewRequest, user_id: CurrentUser, db: DbSession
+) -> Envelope[PreviewContent]:
     """주문 체결을 가정하고 진단을 다시 돌려 차분을 돌려준다(§7).
 
     승인·거절 판단은 하지 않는다. `feasible`은 현금이 모자라는지만 알리는 사실이다.
@@ -450,7 +511,7 @@ async def preview(body: PreviewRequest, user_id: CurrentUser, db: DbSession) -> 
             continue
         sections[outcome.key] = outcome.section.model_dump(mode="json")
 
-    envelope = Envelope[dict](
+    envelope = Envelope[PreviewContent](
         content={
             "order_summary": order_summary,
             "orders_value": round(orders_value),

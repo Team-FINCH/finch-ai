@@ -1,6 +1,39 @@
 {
   "components": {
     "schemas": {
+      "AnalysisContent": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sections": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AnalysisSection"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Sections",
+            "type": "object"
+          },
+          "ticker": {
+            "title": "Ticker",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticker",
+          "name",
+          "sections"
+        ],
+        "title": "AnalysisContent",
+        "type": "object"
+      },
       "AnalysisRequest": {
         "properties": {
           "personalize": {
@@ -26,6 +59,331 @@
         "title": "AnalysisRequest",
         "type": "object"
       },
+      "AnalysisSection": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "AttributionBreakdown": {
+        "properties": {
+          "market": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Market"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Sector"
+          },
+          "selection": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Selection"
+          }
+        },
+        "required": [
+          "market",
+          "sector",
+          "selection"
+        ],
+        "title": "AttributionBreakdown",
+        "type": "object"
+      },
+      "AttributionContent": {
+        "properties": {
+          "benchmark_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Benchmark Return"
+          },
+          "breakdown": {
+            "$ref": "#/components/schemas/AttributionBreakdown"
+          },
+          "contributors": {
+            "items": {
+              "$ref": "#/components/schemas/AttributionContributor"
+            },
+            "title": "Contributors",
+            "type": "array"
+          },
+          "detractors": {
+            "items": {
+              "$ref": "#/components/schemas/AttributionContributor"
+            },
+            "title": "Detractors",
+            "type": "array"
+          },
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "excess_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Excess Return"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "portfolio_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Portfolio Return"
+          },
+          "sectors": {
+            "items": {
+              "$ref": "#/components/schemas/AttributionSector"
+            },
+            "title": "Sectors",
+            "type": "array"
+          },
+          "segments": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Segment"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segments"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Section"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "total_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Total Return"
+          },
+          "trading_days": {
+            "title": "Trading Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "period",
+          "start",
+          "end",
+          "trading_days",
+          "portfolio_return",
+          "total_return",
+          "benchmark_return",
+          "excess_return",
+          "breakdown",
+          "contributors",
+          "detractors",
+          "sectors",
+          "notes",
+          "summary",
+          "text",
+          "segments"
+        ],
+        "title": "AttributionContent",
+        "type": "object"
+      },
+      "AttributionContributor": {
+        "properties": {
+          "contribution": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Contribution"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/AttributionEvent"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "held_at_start": {
+            "title": "Held At Start",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Return"
+          },
+          "sector": {
+            "title": "Sector",
+            "type": "string"
+          },
+          "ticker": {
+            "title": "Ticker",
+            "type": "string"
+          },
+          "weight": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Weight"
+          }
+        },
+        "required": [
+          "ticker",
+          "name",
+          "sector",
+          "weight",
+          "return",
+          "contribution",
+          "held_at_start",
+          "events"
+        ],
+        "title": "AttributionContributor",
+        "type": "object"
+      },
+      "AttributionEvent": {
+        "properties": {
+          "citation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Citation Id"
+          },
+          "event_date": {
+            "format": "date",
+            "title": "Event Date",
+            "type": "string"
+          },
+          "matched_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Matched Confidence"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "citation_id",
+          "type",
+          "title",
+          "summary",
+          "event_date",
+          "matched_confidence"
+        ],
+        "title": "AttributionEvent",
+        "type": "object"
+      },
       "AttributionRequest": {
         "properties": {
           "benchmark": {
@@ -45,6 +403,208 @@
           }
         },
         "title": "AttributionRequest",
+        "type": "object"
+      },
+      "AttributionSector": {
+        "properties": {
+          "allocation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Allocation"
+          },
+          "benchmark_weight": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Benchmark Weight"
+          },
+          "portfolio_weight": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Portfolio Weight"
+          },
+          "proxy": {
+            "title": "Proxy",
+            "type": "boolean"
+          },
+          "sector": {
+            "title": "Sector",
+            "type": "string"
+          },
+          "selection": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Selection"
+          }
+        },
+        "required": [
+          "sector",
+          "portfolio_weight",
+          "benchmark_weight",
+          "allocation",
+          "selection",
+          "proxy"
+        ],
+        "title": "AttributionSector",
+        "type": "object"
+      },
+      "BriefingContent": {
+        "properties": {
+          "date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BriefingItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "status",
+          "generated_at",
+          "items"
+        ],
+        "title": "BriefingContent",
+        "type": "object"
+      },
+      "BriefingItem": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "citations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "deeplink": {
+            "title": "Deeplink",
+            "type": "string"
+          },
+          "rank": {
+            "title": "Rank",
+            "type": "integer"
+          },
+          "related_tickers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Related Tickers",
+            "type": "array"
+          },
+          "relevance_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Relevance Score"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/Segment"
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rank",
+          "category",
+          "relevance_score",
+          "title",
+          "text",
+          "segments",
+          "related_tickers",
+          "deeplink",
+          "citations"
+        ],
+        "title": "BriefingItem",
+        "type": "object"
+      },
+      "ChatContent": {
+        "additionalProperties": false,
+        "description": "§4 답변 본문.",
+        "properties": {
+          "answer": {
+            "$ref": "#/components/schemas/Section"
+          },
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "tools_used": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools Used",
+            "type": "array"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "answer",
+          "tools_used"
+        ],
+        "title": "ChatContent",
         "type": "object"
       },
       "ChatContext": {
@@ -261,6 +821,552 @@
         "title": "DataAsOf",
         "type": "object"
       },
+      "DiagnosisContent": {
+        "properties": {
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/DiagnosisFinding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "indicators": {
+            "$ref": "#/components/schemas/DiagnosisIndicators"
+          },
+          "insufficient_history": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Insufficient History"
+          },
+          "risk_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Level"
+          },
+          "risk_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Score"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Section"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "risk_level",
+          "risk_score",
+          "insufficient_history",
+          "summary",
+          "findings",
+          "indicators"
+        ],
+        "title": "DiagnosisContent",
+        "type": "object"
+      },
+      "DiagnosisFinding": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "evidence": {
+            "additionalProperties": true,
+            "title": "Evidence",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "segments": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Segment"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segments"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "category",
+          "severity",
+          "title",
+          "text",
+          "segments",
+          "evidence"
+        ],
+        "title": "DiagnosisFinding",
+        "type": "object"
+      },
+      "DiagnosisIndicators": {
+        "properties": {
+          "annualized_volatility": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annualized Volatility"
+          },
+          "beta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beta"
+          },
+          "cash_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Cash Ratio"
+          },
+          "diversification_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diversification Ratio"
+          },
+          "hhi": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Hhi"
+          },
+          "large_cap_weight": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Large Cap Weight"
+          },
+          "max_drawdown_1y": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Max Drawdown 1Y"
+          },
+          "rate_sensitivity": {
+            "title": "Rate Sensitivity",
+            "type": "string"
+          },
+          "sector_hhi": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Sector Hhi"
+          },
+          "top1_weight": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Top1 Weight"
+          },
+          "top3_weight": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Top3 Weight"
+          }
+        },
+        "required": [
+          "hhi",
+          "top1_weight",
+          "top3_weight",
+          "sector_hhi",
+          "annualized_volatility",
+          "max_drawdown_1y",
+          "cash_ratio",
+          "rate_sensitivity",
+          "beta",
+          "large_cap_weight",
+          "diversification_ratio"
+        ],
+        "title": "DiagnosisIndicators",
+        "type": "object"
+      },
+      "Direction": {
+        "description": "국내 관례에 따라 UP은 적색, DOWN은 청색으로 표시한다.",
+        "enum": [
+          "up",
+          "down"
+        ],
+        "title": "Direction",
+        "type": "string"
+      },
+      "Envelope_AnalysisContent_": {
+        "properties": {
+          "cached": {
+            "default": false,
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "content": {
+            "$ref": "#/components/schemas/AnalysisContent"
+          },
+          "data_as_of": {
+            "$ref": "#/components/schemas/DataAsOf"
+          },
+          "disclaimer": {
+            "title": "Disclaimer",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "Envelope[AnalysisContent]",
+        "type": "object"
+      },
+      "Envelope_AttributionContent_": {
+        "properties": {
+          "cached": {
+            "default": false,
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "content": {
+            "$ref": "#/components/schemas/AttributionContent"
+          },
+          "data_as_of": {
+            "$ref": "#/components/schemas/DataAsOf"
+          },
+          "disclaimer": {
+            "title": "Disclaimer",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "Envelope[AttributionContent]",
+        "type": "object"
+      },
+      "Envelope_BriefingContent_": {
+        "properties": {
+          "cached": {
+            "default": false,
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "content": {
+            "$ref": "#/components/schemas/BriefingContent"
+          },
+          "data_as_of": {
+            "$ref": "#/components/schemas/DataAsOf"
+          },
+          "disclaimer": {
+            "title": "Disclaimer",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "Envelope[BriefingContent]",
+        "type": "object"
+      },
+      "Envelope_ChatContent_": {
+        "properties": {
+          "cached": {
+            "default": false,
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "content": {
+            "$ref": "#/components/schemas/ChatContent"
+          },
+          "data_as_of": {
+            "$ref": "#/components/schemas/DataAsOf"
+          },
+          "disclaimer": {
+            "title": "Disclaimer",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "Envelope[ChatContent]",
+        "type": "object"
+      },
+      "Envelope_DiagnosisContent_": {
+        "properties": {
+          "cached": {
+            "default": false,
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "content": {
+            "$ref": "#/components/schemas/DiagnosisContent"
+          },
+          "data_as_of": {
+            "$ref": "#/components/schemas/DataAsOf"
+          },
+          "disclaimer": {
+            "title": "Disclaimer",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "Envelope[DiagnosisContent]",
+        "type": "object"
+      },
+      "Envelope_PreviewContent_": {
+        "properties": {
+          "cached": {
+            "default": false,
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "content": {
+            "$ref": "#/components/schemas/PreviewContent"
+          },
+          "data_as_of": {
+            "$ref": "#/components/schemas/DataAsOf"
+          },
+          "disclaimer": {
+            "title": "Disclaimer",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "Envelope[PreviewContent]",
+        "type": "object"
+      },
       "Envelope_dict_": {
         "properties": {
           "cached": {
@@ -377,6 +1483,18 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "MetricSource": {
+        "description": "수치가 어느 엔진에서 나왔는지. 출력단 대조 검증의 기준이 된다.",
+        "enum": [
+          "portfolio_engine",
+          "risk_engine",
+          "attribution_engine",
+          "price",
+          "filing"
+        ],
+        "title": "MetricSource",
+        "type": "string"
+      },
       "OrderLine": {
         "properties": {
           "price": {
@@ -421,6 +1539,39 @@
         "title": "OrderSide",
         "type": "string"
       },
+      "OrderSummaryLine": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "integer"
+          },
+          "price": {
+            "title": "Price",
+            "type": "integer"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "side": {
+            "title": "Side",
+            "type": "string"
+          },
+          "ticker": {
+            "title": "Ticker",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticker",
+          "side",
+          "quantity",
+          "price",
+          "amount"
+        ],
+        "title": "OrderSummaryLine",
+        "type": "object"
+      },
       "Period": {
         "enum": [
           "1d",
@@ -431,6 +1582,251 @@
         ],
         "title": "Period",
         "type": "string"
+      },
+      "PreviewContent": {
+        "properties": {
+          "after": {
+            "$ref": "#/components/schemas/PreviewMeasures"
+          },
+          "before": {
+            "$ref": "#/components/schemas/PreviewMeasures"
+          },
+          "delta": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Delta",
+            "type": "object"
+          },
+          "feasible": {
+            "title": "Feasible",
+            "type": "boolean"
+          },
+          "order_summary": {
+            "items": {
+              "$ref": "#/components/schemas/OrderSummaryLine"
+            },
+            "title": "Order Summary",
+            "type": "array"
+          },
+          "orders_value": {
+            "title": "Orders Value",
+            "type": "integer"
+          },
+          "shortfall": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shortfall"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Section"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thesis_conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/ThesisConflict"
+            },
+            "title": "Thesis Conflicts",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "order_summary",
+          "orders_value",
+          "feasible",
+          "shortfall",
+          "before",
+          "after",
+          "delta",
+          "warnings",
+          "thesis_conflicts",
+          "summary"
+        ],
+        "title": "PreviewContent",
+        "type": "object"
+      },
+      "PreviewMeasures": {
+        "properties": {
+          "annualized_volatility": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annualized Volatility"
+          },
+          "beta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beta"
+          },
+          "cash_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Cash Ratio"
+          },
+          "diversification_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diversification Ratio"
+          },
+          "hhi": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Hhi"
+          },
+          "large_cap_weight": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Large Cap Weight"
+          },
+          "max_drawdown_1y": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Max Drawdown 1Y"
+          },
+          "rate_sensitivity": {
+            "title": "Rate Sensitivity",
+            "type": "string"
+          },
+          "sector_hhi": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Sector Hhi"
+          },
+          "top1_weight": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Top1 Weight"
+          },
+          "top3_weight": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Top3 Weight"
+          },
+          "top_sector_weight": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Top Sector Weight"
+          }
+        },
+        "required": [
+          "hhi",
+          "top1_weight",
+          "top3_weight",
+          "sector_hhi",
+          "annualized_volatility",
+          "max_drawdown_1y",
+          "cash_ratio",
+          "rate_sensitivity",
+          "beta",
+          "large_cap_weight",
+          "diversification_ratio",
+          "top_sector_weight"
+        ],
+        "title": "PreviewMeasures",
+        "type": "object"
       },
       "PreviewRequest": {
         "properties": {
@@ -449,6 +1845,100 @@
         "title": "PreviewRequest",
         "type": "object"
       },
+      "PreviewWarning": {
+        "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "After"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "segments": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Segment"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segments"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Threshold"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "severity",
+          "title",
+          "metric",
+          "before",
+          "after",
+          "threshold",
+          "text",
+          "segments"
+        ],
+        "title": "PreviewWarning",
+        "type": "object"
+      },
       "Screen": {
         "description": "대화에서 대명사 지시 대상을 해소하는 데 쓴다.",
         "enum": [
@@ -460,6 +1950,171 @@
         ],
         "title": "Screen",
         "type": "string"
+      },
+      "Section": {
+        "description": "서술 한 덩어리.\n\n`text`만 출력해도 정상 동작한다. `segments`는 수치 스타일링이 필요할 때만 쓴다.",
+        "properties": {
+          "cached": {
+            "default": false,
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "cached_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cached At"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/Segment"
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "Section",
+        "type": "object"
+      },
+      "Segment": {
+        "description": "문장을 텍스트와 수치로 쪼갠 조각.\n\n`type=TEXT`인 조각은 `value`만 가진다. 나머지 필드는 `METRIC`에서만 채운다.",
+        "properties": {
+          "direction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Direction"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "raw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MetricSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": {
+            "$ref": "#/components/schemas/SegmentType"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Unit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "value"
+        ],
+        "title": "Segment",
+        "type": "object"
+      },
+      "SegmentType": {
+        "enum": [
+          "text",
+          "metric"
+        ],
+        "title": "SegmentType",
+        "type": "string"
+      },
+      "ThesisConflict": {
+        "properties": {
+          "conflict": {
+            "title": "Conflict",
+            "type": "string"
+          },
+          "fact": {
+            "title": "Fact",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "recorded_at": {
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/Segment"
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "ticker": {
+            "title": "Ticker",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ticker",
+          "fact",
+          "source",
+          "recorded_at",
+          "conflict",
+          "segments"
+        ],
+        "title": "ThesisConflict",
+        "type": "object"
       },
       "ThesisHorizon": {
         "enum": [
@@ -512,6 +2167,42 @@
         ],
         "title": "ThesisIn",
         "type": "object"
+      },
+      "ThesisRecord": {
+        "properties": {
+          "recorded_at": {
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "recorded_at",
+          "source"
+        ],
+        "title": "ThesisRecord",
+        "type": "object"
+      },
+      "Unit": {
+        "description": "비율은 항상 0~1 소수로 전달한다. 백분율 변환은 표시 단계의 몫이다.",
+        "enum": [
+          "ratio",
+          "krw",
+          "count",
+          "days",
+          "score"
+        ],
+        "title": "Unit",
+        "type": "string"
       },
       "ValidationError": {
         "properties": {
@@ -604,7 +2295,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope_dict_"
+                  "$ref": "#/components/schemas/Envelope_BriefingContent_"
                 }
               }
             },
@@ -645,7 +2336,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope_dict_"
+                  "$ref": "#/components/schemas/Envelope_ChatContent_"
                 }
               }
             },
@@ -729,7 +2420,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope_dict_"
+                  "$ref": "#/components/schemas/Envelope_PreviewContent_"
                 }
               }
             },
@@ -771,7 +2462,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope_dict_"
+                  "$ref": "#/components/schemas/Envelope_AttributionContent_"
                 }
               }
             },
@@ -803,7 +2494,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope_dict_"
+                  "$ref": "#/components/schemas/Envelope_DiagnosisContent_"
                 }
               }
             },
@@ -855,7 +2546,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope_dict_"
+                  "$ref": "#/components/schemas/Envelope_AnalysisContent_"
                 }
               }
             },
