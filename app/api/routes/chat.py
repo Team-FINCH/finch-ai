@@ -21,6 +21,7 @@ from app.core.response_log import record
 from app.core.schemas import ContentModel, DataAsOf, Envelope, Section
 from app.llm.agent import answer
 from app.llm.client import NullLlmClient, get_llm_client
+from app.llm.guard.input import injection_hit, sanitize
 from app.llm.tools import ToolContext
 
 log = logging.getLogger("app.api.chat")
@@ -62,6 +63,13 @@ async def chat(
     if len(question) > _MAX_MESSAGE:
         raise InvalidRequest(
             "질문이 너무 깁니다.", detail={"max_length": _MAX_MESSAGE}
+        )
+    # 입력단 가드 — 제어문자 정리 후 인젝션 휴리스틱을 본다(guard/input).
+    question = sanitize(question)
+    if injection_hit(question):
+        raise GuardrailBlocked(
+            "질문에 사용할 수 없는 내용이 포함되어 있습니다.",
+            detail={"reason": "prompt_injection"},
         )
     if body.context.ticker and not _TICKER_RE.fullmatch(body.context.ticker):
         raise InvalidRequest(
