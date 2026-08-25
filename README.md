@@ -176,16 +176,16 @@ python -m eval.run --retrieval  # 검색 정확도 (임베딩 키 필요)
 ```
 master
  └── FINCH-4-ai-service      ← 에픽 FINCH-4 "AI 서비스"
-      ├── ✨feat: AI 파트 로컬 검사 스크립트 추가        (FINCH-67)
-      └── 📝docs: 이관 이후 낡은 AI 파트 문서 정정        (FINCH-68)
+      ├── feat: AI 파트 로컬 검사 스크립트 추가          (FINCH-67)
+      └── docs: 이관 이후 낡은 AI 파트 문서 정정         (FINCH-68)
 ```
 
 스토리마다 Jira 티켓은 만들되 MR 은 열지 않습니다. 브랜치가 오래 사는 만큼
 작업 중 주기적으로 `origin/master` 를 반영하고, 스토리별로 커밋을 분리해
 리뷰어가 단위로 읽을 수 있게 합니다.
 
-커밋 메시지는 팀 컨벤션(`✨feat:`, `📝docs:` 등)을 따릅니다 —
-저장소 루트의 `docs/convention/gitConvention.md` 를 참고하세요.
-이관 전 커밋들이 쓰던 `feat(scope):` 형식은 그때의 기록이므로 그대로 둡니다.
+커밋 메시지는 팀 컨벤션(`<타입>: <제목>`)을 따릅니다. **이모지를 붙이지 않습니다**
+(2026-08-20 팀 회의 확정) — 저장소 루트의 `docs/convention/gitConvention.md` 를
+참고하세요. 이관 전 커밋들이 쓰던 이모지·scope 붙은 형식은 그때의 기록이므로 그대로 둡니다.
 
 자세한 규칙은 [CONTRIBUTING.md](CONTRIBUTING.md) 를 참고하세요.
