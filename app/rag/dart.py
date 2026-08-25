@@ -31,6 +31,7 @@ from app.core.db import SessionFactory
 from app.core.enums import DocumentType
 from app.core.models import Document, DocumentChunk, Instrument
 from app.rag.chunking import chunk
+from app.rag.lexical import to_tsv_text
 
 log = logging.getLogger("app.rag.dart")
 
@@ -206,16 +207,23 @@ def fetch_document(client: httpx.Client, api_key: str, rcept_no: str) -> str | N
 # ── 적재 ───────────────────────────────────────────────────────
 
 
-async def load_targets(limit: int) -> list[tuple[str, str]]:
-    """corp_code가 있는 종목 (ticker, corp_code)."""
+async def load_targets(
+    limit: int, tickers: Sequence[str] | None = None
+) -> list[tuple[str, str]]:
+    """corp_code가 있는 종목 (ticker, corp_code).
+
+    tickers 가 주어지면 그 목록으로 좁히고 limit 을 무시한다 — 시드 포트폴리오처럼
+    대상을 직접 고를 때 쓴다. 없으면 티커 순 상위 limit 개다.
+    """
     async with SessionFactory() as session:
-        result = await session.execute(
-            select(Instrument.ticker, Instrument.corp_code)
-            .where(Instrument.corp_code.is_not(None))
-            .order_by(Instrument.ticker)
-            .limit(limit)
+        stmt = select(Instrument.ticker, Instrument.corp_code).where(
+            Instrument.corp_code.is_not(None)
         )
-        return [(row.ticker, row.corp_code) for row in result]
+        if tickers:
+            stmt = stmt.where(Instrument.ticker.in_(tickers))
+        else:
+            stmt = stmt.order_by(Instrument.ticker).limit(limit)
+        return [(row.ticker, row.corp_code) for row in await session.execute(stmt)]
 
 
 async def existing_rcept_nos(rcept_nos: Sequence[str]) -> set[str]:
@@ -267,7 +275,15 @@ async def save(filing: Filing, body: str) -> int:
                 pg_insert(DocumentChunk).values(
                     [
                         # embedding은 NULL. 제공자가 정해지면 별도 배치로 채운다.
-                        {"document_id": document_id, "chunk_index": i, "text": text}
+                        # text_tsv는 어휘 검색용 바이그램 tsvector다(app.rag.lexical).
+                        # 제목을 섞는 이유 — 조각 본문만으로는 '회사합병결정' 같은
+                        # 문서명 어휘가 안 잡힌다. 제목이 근거 표시에도 쓰인다.
+                        {
+                            "document_id": document_id,
+                            "chunk_index": i,
+                            "text": text,
+                            "text_tsv": to_tsv_text(f"{filing.report_nm}\n{text}"),
+                        }
                         for i, text in enumerate(pieces)
                     ]
                 )
@@ -279,14 +295,16 @@ async def save(filing: Filing, body: str) -> int:
 # ── 실행 ───────────────────────────────────────────────────────
 
 
-async def run(days: int, limit: int, max_docs: int) -> tuple[int, int, int]:
+async def run(
+    days: int, limit: int, max_docs: int, tickers: Sequence[str] | None = None
+) -> tuple[int, int, int]:
     """(적재 공시 수, 청크 수, 실패 종목 수). 종목 단위로 실패를 격리한다."""
     api_key = (settings.dart_api_key or "").strip()
     if not api_key:
         log.error("DART_API_KEY가 없다. .env를 확인하라")
         return 0, 0, 1
 
-    targets = await load_targets(limit)
+    targets = await load_targets(limit, tickers)
     if not targets:
         log.error("corp_code가 있는 종목이 없다. 먼저 `python -m ingest.instruments`를 돌려라")
         return 0, 0, 1
@@ -332,6 +350,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="DART 공시 적재기")
     parser.add_argument("--days", type=int, default=30, help="조회 기간(일). 기본 30")
     parser.add_argument("--limit", type=int, default=5, help="대상 종목 수. 기본 5")
+    parser.add_argument("--tickers", help="쉼표 구분 종목코드. 주어지면 limit 을 무시하고 그 종목만")
     parser.add_argument("--max-docs", type=int, default=20, help="종목당 원문 수. 기본 20")
     parser.add_argument("--verbose", action="store_true", help="DEBUG 로그")
     args = parser.parse_args(argv)
@@ -344,7 +363,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     # 증분이라 신규가 0건인 재실행은 정상이다. 실패 종목이 있을 때만 비정상 종료해
     # 재실행 대상이 남았음을 알린다.
-    _, _, failed = asyncio.run(run(args.days, args.limit, args.max_docs))
+    tickers = (
+        [t.strip() for t in args.tickers.split(",") if t.strip()]
+        if args.tickers
+        else None
+    )
+    _, _, failed = asyncio.run(run(args.days, args.limit, args.max_docs, tickers))
     return 1 if failed else 0
 
 

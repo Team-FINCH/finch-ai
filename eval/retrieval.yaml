@@ -9,10 +9,13 @@
 # 실행: python -m eval.run --retrieval
 # 임베딩 키가 없으면 자동으로 건너뛴다.
 
-version: 1
+version: 2
 corpus_note: |
-  2026-08 기준 DART 공시 27건 (8개 종목). 코퍼스를 다시 적재하면 이 평가셋도
-  같이 손봐야 한다 — 문서가 바뀌면 정답도 바뀐다.
+  2026-08-25 재적재 기준 — 시드 포트폴리오 8종목의 최근 90일 공시
+  216건 · 청크 10,195개(KB금융 반기보고서가 6,110개로 절반 이상).
+  코퍼스를 다시 적재하면 이 평가셋도 같이 손봐야 한다 — 문서가 바뀌면
+  정답도 바뀐다. v1 의 합병·유한양행(000100) 케이스는 현 코퍼스에
+  문서가 없어 답이 불가능하므로 실제 존재하는 문서로 갈아엎었다.
 
 baseline: |
   2026-08-19 · text-embedding-3-small · 1024차원 · 청크 2,280건 전부 임베딩
@@ -27,64 +30,57 @@ baseline: |
   반기보고서는 0.3788로 내려간다. 근본 해법은 하이브리드 검색(Postgres
   tsvector + 벡터)이다. 어휘가 그대로 겹치는 질의라 BM25 쪽이 쉽게 잡는다.
 
+  ── 2026-08-25 · 코퍼스 ×4.5 확장 후 밀집 단독 재측정 ──
+  Recall@5 = 0.375 (3/8). KB금융 반기보고서 조각들이 상위를 독식했다.
+  확장이 밀집 단독의 스케일 한계를 드러낸 실측이며, 하이브리드 도입 근거다.
+  평가셋 v2 — 현 코퍼스에 실존하는 문서 기준으로 갈아엎었다.
+
 cases:
   # ── 특정 사건을 찾는 질문 ────────────────────────────
-  - id: merger-decision
-    query: 합병을 결정한 회사가 있나요?
-    ticker: null
-    expect_title_contains: [회사합병결정]
-    why: 회사합병결정 공시가 KR모터스에 있다. 제목에 '합병'이 직접 나와 어휘 일치가 쉬운 편이다.
-
-  - id: merger-ratio-detail
-    query: 종속회사 자산총액이 지배회사 연결 자산총액 대비 얼마나 되나요?
-    ticker: "000040"
-    expect_title_contains: [회사합병결정]
-    why: 본문에만 있는 수치다. 제목 어휘로는 못 찾고 본문 의미로 찾아야 한다.
-
   - id: treasury-cancel
     query: 자기주식을 소각하기로 한 곳이 있나요?
     ticker: null
     expect_title_contains: [주식소각결정]
-    why: 유한양행 주식소각결정. 소각과 취득을 구분하는지 본다.
-
-  - id: ir-schedule
-    query: 기업설명회 일정이 잡힌 종목을 알려주세요
-    ticker: null
-    expect_title_contains: [기업설명회]
-    why: 여러 종목에 있어 top-k 안에 하나만 들면 통과다.
-
-  - id: provisional-earnings
-    query: 잠정 실적을 공시한 회사는?
-    ticker: null
-    expect_title_contains: [영업(잠정)실적, 영업(잠정)실적(공정공시)]
-    why: 유한양행·CJ대한통운. '잠정'이라는 어휘가 제목에 있다.
-
-  # ── 정기보고서 본문을 파고드는 질문 ──────────────────
-  - id:半기-사업내용
-    query: 반기보고서에서 회사의 주요 사업 내용을 설명한 부분
-    ticker: "000100"
-    expect_title_contains: [반기보고서]
-    why: 반기보고서는 청크가 수백 개라 그중 사업 설명 부분을 집어내야 한다.
+    why: 주식소각결정 공시가 있다. 소각과 취득을 구분하는지 본다.
 
   - id: shareholder-holding
     query: 대량보유 상황이 보고된 종목이 있나요?
     ticker: null
     expect_title_contains: [주식등의대량보유상황보고서]
-    why: 동화약품·유한양행. 약식과 일반 두 형태가 있다.
+    why: 약식과 일반 두 형태가 있다. 하나만 top-k 에 들면 통과.
 
-  - id: exec-holding
-    query: 임원이나 주요주주의 소유 상황 보고
-    ticker: "000100"
-    expect_title_contains: [임원ㆍ주요주주특정증권등소유상황보고서]
-    why: 대량보유 보고와 혼동하기 쉬운 별개 공시다.
+  - id: rumor-clarification
+    query: 시장에 돈 풍문에 대해 회사가 해명한 사례를 찾아줘
+    ticker: null
+    expect_title_contains: [풍문또는보도에대한해명]
+    why: 제목 어휘(풍문/해명)가 질의와 거의 겹친다. 어휘 경로의 기본값.
+
+  - id: derivatives-loss
+    query: 파생상품 거래에서 손실이 발생한 공시가 있나요?
+    ticker: null
+    expect_title_contains: [파생상품거래손실발생]
+    why: 본문에 손실 금액이 있고 제목에 유형이 있다.
+
+  - id: rights-issue
+    query: 유상증자를 결정한 종목은 어디야?
+    ticker: null
+    expect_title_contains: [유상증자결정]
+    why: 주요사항보고서 괄호 안 접미사까지 정확히 맞혀야 한다.
+
+  # ── 정기보고서 본문을 파고드는 질문 ──────────────────
+  - id: 半期-사업내용
+    query: 반기보고서에서 회사의 주요 사업 내용을 설명한 부분
+    ticker: "005930"
+    expect_title_contains: [반기보고서]
+    why: 삼성전자 반기보고서는 청크가 수백 개라 그중 사업 설명 부분을 집어내야 한다.
 
   # ── 없는 답을 묻는 질문 (오탐 확인) ──────────────────
-  - id: absent-hbm
-    query: HBM 생산능력 확대 계획을 밝힌 공시가 있나요?
+  - id: absent-launch
+    query: 우주 발사체 사업에 진출한다는 공시가 있나요?
     ticker: null
     expect_title_contains: []
     expect_empty: true
     why: |
-      코퍼스에 반도체 종목이 없다. 무엇이든 상위에 올려놓는 검색인지 확인한다.
-      유사도 임계 없이 top-k만 쓰면 이 케이스는 항상 무언가를 반환한다 —
+      코퍼스 어느 종목도 발사체 사업이 없다. 무엇이든 상위에 올려놓는
+      검색인지 확인한다. 임계 없는 top-k 는 항상 무언가를 반환한다 —
       그 사실 자체를 기록해두려는 항목이다.

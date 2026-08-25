@@ -38,6 +38,7 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.types import UserDefinedType
 
 from app.core.config import settings
 
@@ -183,6 +184,15 @@ class Document(Base):
     )
 
 
+class _TSVector(UserDefinedType):
+    """tsvector 컬럼. SQLAlchemy 에 내장 타입이 없어 직접 정의한다."""
+
+    cache_ok = True
+
+    def get_col_spec(self) -> str:
+        return "tsvector"
+
+
 class DocumentChunk(Base):
     """임베딩 단위 조각.
 
@@ -198,11 +208,16 @@ class DocumentChunk(Base):
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(settings.embedding_dim))
+    # 한국어 어휘 검색용 바이그램 tsvector. 애플리케이션이 저장 시 채운다 —
+    # generated 로 못 하는 이유는 셔글 계산이 파이썬 쪽 로직이라서다(app.rag.lexical).
+    text_tsv: Mapped[str | None] = mapped_column(_TSVector(), nullable=True)
 
     document: Mapped[Document] = relationship(back_populates="chunks")
 
     __table_args__ = (
         UniqueConstraint("document_id", "chunk_index", name="uq_chunk_doc_index"),
+        # 어휘 경로(@@)가 쓰는 인덱스. raw SQL 로 만든 것과 이름을 맞춘다.
+        Index("ix_chunks_text_tsv", "text_tsv", postgresql_using="gin"),
     )
 
 
