@@ -23,7 +23,7 @@ from datetime import date, datetime, timedelta, timezone
 from xml.etree import ElementTree
 
 import httpx
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.config import settings
@@ -275,14 +275,15 @@ async def save(filing: Filing, body: str) -> int:
                 pg_insert(DocumentChunk).values(
                     [
                         # embedding은 NULL. 제공자가 정해지면 별도 배치로 채운다.
-                        # text_tsv는 어휘 검색용 바이그램 tsvector다(app.rag.lexical).
-                        # 제목을 섞는 이유 — 조각 본문만으로는 '회사합병결정' 같은
-                        # 문서명 어휘가 안 잡힌다. 제목이 근거 표시에도 쓰인다.
+                        # text_tsv는 반드시 to_tsvector() 로 넣는다 — 문자열을
+                        # 그대로 캐스팅하면 위치 정보가 빠져 ts_rank_cd 가 전부 0이 된다.
                         {
                             "document_id": document_id,
                             "chunk_index": i,
                             "text": text,
-                            "text_tsv": to_tsv_text(f"{filing.report_nm}\n{text}"),
+                            "text_tsv": func.to_tsvector(
+                                "simple", to_tsv_text(f"{filing.report_nm}\n{text}")
+                            ),
                         }
                         for i, text in enumerate(pieces)
                     ]

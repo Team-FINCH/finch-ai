@@ -15,7 +15,7 @@ import argparse
 import asyncio
 import logging
 
-from sqlalchemy import func, select
+from sqlalchemy import bindparam, func, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.db import SessionFactory, engine
@@ -246,8 +246,18 @@ async def tsv_backfill(limit: int | None = None) -> tuple[int, int]:
             ).all()
             if not rows:
                 break
-            for chunk_row, title in rows:
-                chunk_row.text_tsv = to_tsv_text(f"{title}\n{chunk_row.text}")
+            # 문자열을 그대로 캐스팅하면 위치가 빠져 ts_rank_cd 가 죽는다.
+            # 반드시 to_tsvector('simple', …) 로 감싸 넣는다. Core 테이블
+            # 업데이트를 쓴다 — ORM 벌크 모드는 PK 파라미터를 강요한다.
+            await session.execute(
+                DocumentChunk.__table__.update()
+                .where(DocumentChunk.__table__.c.id == bindparam("bid"))
+                .values(text_tsv=func.to_tsvector("simple", bindparam("tsv"))),
+                [
+                    {"bid": chunk_row.id, "tsv": to_tsv_text(f"{title}\n{chunk_row.text}")}
+                    for chunk_row, title in rows
+                ],
+            )
             tried += len(rows)
             done += len(rows)
             await session.commit()
