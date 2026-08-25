@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date, timedelta
 
 import pytest
@@ -149,7 +150,9 @@ def _wired(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
         _filing("[기재정정]단일판매ㆍ공급계약체결", stamp),
     ]
 
-    async def _targets(limit: int) -> list[tuple[str, str]]:
+    async def _targets(
+        limit: int, tickers: Sequence[str] | None = None
+    ) -> list[tuple[str, str]]:
         return [("005930", "00126380")]
 
     monkeypatch.setattr(events, "load_targets", _targets)

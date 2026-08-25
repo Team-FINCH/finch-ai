@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+from collections.abc import Sequence
 from datetime import date, timedelta
 
 import httpx
@@ -116,7 +117,11 @@ async def _existing_keys(
 
 
 async def ingest(
-    *, days: int, limit: int, api_key: str | None = None
+    *,
+    days: int,
+    limit: int,
+    api_key: str | None = None,
+    tickers: Sequence[str] | None = None,
 ) -> dict[str, int]:
     """공시목록을 훑어 events를 채우고 요약을 돌려준다."""
     stats = {
@@ -135,7 +140,7 @@ async def ingest(
         stats["failed"] = 1
         return stats
 
-    targets = await load_targets(limit)
+    targets = await load_targets(limit, tickers)
     if not targets:
         logger.warning("corp_code가 있는 종목이 없다. 먼저 python -m ingest.instruments 를 실행할 것")
         return stats
@@ -192,6 +197,7 @@ async def ingest(
 async def _main() -> None:
     parser = argparse.ArgumentParser(description="DART 공시목록 → events 적재")
     parser.add_argument("--days", type=int, default=30, help="오늘 기준 며칠 전부터 (기본 30)")
+    parser.add_argument("--tickers", help="쉼표 구분 종목코드. 주어지면 limit 을 무시하고 그 종목만")
     parser.add_argument(
         "--limit",
         type=int,
@@ -204,8 +210,13 @@ async def _main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-5s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)  # crtfc_key가 로그에 남으면 안 된다
 
+    tickers = (
+        [t.strip() for t in args.tickers.split(",") if t.strip()]
+        if args.tickers
+        else None
+    )
     try:
-        s = await ingest(days=args.days, limit=args.limit)
+        s = await ingest(days=args.days, limit=args.limit, tickers=tickers)
         logger.info(
             "완료 — %d/%d종목에서 공시 %d건 · 신규 %d행 · 중복 %d · 버림 %d · 실패 %d종목",
             s["with_filings"],
