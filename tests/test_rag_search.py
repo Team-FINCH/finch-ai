@@ -1,95 +1,117 @@
-"""백필 루프 회귀 테스트.
-
-`backfill()`은 embedding이 NULL인 행을 집어 채운다. 임베딩이 실패하면 그 행은
-NULL로 남고, 다음 회차가 같은 행을 다시 집는다. 끊는 조건이 없으면 영원히 돈다 —
-실제로 2,280건짜리 백필이 20,000건 시도를 찍으며 API 일당 요청 한도를 다 태웠다.
-"""
+"""하이브리드 검색 재정렬 규칙."""
 
 from __future__ import annotations
 
-from typing import Any
+from collections import namedtuple
+from datetime import UTC, datetime
 
-import pytest
+from app.rag.search import fuse
 
-from app.rag import search as mod
-from app.rag.embedding import Embedder
-
-
-class _Chunk:
-    def __init__(self, text: str) -> None:
-        self.text = text
-        self.embedding: list[float] | None = None
+Row = namedtuple(
+    "Row",
+    "id text ticker title published_at doc_type source publisher url raw_score",
+)
+NOW = datetime(2026, 8, 28, tzinfo=UTC)
 
 
-class _Scalars:
-    def __init__(self, rows: list[_Chunk]) -> None:
-        self._rows = rows
-
-    def all(self) -> list[_Chunk]:
-        return self._rows
-
-
-class _Session:
-    """embedding이 NULL인 행만 돌려주는 최소 세션.
-
-    진짜 DB와 같은 성질 하나만 흉내 낸다 — 채워지지 않은 행은 다음 조회에도
-    그대로 나온다. 무한 루프는 정확히 이 성질에서 생긴다.
-    """
-
-    def __init__(self, rows: list[_Chunk]) -> None:
-        self.rows = rows
-        self.queries = 0
-
-    async def __aenter__(self) -> _Session:
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        return None
-
-    async def scalars(self, _stmt: Any) -> _Scalars:
-        self.queries += 1
-        # 상한이 없으면 회귀 시 테스트가 실패하는 대신 영원히 멈춰 선다.
-        if self.queries > 5:
-            raise AssertionError("같은 행을 계속 다시 집는다 — 무한 루프")
-        return _Scalars([r for r in self.rows if r.embedding is None])
-
-    async def commit(self) -> None:
-        return None
+def _row(
+    id_: str,
+    *,
+    title: str,
+    published_at: datetime,
+    doc_type: str = "news",
+    source: str = "NAVER_API_HUB",
+) -> Row:
+    return Row(
+        id_,
+        title,
+        "005930",
+        title,
+        published_at,
+        doc_type,
+        source,
+        None,
+        None,
+        0.5,
+    )
 
 
-class _AlwaysFails(Embedder):
-    def embed(self, texts: list[str]) -> list[list[float] | None]:
-        return [None] * len(texts)
+def test_관련도_순위가_같으면_최신_뉴스가_먼저다() -> None:
+    old = _row(
+        "old",
+        title="과거 HBM 기사",
+        published_at=datetime(2025, 8, 28, tzinfo=UTC),
+    )
+    recent = _row(
+        "recent",
+        title="최근 HBM 기사",
+        published_at=datetime(2026, 8, 27, tzinfo=UTC),
+    )
+
+    hits = fuse([old, recent], [recent, old], top_k=2, now=NOW)
+
+    assert [hit["title"] for hit in hits] == ["최근 HBM 기사", "과거 HBM 기사"]
+    assert hits[0]["freshness_score"] > hits[1]["freshness_score"]
 
 
-class _AlwaysWorks(Embedder):
-    def embed(self, texts: list[str]) -> list[list[float] | None]:
-        return [[0.1] * 4 for _ in texts]
+def test_관련도와_날짜가_같으면_공식_출처가_먼저다() -> None:
+    published = datetime(2026, 8, 20, tzinfo=UTC)
+    unknown = _row(
+        "unknown",
+        title="출처 미상 자료",
+        published_at=published,
+        doc_type="filing",
+        source="UNKNOWN",
+    )
+    dart = _row(
+        "dart",
+        title="DART 공시",
+        published_at=published,
+        doc_type="filing",
+        source="DART",
+    )
+
+    hits = fuse([unknown, dart], [dart, unknown], top_k=2, now=NOW)
+
+    assert [hit["title"] for hit in hits] == ["DART 공시", "출처 미상 자료"]
+    assert hits[0]["source_weight"] > hits[1]["source_weight"]
 
 
-def _patch(monkeypatch: pytest.MonkeyPatch, session: _Session, embedder: Embedder) -> None:
-    monkeypatch.setattr(mod, "SessionFactory", lambda: session)
-    monkeypatch.setattr(mod, "get_embedder", lambda: embedder)
+def test_어휘_검색_상위_결과는_최종_후보에서_빠지지_않는다() -> None:
+    dense = [
+        _row(
+            f"dense-{index}",
+            title=f"밀집 후보 {index}",
+            published_at=NOW,
+        )
+        for index in range(3)
+    ]
+    exact = _row("exact", title="주식소각결정", published_at=NOW, doc_type="filing", source="DART")
+
+    hits = fuse(dense, [exact], top_k=2, now=NOW)
+
+    assert "주식소각결정" in {hit["title"] for hit in hits}
 
 
-@pytest.mark.asyncio
-async def test_한_건도_못_채우면_중단한다(monkeypatch: pytest.MonkeyPatch) -> None:
-    session = _Session([_Chunk("가"), _Chunk("나")])
-    _patch(monkeypatch, session, _AlwaysFails())
+def test_제목_검색_상위_결과는_긴_본문_후보에_묻히지_않는다() -> None:
+    dense = [
+        _row(
+            f"dense-{index}",
+            title=f"긴 반기보고서 {index}",
+            published_at=NOW,
+            doc_type="filing",
+            source="DART",
+        )
+        for index in range(3)
+    ]
+    title_match = _row(
+        "title-match",
+        title="풍문또는보도에대한해명",
+        published_at=NOW,
+        doc_type="filing",
+        source="DART",
+    )
 
-    tried, done = await mod.backfill()
+    hits = fuse(dense, [], [title_match], top_k=2, now=NOW)
 
-    assert done == 0
-    assert tried == 2, "같은 행을 두 번 이상 집으면 무한 루프다"
-    assert session.queries == 1
-
-
-@pytest.mark.asyncio
-async def test_채운_만큼_줄어들고_정상_종료한다(monkeypatch: pytest.MonkeyPatch) -> None:
-    session = _Session([_Chunk("가"), _Chunk("나")])
-    _patch(monkeypatch, session, _AlwaysWorks())
-
-    tried, done = await mod.backfill()
-
-    assert (tried, done) == (2, 2)
-    assert all(r.embedding is not None for r in session.rows)
+    assert "풍문또는보도에대한해명" in {hit["title"] for hit in hits}

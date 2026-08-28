@@ -22,7 +22,7 @@ from email.utils import parsedate_to_datetime
 from urllib.parse import urldefrag, urlsplit, urlunsplit
 
 import httpx
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.config import settings
@@ -30,7 +30,7 @@ from app.core.db import SessionFactory
 from app.core.enums import DocumentType
 from app.core.models import Document, DocumentChunk, Instrument
 from app.rag.chunking import chunk
-from app.rag.lexical import to_tsv_text
+from app.rag.lexical import weighted_tsvector
 
 log = logging.getLogger("ingest.news")
 
@@ -243,9 +243,7 @@ async def save(article: NewsArticle) -> int:
                             "document_id": document_id,
                             "chunk_index": index,
                             "text": text,
-                            "text_tsv": func.to_tsvector(
-                                "simple", to_tsv_text(f"{article.title}\n{text}")
-                            ),
+                            "text_tsv": weighted_tsvector(article.title, text),
                         }
                         for index, text in enumerate(pieces)
                     ]

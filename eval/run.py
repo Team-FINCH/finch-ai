@@ -58,6 +58,12 @@ def _load_cases(path: Path = RETRIEVAL_SET) -> list[RetrievalCase]:
     return cases
 
 
+def _minimum_recall(path: Path = RETRIEVAL_SET, *, top_k: int) -> float | None:
+    text = path.read_text(encoding="utf-8")
+    match = re.search(rf"^min_recall_at_{top_k}:\s*([0-9.]+)\s*$", text, re.MULTILINE)
+    return float(match.group(1)) if match else None
+
+
 def _to_case(d: dict) -> RetrievalCase:
     raw = d.get("expect_title_contains", "[]")
     titles = [t.strip() for t in raw.strip("[]").split(",") if t.strip()]
@@ -74,17 +80,23 @@ def _to_case(d: dict) -> RetrievalCase:
 async def run_retrieval(top_k: int = 5) -> int:
     from app.core.db import engine
     from app.rag.embedding import NullEmbedder, get_embedder
-    from app.rag.search import search
+    from app.rag.search import search_with_vector
 
     if isinstance(get_embedder(), NullEmbedder):
         print("임베딩 키가 없어 검색 평가를 건너뛴다. GMS_KEY를 설정하라.")
         return 0
 
     cases = _load_cases()
+    vectors = await asyncio.to_thread(get_embedder().embed, [case.query for case in cases])
     hits = graded = 0
     try:
-        for c in cases:
-            found = await search(c.query, top_k=top_k, ticker=c.ticker)
+        for c, vector in zip(cases, vectors, strict=True):
+            if vector is None:
+                print(f"  [FAIL] {c.id:<22} 질의 임베딩 실패")
+                return 1
+            found = await search_with_vector(
+                c.query, vector, top_k=top_k, ticker=c.ticker
+            )
             titles = " | ".join(h["title"] for h in found)
             if c.expect_empty:
                 # 오탐 관찰용. 지금은 top-k만 쓰므로 항상 무언가 나온다.
@@ -97,7 +109,13 @@ async def run_retrieval(top_k: int = 5) -> int:
             hits += ok
             print(f"  [{'HIT ' if ok else 'MISS'}] {c.id:<22} {titles[:60]}")
         if graded:
-            print(f"\nRecall@{top_k}: {hits}/{graded} = {hits / graded:.3f}")
+            recall = hits / graded
+            minimum = _minimum_recall(top_k=top_k)
+            gate = f" · 최소 {minimum:.3f}" if minimum is not None else ""
+            print(f"\nRecall@{top_k}: {hits}/{graded} = {recall:.3f}{gate}")
+            if minimum is not None and recall < minimum:
+                print("검색 품질 기준을 통과하지 못했다.")
+                return 1
     finally:
         await engine.dispose()
     return 0

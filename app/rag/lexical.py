@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import re
 
+from sqlalchemy import func, literal_column
+
 # 토큰에 들어갈 문자만 남긴다. 문장부호·특수문자는 셔글 경계가 아니라 소거 대상.
 _KEEP = re.compile(r"[^0-9A-Za-z가-힣ㄱ-ㅣ\s]")
 
@@ -55,3 +57,14 @@ def lexical_tsquery(text: str) -> str:
     if not grams:
         return ""
     return " | ".join("'" + g.replace("'", "") + "'" for g in grams)
+
+
+def weighted_tsvector(title: str, text: str):
+    """제목(A)과 본문(D)을 가중치가 다른 하나의 tsvector로 만든다."""
+    title_vector = func.setweight(
+        func.to_tsvector("simple", to_tsv_text(title)), literal_column("'A'")
+    )
+    body_vector = func.setweight(
+        func.to_tsvector("simple", to_tsv_text(text)), literal_column("'D'")
+    )
+    return title_vector.op("||")(body_vector)

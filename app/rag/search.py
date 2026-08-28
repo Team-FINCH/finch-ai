@@ -14,8 +14,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import math
+from datetime import UTC, datetime
 
-from sqlalchemy import bindparam, func, select
+from sqlalchemy import Float, bindparam, case, cast, func, literal_column, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.db import SessionFactory, engine
@@ -23,7 +25,7 @@ from app.core.enums import DocumentType
 from app.core.errors import RetrievalFailed
 from app.core.models import Document, DocumentChunk
 from app.rag.embedding import NullEmbedder, get_embedder
-from app.rag.lexical import lexical_tsquery, to_tsv_text
+from app.rag.lexical import bigrams, lexical_tsquery, to_tsv_text
 
 log = logging.getLogger("app.rag.search")
 
@@ -34,6 +36,48 @@ BACKFILL_CHUNK = 256
 CANDIDATE_POOL = 60
 # RRF 완화 계수. 표준값 60 — 순위 차이를 너무 과하게 벌리지 않는다.
 RRF_K = 60
+
+# RRF 점수에 곱하는 출처 신뢰도. 검색 결과를 배제하는 필터가 아니라 같은 관련도일 때
+# 공식 원천을 먼저 보여 주는 작은 우선순위다. 값 차이를 크게 두면 최신 뉴스가 오래된
+# 공시에 항상 밀리므로 15% 안에서만 조정한다.
+SOURCE_WEIGHT = {
+    "DART": 1.15,
+    "ECOS": 1.15,
+    "KRX": 1.15,
+    "KIS": 1.10,
+    "NAVER_API_HUB": 1.00,
+}
+
+# 문서 유형마다 낡는 속도가 다르다. 뉴스는 빠르게, 정기 공시는 천천히 감쇠한다.
+FRESHNESS_HALF_LIFE_DAYS = {
+    DocumentType.NEWS.value: 14,
+    DocumentType.FILING.value: 90,
+    DocumentType.FINANCIAL.value: 180,
+    DocumentType.MACRO.value: 30,
+}
+
+
+def _source_weight(source: str | None) -> float:
+    return SOURCE_WEIGHT.get((source or "").upper(), 0.95)
+
+
+def _freshness_score(
+    published_at: datetime | None,
+    doc_type: str | DocumentType | None,
+    *,
+    now: datetime,
+) -> float:
+    """오래돼도 0.5 아래로 버리지 않는다. 관련성이 최신성보다 항상 우선이다."""
+    if published_at is None:
+        return 0.5
+    point = published_at
+    if point.tzinfo is None:
+        point = point.replace(tzinfo=UTC)
+    reference = now if now.tzinfo else now.replace(tzinfo=UTC)
+    age_days = max(0.0, (reference - point).total_seconds() / 86_400)
+    kind = doc_type.value if isinstance(doc_type, DocumentType) else str(doc_type or "")
+    half_life = FRESHNESS_HALF_LIFE_DAYS.get(kind, 90)
+    return 0.5 + 0.5 * math.exp(-math.log(2) * age_days / half_life)
 
 
 async def backfill(limit: int | None = None) -> tuple[int, int]:
@@ -87,7 +131,13 @@ async def backfill(limit: int | None = None) -> tuple[int, int]:
 
 
 def fuse(
-    dense_rows, lexical_rows, *, top_k: int = 5, k: int = RRF_K
+    dense_rows,
+    lexical_rows,
+    title_rows=(),
+    *,
+    top_k: int = 5,
+    k: int = RRF_K,
+    now: datetime | None = None,
 ) -> list[dict]:
     """두 랭킹을 Reciprocal Rank Fusion 으로 묶되 어휘 상위를 보장한다.
 
@@ -100,14 +150,21 @@ def fuse(
     """
     scores: dict = {}
     best: dict = {}
-    for rows in (dense_rows, lexical_rows):
+    for rows in (dense_rows, lexical_rows, title_rows):
         for rank, row in enumerate(rows, start=1):
             cid = row[0]
             scores[cid] = scores.get(cid, 0.0) + 1.0 / (k + rank)
             if cid not in best:
                 best[cid] = row
 
-    ordered = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+    reference = now or datetime.now(UTC)
+    adjusted = {
+        cid: score
+        * _source_weight(best[cid].source)
+        * _freshness_score(best[cid].published_at, best[cid].doc_type, now=reference)
+        for cid, score in scores.items()
+    }
+    ordered = sorted(adjusted.items(), key=lambda kv: kv[1], reverse=True)
     used: set = set()
     final: list = []
     # 어휘 상위 보장 슬롯 — 제목이 정확히 맞는 근거가 묻히지 않게 한다.
@@ -117,12 +174,22 @@ def fuse(
         if cid not in used:
             final.append(row)
             used.add(cid)
+    # 질의 핵심 어휘가 제목에 직접 들어간 문서는 본문 길이에 묻히지 않게 한 자리 보장한다.
+    for row in title_rows[:1]:
+        cid = row[0]
+        if cid not in used and len(final) < top_k:
+            final.append(row)
+            used.add(cid)
     for cid, _score in ordered:
         if len(final) >= top_k:
             break
         if cid not in used:
             final.append(best[cid])
             used.add(cid)
+
+    # 어휘 보장 슬롯도 최종 출력에서는 품질 점수순으로 놓는다. 정확한 제목 매치는
+    # 빠지지 않되, 같은 후보 집합 안에서는 더 최신이고 신뢰할 수 있는 자료가 앞선다.
+    final.sort(key=lambda row: adjusted[row[0]], reverse=True)
 
     return [
         {
@@ -134,7 +201,12 @@ def fuse(
             "source": r.source,
             "publisher": r.publisher,
             "url": r.url,
-            "similarity": round(scores[r[0]], 6),
+            "similarity": round(adjusted[r[0]], 6),
+            "rrf_score": round(scores[r[0]], 6),
+            "freshness_score": round(
+                _freshness_score(r.published_at, r.doc_type, now=reference), 6
+            ),
+            "source_weight": _source_weight(r.source),
         }
         for r in final[:top_k]
     ]
@@ -182,6 +254,39 @@ async def _run(stmt):
         return (await session.execute(stmt)).all()
 
 
+async def _title_candidates(query: str, *, ticker: str | None, limit: int):
+    """질의 바이그램이 제목에서 차지하는 비율로 문서 후보를 찾는다."""
+    grams = list(dict.fromkeys(bigrams(query)))
+    if not grams:
+        return []
+    matches = [case((Document.title.contains(gram), 1), else_=0) for gram in grams]
+    matched = sum(matches[1:], matches[0])
+    title_length = func.greatest(func.length(Document.title) - 1, 1)
+    rank = (cast(matched, Float) / title_length).label("rank")
+    stmt = (
+        select(
+            DocumentChunk.id,
+            DocumentChunk.text,
+            Document.ticker,
+            Document.title,
+            Document.published_at,
+            Document.doc_type,
+            Document.source,
+            Document.publisher,
+            Document.url,
+            rank,
+        )
+        .join(Document, Document.id == DocumentChunk.document_id)
+        .where(
+            DocumentChunk.chunk_index == 0,
+            or_(*(Document.title.contains(gram) for gram in grams)),
+        )
+    )
+    if ticker:
+        stmt = stmt.where(Document.ticker == ticker)
+    return await _run(stmt.order_by(rank.desc(), Document.published_at.desc()).limit(limit))
+
+
 async def search(
     query: str,
     *,
@@ -211,11 +316,30 @@ async def search(
         log.error("질의 임베딩에 실패했다")
         raise RetrievalFailed("근거 검색에 실패했습니다.")
 
+    return await search_with_vector(
+        query, vec, top_k=top_k, ticker=ticker, doc_type=doc_type
+    )
+
+
+async def search_with_vector(
+    query: str,
+    query_vec,
+    *,
+    top_k: int = 5,
+    ticker: str | None = None,
+    doc_type: DocumentType | None = None,
+) -> list[dict]:
+    """이미 만든 질의 벡터로 검색한다. 평가 배치가 임베딩을 한 번에 묶을 때 쓴다."""
     dense_rows = await _dense_candidates(
-        vec, ticker=ticker, doc_type=doc_type, limit=CANDIDATE_POOL
+        query_vec, ticker=ticker, doc_type=doc_type, limit=CANDIDATE_POOL
     )
 
     lexical_rows: list = []
+    title_rows: list = []
+    try:
+        title_rows = await _title_candidates(query, ticker=ticker, limit=CANDIDATE_POOL)
+    except SQLAlchemyError:
+        log.exception("제목 검색이 실패해 다른 검색 결과만 사용한다")
     tsq = lexical_tsquery(query)
     if tsq:
         try:
@@ -247,10 +371,12 @@ async def search(
             # 어휘 경로 실패는 열화 상태다. 전체를 죽이지 않고 진행한다.
             log.exception("어휘 검색이 실패해 밀집 결과만으로 진행한다")
 
-    return fuse(dense_rows, lexical_rows, top_k=top_k)
+    return fuse(dense_rows, lexical_rows, title_rows, top_k=top_k)
 
 
-async def tsv_backfill(limit: int | None = None) -> tuple[int, int]:
+async def tsv_backfill(
+    limit: int | None = None, *, rebuild: bool = False
+) -> tuple[int, int]:
     """text_tsv 가 비어 있는 기존 조각을 채운다. (시도, 성공).
 
     저장 경로와 같게 제목을 섞는다(dart.save 참조). 증분이다. 중단해도
@@ -262,15 +388,17 @@ async def tsv_backfill(limit: int | None = None) -> tuple[int, int]:
             take = BACKFILL_CHUNK if limit is None else min(BACKFILL_CHUNK, limit - tried)
             if take <= 0:
                 break
-            rows = (
-                await session.execute(
-                    select(DocumentChunk, Document.title)
-                    .join(Document, Document.id == DocumentChunk.document_id)
-                    .where(DocumentChunk.text_tsv.is_(None))
-                    .order_by(DocumentChunk.id)
-                    .limit(take)
-                )
-            ).all()
+            stmt = (
+                select(DocumentChunk, Document.title)
+                .join(Document, Document.id == DocumentChunk.document_id)
+                .order_by(DocumentChunk.id)
+                .limit(take)
+            )
+            if not rebuild:
+                stmt = stmt.where(DocumentChunk.text_tsv.is_(None))
+            elif tried:
+                stmt = stmt.offset(tried)
+            rows = (await session.execute(stmt)).all()
             if not rows:
                 break
             # 문자열을 그대로 캐스팅하면 위치가 빠져 ts_rank_cd 가 죽는다.
@@ -279,9 +407,23 @@ async def tsv_backfill(limit: int | None = None) -> tuple[int, int]:
             await session.execute(
                 DocumentChunk.__table__.update()
                 .where(DocumentChunk.__table__.c.id == bindparam("bid"))
-                .values(text_tsv=func.to_tsvector("simple", bindparam("tsv"))),
+                .values(
+                    text_tsv=func.setweight(
+                        func.to_tsvector("simple", bindparam("title_tsv")),
+                        literal_column("'A'"),
+                    ).op("||")(
+                        func.setweight(
+                            func.to_tsvector("simple", bindparam("body_tsv")),
+                            literal_column("'D'"),
+                        )
+                    )
+                ),
                 [
-                    {"bid": chunk_row.id, "tsv": to_tsv_text(f"{title}\n{chunk_row.text}")}
+                    {
+                        "bid": chunk_row.id,
+                        "title_tsv": to_tsv_text(title),
+                        "body_tsv": to_tsv_text(chunk_row.text),
+                    }
                     for chunk_row, title in rows
                 ],
             )
@@ -306,6 +448,11 @@ async def _main() -> int:
     parser = argparse.ArgumentParser(description="공시 조각 임베딩·검색")
     parser.add_argument("--backfill", action="store_true", help="비어 있는 조각을 채운다")
     parser.add_argument("--tsv-backfill", action="store_true", help="어휘 인덱스(text_tsv)가 비어 있는 조각을 채운다")
+    parser.add_argument(
+        "--tsv-rebuild",
+        action="store_true",
+        help="기존 조각까지 제목 가중치가 적용된 어휘 인덱스로 다시 만든다",
+    )
     parser.add_argument("--limit", type=int, help="백필 최대 건수")
     parser.add_argument("--query", help="확인용 검색")
     parser.add_argument("--ticker", help="검색을 한 종목으로 좁힌다")
@@ -325,6 +472,10 @@ async def _main() -> int:
         if args.tsv_backfill:
             tried, done = await tsv_backfill(args.limit)
             log.info("tsv 백필 완료 — 시도 %d · 성공 %d", tried, done)
+
+        if args.tsv_rebuild:
+            tried, done = await tsv_backfill(args.limit, rebuild=True)
+            log.info("tsv 재구축 완료 — 시도 %d · 성공 %d", tried, done)
 
         if args.query:
             hits = await search(args.query, top_k=args.top_k, ticker=args.ticker)

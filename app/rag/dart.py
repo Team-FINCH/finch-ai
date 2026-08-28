@@ -23,7 +23,7 @@ from datetime import date, datetime, timedelta, timezone
 from xml.etree import ElementTree
 
 import httpx
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.config import settings
@@ -31,7 +31,7 @@ from app.core.db import SessionFactory
 from app.core.enums import DocumentType
 from app.core.models import Document, DocumentChunk, Instrument
 from app.rag.chunking import chunk
-from app.rag.lexical import to_tsv_text
+from app.rag.lexical import weighted_tsvector
 
 log = logging.getLogger("app.rag.dart")
 
@@ -281,9 +281,7 @@ async def save(filing: Filing, body: str) -> int:
                             "document_id": document_id,
                             "chunk_index": i,
                             "text": text,
-                            "text_tsv": func.to_tsvector(
-                                "simple", to_tsv_text(f"{filing.report_nm}\n{text}")
-                            ),
+                            "text_tsv": weighted_tsvector(filing.report_nm, text),
                         }
                         for i, text in enumerate(pieces)
                     ]
