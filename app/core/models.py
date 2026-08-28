@@ -72,9 +72,7 @@ class Instrument(Base):
     market_cap: Mapped[int | None] = mapped_column(BigInteger)
     listed_shares: Mapped[int | None] = mapped_column(BigInteger)
     status: Mapped[str] = mapped_column(String(12), nullable=False, default="listed")
-    updated_at: Mapped[datetime] = mapped_column(
-        TS, server_default=func.now(), onupdate=func.now()
-    )
+    updated_at: Mapped[datetime] = mapped_column(TS, server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (
         Index("ix_instruments_corp_code", "corp_code"),
@@ -147,9 +145,7 @@ class FinancialAnnual(Base):
     total_equity: Mapped[int] = mapped_column(BigInteger, nullable=False)
     # CFS(연결) | OFS(별도). 위 docstring의 선택 규칙이 남긴 자취다.
     fs_div: Mapped[str] = mapped_column(String(3), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        TS, server_default=func.now(), onupdate=func.now()
-    )
+    updated_at: Mapped[datetime] = mapped_column(TS, server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (
         CheckConstraint("fs_div IN ('CFS', 'OFS')", name="ck_financial_annual_fs_div"),
@@ -308,9 +304,7 @@ class TradeWatermark(Base):
 
     user_id: Mapped[str] = mapped_column(String(40), primary_key=True)
     last_trade_id: Mapped[str | None] = mapped_column(String(40))
-    polled_at: Mapped[datetime] = mapped_column(
-        TS, server_default=func.now(), onupdate=func.now()
-    )
+    polled_at: Mapped[datetime] = mapped_column(TS, server_default=func.now(), onupdate=func.now())
 
 
 # ── 응답 로그 · 피드백 ───────────────────────────────────
@@ -341,6 +335,46 @@ class AIResponse(Base):
     __table_args__ = (Index("ix_ai_responses_created", "created_at"),)
 
 
+class AIRequestWindow(Base):
+    """모든 Pod가 공유하는 사용자·엔드포인트별 요청 창."""
+
+    __tablename__ = "ai_request_windows"
+
+    user_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    endpoint: Mapped[str] = mapped_column(String(60), primary_key=True)
+    window_started_at: Mapped[datetime] = mapped_column(TS, nullable=False)
+    request_count: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class AITokenDaily(Base):
+    """응답 로그와 별도로 즉시 확정하는 사용자별 일일 GMS 토큰."""
+
+    __tablename__ = "ai_token_daily"
+
+    user_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    usage_date: Mapped[Date] = mapped_column(SADate, primary_key=True)
+    spent_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(TS, server_default=func.now(), onupdate=func.now())
+
+
+class AITokenReservation(Base):
+    """GMS 호출 중인 토큰 예약. Pod 장애 시 expires_at 뒤 자동 회수된다."""
+
+    __tablename__ = "ai_token_reservations"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    usage_date: Mapped[Date] = mapped_column(SADate, nullable=False)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(TS, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TS, server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_ai_token_reservations_user_day", "user_id", "usage_date"),
+        Index("ix_ai_token_reservations_expires", "expires_at"),
+    )
+
+
 class AIFeedback(Base):
     """사용자 피드백. reasons 분포가 프롬프트 개선의 우선순위를 정한다."""
 
@@ -369,5 +403,8 @@ __all__ = [
     "WikiThesis",
     "TradeWatermark",
     "AIResponse",
+    "AIRequestWindow",
+    "AITokenDaily",
+    "AITokenReservation",
     "AIFeedback",
 ]

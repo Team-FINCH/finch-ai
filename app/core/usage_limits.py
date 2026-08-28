@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from collections import defaultdict, deque
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
+
+from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.errors import RateLimited
@@ -35,6 +38,7 @@ class TokenReservation:
     user_id: str
     day: date
     amount: int
+    id: uuid.UUID | None = None
 
 
 @dataclass(slots=True)
@@ -49,9 +53,10 @@ KST = ZoneInfo("Asia/Seoul")
 
 
 class UsageGuard:
-    """한 프로세스 안에서 동시 요청까지 직렬화하는 사용량 장부."""
+    """DB 설정 시 모든 Pod가 공유하고, 없으면 로컬 메모리로 동작하는 장부."""
 
-    def __init__(self) -> None:
+    def __init__(self, session_factory: Any = None) -> None:
+        self._store = PersistentUsageStore(session_factory) if session_factory else None
         self._lock = asyncio.Lock()
         self._requests: dict[tuple[str, str], deque[float]] = defaultdict(deque)
         self._daily: dict[tuple[str, date], DailyUsage] = {}
@@ -67,6 +72,9 @@ class UsageGuard:
         key = (user_id, endpoint)
         limit = endpoint_limit(endpoint)
         timestamp = now.timestamp()
+        if self._store is not None:
+            await self._store.check_request(user_id, endpoint, now=now, limit=limit)
+            return _current.set(UsageCounter(user_id=user_id, endpoint=endpoint, day=now.date()))
         async with self._lock:
             window = self._requests[key]
             cutoff = timestamp - settings.ai_rate_limit_window_s
@@ -90,6 +98,13 @@ class UsageGuard:
         if counter is None or settings.ai_daily_token_budget <= 0:
             return None
         amount = max(amount, 1)
+        if self._store is not None:
+            return await self._store.reserve(
+                counter.user_id,
+                counter.day,
+                amount=amount,
+                limit=settings.ai_daily_token_budget,
+            )
         key = (counter.user_id, counter.day)
         async with self._lock:
             known = key in self._daily
@@ -124,12 +139,15 @@ class UsageGuard:
         counter = _current.get()
         actual = max(input_tokens, 0) + max(output_tokens, 0)
         if reservation is not None:
-            async with self._lock:
-                usage = self._daily.setdefault(
-                    (reservation.user_id, reservation.day), DailyUsage(spent=0)
-                )
-                usage.reserved = max(usage.reserved - reservation.amount, 0)
-                usage.spent += actual
+            if self._store is not None:
+                await self._store.settle(reservation, actual=actual)
+            else:
+                async with self._lock:
+                    usage = self._daily.setdefault(
+                        (reservation.user_id, reservation.day), DailyUsage(spent=0)
+                    )
+                    usage.reserved = max(usage.reserved - reservation.amount, 0)
+                    usage.spent += actual
         if counter is not None:
             counter.input_tokens += max(input_tokens, 0)
             counter.output_tokens += max(output_tokens, 0)
@@ -138,10 +156,164 @@ class UsageGuard:
     async def cancel(self, reservation: TokenReservation | None) -> None:
         if reservation is None:
             return
+        if self._store is not None:
+            await self._store.cancel(reservation)
+            return
         async with self._lock:
             usage = self._daily.get((reservation.user_id, reservation.day))
             if usage is not None:
                 usage.reserved = max(usage.reserved - reservation.amount, 0)
+
+
+class PersistentUsageStore:
+    """짧은 독립 트랜잭션과 advisory lock으로 Pod 간 경쟁을 직렬화한다."""
+
+    def __init__(self, session_factory: Any) -> None:
+        self._sessions = session_factory
+
+    async def _lock(self, db: Any, key: str) -> None:
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": key},
+        )
+
+    async def check_request(
+        self, user_id: str, endpoint: str, *, now: datetime, limit: int
+    ) -> None:
+        cutoff = now - timedelta(seconds=settings.ai_rate_limit_window_s)
+        async with self._sessions() as db, db.begin():
+            row = (
+                await db.execute(
+                    text(
+                        """
+                        INSERT INTO ai_request_windows
+                            (user_id, endpoint, window_started_at, request_count)
+                        VALUES (:user_id, :endpoint, :now, 1)
+                        ON CONFLICT (user_id, endpoint) DO UPDATE SET
+                            window_started_at = CASE
+                                WHEN ai_request_windows.window_started_at <= :cutoff
+                                THEN :now ELSE ai_request_windows.window_started_at END,
+                            request_count = CASE
+                                WHEN ai_request_windows.window_started_at <= :cutoff
+                                THEN 1 ELSE ai_request_windows.request_count + 1 END
+                        RETURNING window_started_at, request_count
+                        """
+                    ),
+                    {
+                        "user_id": user_id,
+                        "endpoint": endpoint,
+                        "now": now,
+                        "cutoff": cutoff,
+                    },
+                )
+            ).one()
+        if row.request_count > limit:
+            retry_after = max(
+                1,
+                round(
+                    (
+                        row.window_started_at
+                        + timedelta(seconds=settings.ai_rate_limit_window_s)
+                        - now
+                    ).total_seconds()
+                ),
+            )
+            raise RateLimited(
+                "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+                detail={
+                    "reason": "request_rate_limit",
+                    "endpoint": endpoint,
+                    "retry_after_seconds": retry_after,
+                },
+            )
+
+    async def reserve(
+        self, user_id: str, day: date, *, amount: int, limit: int
+    ) -> TokenReservation:
+        reservation_id = uuid.uuid4()
+        now = datetime.now(KST)
+        async with self._sessions() as db, db.begin():
+            await self._lock(db, f"ai-token:{user_id}:{day.isoformat()}")
+            await db.execute(
+                text("DELETE FROM ai_token_reservations WHERE expires_at <= :now"),
+                {"now": now},
+            )
+            spent = int(
+                await db.scalar(
+                    text(
+                        "SELECT COALESCE(spent_tokens, 0) FROM ai_token_daily "
+                        "WHERE user_id=:user_id AND usage_date=:day"
+                    ),
+                    {"user_id": user_id, "day": day},
+                )
+                or 0
+            )
+            reserved = int(
+                await db.scalar(
+                    text(
+                        "SELECT COALESCE(SUM(amount), 0) FROM ai_token_reservations "
+                        "WHERE user_id=:user_id AND usage_date=:day AND expires_at > :now"
+                    ),
+                    {"user_id": user_id, "day": day, "now": now},
+                )
+                or 0
+            )
+            if spent + reserved + amount > limit:
+                raise RateLimited(
+                    "오늘 사용할 수 있는 AI 분석량을 모두 사용했습니다.",
+                    detail={
+                        "reason": "daily_token_budget",
+                        "used_tokens": spent,
+                        "reserved_tokens": reserved,
+                        "limit_tokens": limit,
+                    },
+                )
+            await db.execute(
+                text(
+                    "INSERT INTO ai_token_reservations "
+                    "(id,user_id,usage_date,amount,expires_at) "
+                    "VALUES (:id,:user_id,:day,:amount,:expires_at)"
+                ),
+                {
+                    "id": reservation_id,
+                    "user_id": user_id,
+                    "day": day,
+                    "amount": amount,
+                    "expires_at": now + timedelta(seconds=settings.ai_gms_reservation_ttl_s),
+                },
+            )
+        return TokenReservation(user_id, day, amount, reservation_id)
+
+    async def settle(self, reservation: TokenReservation, *, actual: int) -> None:
+        async with self._sessions() as db, db.begin():
+            await self._lock(db, f"ai-token:{reservation.user_id}:{reservation.day.isoformat()}")
+            await db.execute(
+                text("DELETE FROM ai_token_reservations WHERE id=:id"),
+                {"id": reservation.id},
+            )
+            await db.execute(
+                text(
+                    """
+                    INSERT INTO ai_token_daily (user_id, usage_date, spent_tokens)
+                    VALUES (:user_id, :day, :actual)
+                    ON CONFLICT (user_id, usage_date) DO UPDATE SET
+                        spent_tokens = ai_token_daily.spent_tokens + :actual,
+                        updated_at = now()
+                    """
+                ),
+                {
+                    "user_id": reservation.user_id,
+                    "day": reservation.day,
+                    "actual": actual,
+                },
+            )
+
+    async def cancel(self, reservation: TokenReservation) -> None:
+        async with self._sessions() as db, db.begin():
+            await db.execute(
+                text("DELETE FROM ai_token_reservations WHERE id=:id"),
+                {"id": reservation.id},
+            )
 
 
 def endpoint_limit(endpoint: str) -> int:
