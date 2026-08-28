@@ -587,7 +587,7 @@
             <tr><td><code>request_id</code></td><td>string</td><td>피드백·로그 추적 키. 프론트는 이 값을 <code>POST /feedback</code>에 그대로 전달</td></tr>
             <tr><td><code>data_as_of</code></td><td>object</td><td><strong>데이터 원천별 기준 시각.</strong> UI에 반드시 노출한다. 시세는 지연될 수 있으므로 생성 시각과 별도로 관리</td></tr>
             <tr><td><code>model</code></td><td>string</td><td>문장 생성에 쓴 LLM 모델 이름. 서버 설정값을 그대로 싣는다</td></tr>
-            <tr><td><code>cached</code></td><td>boolean</td><td>응답 전체 또는 일부가 캐시에서 왔는지. <strong>캐시 계층이 아직 없어 현재는 항상 <code>false</code></strong></td></tr>
+            <tr><td><code>cached</code></td><td>boolean</td><td>응답 전체 또는 일부가 캐시에서 왔는지. 종목 분석의 공통 섹션을 재사용하면 <code>true</code></td></tr>
             <tr><td><code>content</code></td><td>object</td><td>엔드포인트별 본문. 이 아래 §3–§8이 각각의 모양을 정의한다</td></tr>
             <tr><td><code>citations</code></td><td>array</td><td><a href="#citations">§2.4</a> 근거 목록. 근거를 싣지 않는 엔드포인트에서는 빈 배열</td></tr>
             <tr><td><code>disclaimer</code></td><td>string</td><td>고지 문구. 하드코딩하지 말고 응답 값을 표시할 것 (규제 문구 변경 대응)</td></tr>
@@ -874,7 +874,7 @@
             <tr><td><code>my_impact</code></td><td><code>personalize: true</code>이고 <strong>보유 중일 때만</strong> 값이 찬다. 아니면 <code>null</code></td></tr>
             <tr><td><code>thesis_check</code></td><td>기록된 활성 논지가 있을 때만 값이 차고, 그때 Section 다섯 키에 <code>thesis</code>·<code>supporting</code>·<code>challenging</code>이 더 붙는다</td></tr>
             <tr><td><code>next_events</code></td><td>Section 다섯 키에 <code>events</code>가 더 붙는다</td></tr>
-            <tr><td><code>cached</code> · <code>cached_at</code></td><td>캐시 계층이 아직 없어 항상 <code>false</code> / <code>null</code></td></tr>
+            <tr><td><code>cached</code> · <code>cached_at</code></td><td>6시간 안에 만든 같은 종목·같은 프롬프트 버전의 공통 섹션을 재사용하면 <code>true</code> / 원본 생성 시각. 새로 만든 섹션과 개인화 섹션은 <code>false</code> / <code>null</code></td></tr>
           </tbody>
         </table>
       </div>
@@ -891,7 +891,7 @@
 
       <div class="rule-box">
         <span class="label">비용 설계</span>
-        <p><code>current</code>·<code>changes</code>·<code>attention</code>·<code>risks</code>·<code>next_events</code>는 사용자와 무관하므로 <strong>종목 단위로 캐시</strong>한다(TTL 6시간). <code>my_impact</code>·<code>thesis_check</code>만 사용자별로 생성한다. 이 분리가 없으면 인기 종목에서 동일 분석을 수천 번 재생성한다. <strong>아직 구현하지 않은 설계다</strong> — 현재 동작은 <a href="#sources">§14</a>를 보라.</p>
+        <p><code>current</code>·<code>changes</code>·<code>attention</code>·<code>risks</code>·<code>next_events</code>는 사용자와 무관하므로 <strong>종목 단위로 캐시</strong>한다(TTL 6시간). 프롬프트가 바뀌면 이전 캐시는 쓰지 않는다. <code>my_impact</code>·<code>thesis_check</code>는 사용자의 최신 원장과 논지를 반영해 요청마다 생성한다. 이 분리가 인기 종목의 같은 분석을 반복 생성하는 비용을 줄인다.</p>
       </div>
 
       <p><code>attention</code>·<code>risks</code>의 명칭은 규제 대응이다. "긍정 요인 / 부정 요인"은 의견 제시로 읽힐 수 있어
@@ -1649,7 +1649,6 @@
         <table>
           <thead><tr><th>약속</th><th>현재 동작</th><th>응답에서 보이는 모습</th></tr></thead>
           <tbody>
-            <tr><td>캐시 (<a href="#errors">§2.6</a> TTL 표 · <a href="#ep-analysis">§3</a> 종목 단위 캐시)</td><td>캐시 계층 없음</td><td>봉투와 모든 Section의 <code>cached</code>가 항상 <code>false</code>, <code>cached_at</code>이 <code>null</code></td></tr>
             <tr><td>호출 한도 (<a href="#errors">§2.6</a>)</td><td><code>RATE_LIMITED</code>는 정의돼 있으나 세는 곳이 없음</td><td>429가 나가지 않는다</td></tr>
             <tr><td>브리핑 배치 생성</td><td>조회 시점에 생성</td><td><code>status</code>가 <code>ready</code> 아니면 <code>empty</code>. <code>generating</code>은 나오지 않는다</td></tr>
             <tr><td>인용 원문 (<a href="#ep-briefing">§8</a>)</td><td>문서를 조회하지 않음</td><td><code>items[].citations</code>와 봉투 <code>citations</code>가 항상 빈 배열</td></tr>

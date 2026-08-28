@@ -100,7 +100,7 @@ AI 서비스는 백엔드와 분리된 독립 서버로 동작한다. 포트폴�
 | `request_id` | string | 피드백·로그 추적 키. 프론트는 이 값을 `POST /feedback`에 그대로 전달 |
 | `data_as_of` | object | **데이터 원천별 기준 시각.** UI에 반드시 노출한다. 시세는 지연될 수 있으므로 생성 시각과 별도로 관리 |
 | `model` | string | 문장 생성에 쓴 LLM 모델 이름. 서버 설정값을 그대로 싣는다 |
-| `cached` | boolean | 응답 전체 또는 일부가 캐시에서 왔는지. **캐시 계층이 아직 없어 현재는 항상 `false`** |
+| `cached` | boolean | 응답 전체 또는 일부가 캐시에서 왔는지. 종목 분석의 공통 섹션을 재사용하면 `true` |
 | `content` | object | 엔드포인트별 본문. 이 아래 §3–§8이 각각의 모양을 정의한다 |
 | `citations` | array | [§2.4](#citations) 근거 목록. 근거를 싣지 않는 엔드포인트에서는 빈 배열 |
 | `disclaimer` | string | 고지 문구. 하드코딩하지 말고 응답 값을 표시할 것 (규제 문구 변경 대응) |
@@ -338,13 +338,13 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 | `my_impact` | `personalize: true`이고 **보유 중일 때만** 값이 찬다. 아니면 `null` |
 | `thesis_check` | 기록된 활성 논지가 있을 때만 값이 차고, 그때 Section 다섯 키에 `thesis`·`supporting`·`challenging`이 더 붙는다 |
 | `next_events` | Section 다섯 키에 `events`가 더 붙는다 |
-| `cached` · `cached_at` | 캐시 계층이 아직 없어 항상 `false` / `null` |
+| `cached` · `cached_at` | 6시간 안에 만든 같은 종목·같은 프롬프트 버전의 공통 섹션을 재사용하면 `true` / 원본 생성 시각. 새로 만든 섹션과 개인화 섹션은 `false` / `null` |
 
 > **근거 분류와 일정**
 > `thesis_check.supporting`·`challenging`은 검색된 공시·뉴스가 사용자의 논지를 뒷받침하는지 약화하는지 분류한 결과다. 각 항목은 최상위 `citations`의 id와 제목·출처, 논지와 연결되는 이유를 담는다. 중립이거나 관련 없는 자료는 넣지 않으므로 두 배열이 비어 있어도 정상이다. `next_events.events`는 `events` 저장소에서 오늘부터 90일 안의 확정된 종목 일정을 날짜순으로 최대 5건 제공한다. 확정 일정이 없으면 빈 배열이다.
 
 > **비용 설계**
-> `current`·`changes`·`attention`·`risks`·`next_events`는 사용자와 무관하므로 **종목 단위로 캐시**한다(TTL 6시간). `my_impact`·`thesis_check`만 사용자별로 생성한다. 이 분리가 없으면 인기 종목에서 동일 분석을 수천 번 재생성한다. **아직 구현하지 않은 설계다** — 현재 동작은 [§14](#sources)를 보라.
+> `current`·`changes`·`attention`·`risks`·`next_events`는 사용자와 무관하므로 **종목 단위로 캐시**한다(TTL 6시간). 프롬프트가 바뀌면 이전 캐시는 쓰지 않는다. `my_impact`·`thesis_check`는 사용자의 최신 원장과 논지를 반영해 요청마다 생성한다. 이 분리가 인기 종목의 같은 분석을 반복 생성하는 비용을 줄인다.
 
 `attention`·`risks`의 명칭은 규제 대응이다. "긍정 요인 / 부정 요인"은 의견 제시로 읽힐 수 있어 **시장이 주목하는 요인 / 공시·실적에서 확인된 위험 요인**이라는 출처 귀속형으로 고정한다. 목표주가와 투자의견은 어떤 섹션에서도 생성하지 않는다.
 
@@ -964,7 +964,6 @@ Event Ranking | `/portfolio/attribution`
 
 | 약속 | 현재 동작 | 응답에서 보이는 모습 |
 | --- | --- | --- |
-| 캐시 ([§2.6](#errors) TTL 표 · [§3](#ep-analysis) 종목 단위 캐시) | 캐시 계층 없음 | 봉투와 모든 Section의 `cached`가 항상 `false`, `cached_at`이 `null` |
 | 호출 한도 ([§2.6](#errors)) | `RATE_LIMITED`는 정의돼 있으나 세는 곳이 없음 | 429가 나가지 않는다 |
 | 브리핑 배치 생성 | 조회 시점에 생성 | `status`가 `ready` 아니면 `empty`. `generating`은 나오지 않는다 |
 | 인용 원문 ([§8](#ep-briefing)) | 문서를 조회하지 않음 | `items[].citations`와 봉투 `citations`가 항상 빈 배열 |

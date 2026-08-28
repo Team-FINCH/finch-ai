@@ -6,17 +6,23 @@ LLM도 검색도 붙지 않은 환경에서 도는 것이 요점이다. 키가 �
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta, timezone
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.api.main import create_app
-from app.api.routes.stocks import UpcomingEvent
+from app.api.routes.stocks import (
+    CachedAnalysis,
+    UpcomingEvent,
+    _cached_common_sections,
+)
 from app.core.db import get_session
 from app.core.enums import EventType
 from app.core.models import AIFeedback, AIResponse
+from app.core.schemas import DataAsOf
 from app.llm.client import LlmResult, NullLlmClient
 
 URL = "/api/ai/v1/stocks/005930/analysis"
@@ -91,6 +97,7 @@ def client(monkeypatch):
     monkeypatch.setattr("app.api.routes.stocks.search", _no_hits)
     monkeypatch.setattr("app.api.routes.stocks.get_active_thesis", _no_thesis)
     monkeypatch.setattr("app.api.routes.stocks._upcoming_events", _no_upcoming_events)
+    monkeypatch.setattr("app.api.routes.stocks._cached_common_sections", _no_cache)
     app = create_app()
     session = FeedbackSession()
     app.dependency_overrides[get_session] = lambda: session
@@ -112,6 +119,10 @@ async def _no_upcoming_events(*_: Any, **__: Any) -> list[Any]:
     return []
 
 
+async def _no_cache(*_: Any, **__: Any) -> None:
+    return None
+
+
 def _post(client: TestClient, body: dict, *, user: str = HOLDER):
     return client.post(URL, json=body, headers={"X-User-Id": user})
 
@@ -124,6 +135,100 @@ def test_요청한_섹션만_돌려준다(client):
     assert set(sections) == {"current", "risks"}
     assert sections["current"]["title"] == "현재 상황"
     assert sections["risks"]["title"] == "확인된 위험 요인"
+
+
+def test_공통_섹션_캐시는_LLM을_다시_호출하지_않는다(client, monkeypatch):
+    cached_at = datetime(2026, 8, 28, 9, 0).astimezone()
+
+    async def _cached(*_: Any, **__: Any) -> CachedAnalysis:
+        return CachedAnalysis(
+            name="삼성전자",
+            sections={
+                "current": {
+                    "title": "현재 상황",
+                    "text": "캐시된 분석입니다.",
+                    "segments": [],
+                    "cached": True,
+                    "cached_at": cached_at.isoformat(),
+                }
+            },
+            citations=[],
+            data_as_of=DataAsOf(),
+            cached_at=cached_at,
+        )
+
+    monkeypatch.setattr("app.api.routes.stocks._cached_common_sections", _cached)
+
+    body = _post(client, {"sections": ["current"]}).json()
+
+    assert body["cached"] is True
+    assert body["content"]["name"] == "삼성전자"
+    assert body["content"]["sections"]["current"]["cached"] is True
+    assert client.llm.calls == []
+
+
+@pytest.mark.anyio
+async def test_같은_종목과_프롬프트의_최근_공통_섹션을_찾는다(monkeypatch):
+    now = datetime(2026, 8, 28, 12, 0, tzinfo=timezone(timedelta(hours=9)))
+    created_at = datetime(2026, 8, 28, 10, 30)
+    row = SimpleNamespace(
+        created_at=created_at,
+        payload={
+            "content": {
+                "ticker": "005930",
+                "name": "삼성전자",
+                "sections": {
+                    "current": {
+                        "title": "현재 상황",
+                        "text": "저장된 분석",
+                        "segments": [],
+                        "cached": False,
+                        "cached_at": None,
+                    }
+                },
+            },
+            "citations": [],
+            "data_as_of": {},
+        },
+    )
+
+    class Rows:
+        def all(self):
+            return [row]
+
+    class Session:
+        async def scalars(self, _statement):
+            return Rows()
+
+    monkeypatch.setattr(
+        "app.api.routes.stocks.prompt_version_for", lambda _endpoint: "prompt_test"
+    )
+
+    cached = await _cached_common_sections(
+        Session(), "005930", {"current"}, now=now
+    )
+
+    assert cached is not None
+    assert cached.name == "삼성전자"
+    assert cached.cached_at.utcoffset() == timedelta(hours=9)
+    assert cached.sections["current"]["cached"] is True
+    assert cached.sections["current"]["cached_at"].endswith("+09:00")
+
+
+@pytest.mark.anyio
+async def test_캐시_저장소가_실패하면_새_분석으로_복귀한다():
+    class BrokenSession:
+        async def scalars(self, _statement):
+            raise OSError("cache unavailable")
+
+    cached = await _cached_common_sections(
+        BrokenSession(),
+        "005930",
+        {"current"},
+        now=datetime.now(UTC),
+    )
+
+    assert cached is None
 
 
 def test_일반_섹션은_설정하지_않은_조건부_키를_생략한다(client):

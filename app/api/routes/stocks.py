@@ -4,8 +4,8 @@
 
 섹션은 두 부류로 나뉜다. `current`·`changes`·`attention`·`risks`·`next_events`는
 사용자와 무관해 종목 단위로 캐시할 수 있고, `my_impact`·`thesis_check`만
-사용자별이다(§3 비용 설계). 캐시 저장소는 아직 없지만 두 부류가 서로 다른
-입력만 보도록 갈라 두어, 캐시를 붙일 때 이 파일 밖은 건드리지 않게 했다.
+사용자별이다(§3 비용 설계). 공통 섹션은 같은 프롬프트 버전의 최근 응답을
+6시간 재사용하고, 개인화 섹션은 요청마다 사용자의 최신 원장·논지로 만든다.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from enum import StrEnum
 from typing import Annotated, Any
@@ -25,9 +26,9 @@ from app.api.deps import CurrentUser, DbSession
 from app.core.adapters import ledger_source
 from app.core.enums import EventType, MetricSource, WikiSource
 from app.core.errors import InsufficientData, InvalidRequest
-from app.core.models import Event
+from app.core.models import AIResponse, Event
 from app.core.response_log import record
-from app.core.schemas import ContentModel, DataAsOf, Envelope, Segment, now_kst
+from app.core.schemas import Citation, ContentModel, DataAsOf, Envelope, Segment, now_kst
 from app.engines.portfolio import Holding, PortfolioEngine, PortfolioSnapshot
 from app.llm.client import NullLlmClient, get_llm_client
 from app.llm.generate import (
@@ -38,6 +39,7 @@ from app.llm.generate import (
     ratio_segment,
 )
 from app.llm.guard import Feature
+from app.llm.versioning import prompt_version_for
 from app.rag.search import search
 from app.wiki.store import get_active_thesis
 
@@ -74,11 +76,13 @@ SECTION_TITLES: dict[str, str] = {
 
 #: 사용자별 섹션. 나머지는 종목 단위 캐시 대상이다.
 PERSONAL_SECTIONS = frozenset({"my_impact", "thesis_check"})
+COMMON_SECTIONS = frozenset(SECTIONS) - PERSONAL_SECTIONS
 
 _TICKER_RE = re.compile(r"\d{6}")
 _RAG_TOP_K = 6
 _UPCOMING_DAYS = 90
 _UPCOMING_LIMIT = 5
+_COMMON_CACHE_TTL = timedelta(hours=6)
 
 
 class AnalysisRequest(BaseModel):
@@ -217,6 +221,91 @@ def _schedule_block(events: list[UpcomingEvent]) -> str:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class CachedAnalysis:
+    name: str
+    sections: dict[str, dict[str, Any]]
+    citations: list[Citation]
+    data_as_of: DataAsOf
+    cached_at: datetime
+
+
+async def _cached_common_sections(
+    db: DbSession,
+    ticker: str,
+    keys: set[str],
+    *,
+    now: datetime,
+) -> CachedAnalysis | None:
+    if not keys or db is None:
+        return None
+    version = prompt_version_for("stocks.analysis")
+    try:
+        rows = (
+            await db.scalars(
+                select(AIResponse)
+                .where(
+                    AIResponse.endpoint == "stocks.analysis",
+                    AIResponse.prompt_version == version,
+                    AIResponse.created_at >= now - _COMMON_CACHE_TTL,
+                )
+                .order_by(AIResponse.created_at.desc())
+                .limit(20)
+            )
+        ).all()
+    except Exception:  # 캐시는 최적화이므로 장애가 본래 분석을 막으면 안 된다.
+        log.warning("종목 %s 공통 분석 캐시 조회 실패", ticker, exc_info=True)
+        return None
+    for row in rows:
+        payload = row.payload
+        if not isinstance(payload, dict):
+            continue
+        content = payload.get("content")
+        if not isinstance(content, dict):
+            continue
+        sections = content.get("sections")
+        if content.get("ticker") != ticker or not isinstance(sections, dict):
+            continue
+        if not keys.issubset(sections) or any(sections[key] is None for key in keys):
+            continue
+        cached_at = row.created_at
+        if cached_at.tzinfo is None:
+            cached_at = cached_at.replace(tzinfo=now.tzinfo)
+        selected = {
+            key: {
+                **sections[key],
+                "cached": True,
+                "cached_at": cached_at.isoformat(),
+            }
+            for key in keys
+        }
+        return CachedAnalysis(
+            name=str(content.get("name") or ticker),
+            sections=selected,
+            citations=[Citation.model_validate(item) for item in payload.get("citations", [])],
+            data_as_of=DataAsOf.model_validate(payload.get("data_as_of", {})),
+            cached_at=cached_at,
+        )
+    return None
+
+
+def _hits_from_cache(cached: CachedAnalysis) -> list[dict[str, Any]]:
+    return [
+        {
+            "text": citation.snippet or citation.title,
+            "ticker": None,
+            "title": citation.title,
+            "published_at": citation.published_at,
+            "doc_type": citation.type.value,
+            "source": citation.source,
+            "publisher": citation.publisher,
+            "url": citation.url,
+            "similarity": citation.relevance,
+        }
+        for citation in cached.citations
+    ]
+
+
 # ── 라우터 ───────────────────────────────────────────────
 @router.post("/{ticker}/analysis")
 async def create_analysis(
@@ -233,20 +322,9 @@ async def create_analysis(
     if unknown:
         raise InvalidRequest("알 수 없는 섹션입니다.", detail={"sections": unknown})
 
-    client = get_llm_client()
-    if isinstance(client, NullLlmClient):
-        # 키가 없으면 전 섹션이 같은 이유로 실패한다. 섹션별 null로 흩뿌리지 않고
-        # 한 번에 알린다. `app.rag.search`가 NullEmbedder를 다루는 방식과 같다.
-        raise InsufficientData(
-            "지금은 분석을 만들 수 없습니다.", detail={"reason": "llm_key_missing"}
-        )
-
-    hits = await search(f"{ticker} 최근 실적 공시 위험 요인", top_k=_RAG_TOP_K, ticker=ticker)
-    citations = citations_from_hits(hits)
-    documents = documents_block(hits, citations)
-    if not hits:
-        log.warning("종목 %s 검색 결과 0건 — 근거 없이 생성한다", ticker)
-
+    now = now_kst()
+    common_requested = set(requested) & COMMON_SECTIONS
+    cached = await _cached_common_sections(db, ticker, common_requested, now=now)
     snapshot = await _snapshot(user_id) if body.personalize else None
     holding = _find(snapshot, ticker)
     thesis = (
@@ -254,15 +332,42 @@ async def create_analysis(
         if body.personalize and "thesis_check" in requested
         else None
     )
+    generation_keys = [
+        key for key in requested if cached is None or key not in cached.sections
+    ]
+    generation_keys = [
+        key
+        for key in generation_keys
+        if not (key in PERSONAL_SECTIONS and not body.personalize)
+        and not (key == "my_impact" and (holding is None or snapshot is None))
+        and not (key == "thesis_check" and thesis is None)
+    ]
+
+    client = get_llm_client()
+    if generation_keys and isinstance(client, NullLlmClient):
+        raise InsufficientData(
+            "지금은 분석을 만들 수 없습니다.", detail={"reason": "llm_key_missing"}
+        )
+
+    hits = _hits_from_cache(cached) if cached else []
+    if generation_keys and not cached:
+        hits = await search(
+            f"{ticker} 최근 실적 공시 위험 요인",
+            top_k=_RAG_TOP_K,
+            ticker=ticker,
+        )
+    citations = cached.citations if cached else citations_from_hits(hits)
+    documents = documents_block(hits, citations)
+    if generation_keys and not hits:
+        log.warning("종목 %s 검색 결과 0건 — 근거 없이 생성한다", ticker)
+
     upcoming_events = (
-        await _upcoming_events(db, ticker) if "next_events" in requested else []
+        await _upcoming_events(db, ticker) if "next_events" in generation_keys else []
     )
 
     shared = {"citations": citations, "documents": documents, "client": client}
     tasks: dict[str, Any] = {}
-    for key in requested:
-        if key in PERSONAL_SECTIONS and not body.personalize:
-            continue
+    for key in generation_keys:
         if key == "my_impact":
             if holding is None or snapshot is None:
                 continue  # 비보유 종목은 null. 에러가 아니다(§3).
@@ -294,6 +399,8 @@ async def create_analysis(
     outcomes: list[SectionOutcome] = list(await asyncio.gather(*tasks.values()))
 
     sections: dict[str, Any] = dict.fromkeys(requested)
+    if cached:
+        sections.update(cached.sections)
     outcomes_by_key = {outcome.key: outcome for outcome in outcomes}
     for outcome in outcomes:
         if outcome.section is None:
@@ -326,21 +433,35 @@ async def create_analysis(
             "supporting": _evidence_payload("supporting"),
             "challenging": _evidence_payload("challenging"),
         }
-    if "next_events" in sections and sections["next_events"]:
+    if "next_events" in generation_keys and sections.get("next_events"):
         sections["next_events"]["events"] = [
             event.model_dump(mode="json") for event in upcoming_events
         ]
 
+    cached_data = cached.data_as_of if cached else DataAsOf()
     envelope = Envelope[AnalysisContent](
         content={
             "ticker": ticker,
-            "name": _display_name(snapshot, ticker),
+            "name": (
+                _display_name(snapshot, ticker)
+                if snapshot
+                else cached.name
+                if cached
+                else ticker
+            ),
             "sections": sections,
         },
         citations=citations,
+        cached=bool(cached),
         data_as_of=DataAsOf(
+            price=cached_data.price,
             portfolio=_as_datetime(snapshot),
-            filings=max((h["published_at"] for h in hits if h.get("published_at")), default=None),
+            filings=max(
+                (h["published_at"] for h in hits if h.get("published_at")),
+                default=cached_data.filings,
+            ),
+            news=cached_data.news,
+            macro=cached_data.macro,
         ),
     )
     await record(db, envelope, user_id=user_id, endpoint="stocks.analysis")
