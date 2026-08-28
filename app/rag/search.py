@@ -42,7 +42,7 @@ async def backfill(limit: int | None = None) -> tuple[int, int]:
     """
     embedder = get_embedder()
     if isinstance(embedder, NullEmbedder):
-        log.error("임베딩 제공자가 없다. OPENAI_API_KEY를 설정하라")
+        log.error("임베딩 제공자가 없다. GMS_KEY를 설정하라")
         return 0, 0
 
     tried = done = 0

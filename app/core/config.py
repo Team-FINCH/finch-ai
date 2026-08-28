@@ -45,10 +45,6 @@ class Settings(BaseSettings):
     # 14만 토큰이 되어 매번 거부당했다.
     embedding_batch_size: int = 30
 
-    openai_api_key: str = ""
-    # RAG 임베딩용 OpenAI 설정. GMS LLM 인증과 분리한다.
-    openai_base_url: str = ""
-
     # ── 외부 데이터 ──────────────────────────────────────
     kis_app_key: str = ""
     kis_app_secret: str = ""

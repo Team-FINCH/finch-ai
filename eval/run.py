@@ -77,7 +77,7 @@ async def run_retrieval(top_k: int = 5) -> int:
     from app.rag.search import search
 
     if isinstance(get_embedder(), NullEmbedder):
-        print("임베딩 키가 없어 검색 평가를 건너뛴다. OPENAI_API_KEY를 설정하라.")
+        print("임베딩 키가 없어 검색 평가를 건너뛴다. GMS_KEY를 설정하라.")
         return 0
 
     cases = _load_cases()
