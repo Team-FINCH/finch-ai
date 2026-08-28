@@ -12,13 +12,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
+import time
 from dataclasses import dataclass
 from datetime import date, timedelta
 
 from sqlalchemy import distinct, select
 
 from app.api.routes.briefing import build_briefing
+from app.core.config import settings
 from app.core.db import SessionFactory, engine
 from app.core.models import AIResponse
 from app.core.schemas import now_kst
@@ -28,10 +31,26 @@ log = logging.getLogger("ingest.briefings")
 
 @dataclass(frozen=True, slots=True)
 class BatchResult:
+    targeted: int = 0
     generated: int = 0
     cached: int = 0
     empty: int = 0
     failed: int = 0
+    retries: int = 0
+    duration_ms: int = 0
+    failed_users: tuple[str, ...] = ()
+
+    def as_dict(self) -> dict[str, int | list[str]]:
+        return {
+            "targeted": self.targeted,
+            "generated": self.generated,
+            "cached": self.cached,
+            "empty": self.empty,
+            "failed": self.failed,
+            "retries": self.retries,
+            "duration_ms": self.duration_ms,
+            "failed_users": list(self.failed_users),
+        }
 
 
 async def active_users(*, days: int = 30) -> list[str]:
@@ -48,30 +67,65 @@ async def active_users(*, days: int = 30) -> list[str]:
 
 
 async def run(
-    users: list[str], *, day: date | None = None, force: bool = False
+    users: list[str],
+    *,
+    day: date | None = None,
+    force: bool = False,
+    attempts: int | None = None,
+    backoff_s: float | None = None,
 ) -> BatchResult:
+    """사용자별 브리핑을 만들고 실패한 사용자만 다시 시도한다."""
+    started = time.monotonic()
+    unique_users = list(dict.fromkeys(users))
+    max_attempts = max(attempts or settings.briefing_batch_attempts, 1)
+    delay = settings.briefing_batch_backoff_s if backoff_s is None else max(backoff_s, 0)
     generated = cached = empty = failed = 0
-    for user_id in dict.fromkeys(users):
-        try:
-            async with SessionFactory() as session:
-                envelope = await build_briefing(
-                    user_id, session, day, use_cache=not force
+    retries = 0
+    failed_users: list[str] = []
+    for user_id in unique_users:
+        for attempt in range(1, max_attempts + 1):
+            try:
+                async with SessionFactory() as session:
+                    envelope = await build_briefing(user_id, session, day, use_cache=not force)
+                if envelope.content.status == "empty":
+                    empty += 1
+                elif envelope.cached:
+                    cached += 1
+                else:
+                    generated += 1
+                break
+            except Exception:
+                if attempt == max_attempts:
+                    failed += 1
+                    failed_users.append(user_id)
+                    log.exception(
+                        "사용자 %s 브리핑 생성 최종 실패 · attempts=%d",
+                        user_id,
+                        max_attempts,
+                    )
+                    break
+                retries += 1
+                wait = delay * (2 ** (attempt - 1))
+                log.warning(
+                    "사용자 %s 브리핑 재시도 · attempt=%d/%d wait=%.1fs",
+                    user_id,
+                    attempt + 1,
+                    max_attempts,
+                    wait,
                 )
-            if envelope.content.status == "empty":
-                empty += 1
-            elif envelope.cached:
-                cached += 1
-            else:
-                generated += 1
-        except Exception:
-            failed += 1
-            log.exception("사용자 %s 브리핑 생성 실패", user_id)
-    return BatchResult(
+                await asyncio.sleep(wait)
+    result = BatchResult(
+        targeted=len(unique_users),
         generated=generated,
         cached=cached,
         empty=empty,
         failed=failed,
+        retries=retries,
+        duration_ms=round((time.monotonic() - started) * 1000),
+        failed_users=tuple(failed_users),
     )
+    log.info("briefing_batch_metrics %s", json.dumps(result.as_dict(), ensure_ascii=False))
+    return result
 
 
 def _parse_date(value: str) -> date:
@@ -88,10 +142,7 @@ async def _main(args: argparse.Namespace) -> int:
         else await active_users(days=args.active_days)
     )
     result = await run(users, day=args.date, force=args.force)
-    print(
-        f"대상={len(set(users))} 생성={result.generated} 캐시={result.cached} "
-        f"빈결과={result.empty} 실패={result.failed}"
-    )
+    print(json.dumps(result.as_dict(), ensure_ascii=False))
     await engine.dispose()
     return 1 if result.failed else 0
 

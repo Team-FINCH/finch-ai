@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     ai_daily_token_budget: int = 500_000
     ai_gms_reservation_tokens: int = 20_000
 
+    # 데일리 브리핑 배치: 최초 시도를 포함한 횟수와 재시도 간 기본 대기 시간.
+    briefing_batch_attempts: int = 3
+    briefing_batch_backoff_s: float = 1.0
+
     # ── 임베딩 ───────────────────────────────────────────
     # DDL 시점에 벡터 차원이 고정되므로, 모델을 바꾸면 마이그레이션이 필요하다.
     # text-embedding-3 계열은 dimensions 파라미터로 축소를 지원해(Matryoshka)

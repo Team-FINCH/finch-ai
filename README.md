@@ -153,6 +153,11 @@ python -m ingest.briefings --users user_a,user_b --force
 python -m app.rag.search --backfill
 ```
 
+브리핑 배치는 사용자별 실패를 기본 3회까지 지수 백오프로 재시도한다. 종료 시 대상,
+생성, 캐시, 빈 결과, 실패, 재시도 횟수와 소요 시간을 JSON 한 줄로 출력하므로 배치
+로그 수집기가 그대로 운영 지표로 읽을 수 있다. 최종 실패 사용자는 `failed_users`에서
+확인한다.
+
 > 컨테이너 런타임은 **podman**을 씁니다. `compose.yaml`은 표준 Compose 규격이라
 > Docker를 쓰는 팀원은 `docker compose up -d`로 그대로 사용할 수 있습니다.
 
