@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.config import settings
 from app.core.enums import (
@@ -49,19 +49,6 @@ class ContentModel(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid")
-
-
-class OptionalKeysModel(ContentModel):
-    """라우터가 조건에 따라 넣기도 하고 빼기도 하는 키를 가진 모델.
-
-    키를 선언해 두되(그래야 스키마에 나온다) 채우지 않은 것은 응답에서 뺀다.
-    기본값 null 로 내보내면 "값이 없다"와 "키가 아예 없다"를 구분하던 기존 응답이
-    달라진다 — 이 작업은 타입만 붙이고 본문은 그대로 두는 것이 조건이다.
-    """
-
-    @model_serializer(mode="wrap")
-    def _drop_unset(self, handler: Any) -> dict[str, Any]:
-        return {key: value for key, value in handler(self).items() if key in self.model_fields_set}
 
 
 # ── 응답 조각 ────────────────────────────────────────────

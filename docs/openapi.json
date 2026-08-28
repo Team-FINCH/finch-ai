@@ -11,14 +11,14 @@
             "additionalProperties": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/AnalysisSection"
+                  "additionalProperties": true,
+                  "type": "object"
                 },
                 {
                   "type": "null"
                 }
               ]
             },
-            "title": "Sections",
             "type": "object"
           },
           "ticker": {
@@ -45,6 +45,15 @@
             "anyOf": [
               {
                 "items": {
+                  "enum": [
+                    "current",
+                    "changes",
+                    "attention",
+                    "risks",
+                    "my_impact",
+                    "thesis_check",
+                    "next_events"
+                  ],
                   "type": "string"
                 },
                 "type": "array"
@@ -60,7 +69,176 @@
         "type": "object"
       },
       "AnalysisSection": {
-        "additionalProperties": true,
+        "additionalProperties": false,
+        "properties": {
+          "cached": {
+            "default": false,
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "cached_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cached At"
+          },
+          "challenging": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Challenging"
+          },
+          "events": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/Segment"
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "supporting": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supporting"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "thesis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThesisRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "text",
+          "segments"
+        ],
+        "title": "AnalysisSection",
+        "type": "object"
+      },
+      "AnalysisSections": {
+        "additionalProperties": false,
+        "properties": {
+          "attention": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnalysisSection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "changes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnalysisSection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "current": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnalysisSection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "my_impact": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnalysisSection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "next_events": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnalysisSection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "risks": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnalysisSection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thesis_check": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnalysisSection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "AnalysisSections",
         "type": "object"
       },
       "AttributionBreakdown": {

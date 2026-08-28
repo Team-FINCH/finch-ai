@@ -108,6 +108,12 @@ def test_요청한_섹션만_돌려준다(client):
     assert sections["risks"]["title"] == "확인된 위험 요인"
 
 
+def test_일반_섹션은_설정하지_않은_조건부_키를_생략한다(client):
+    section = _post(client, {"sections": ["current"]}).json()["content"]["sections"]["current"]
+
+    assert {"thesis", "supporting", "challenging", "events"}.isdisjoint(section)
+
+
 def test_섹션_명칭은_출처_귀속형이다(client):
     """"긍정/부정 요인"은 의견 제시로 읽힌다. 명세 §3."""
     sections = _post(client, {"sections": ["attention", "risks"]}).json()["content"]["sections"]

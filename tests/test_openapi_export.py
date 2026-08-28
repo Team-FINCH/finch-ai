@@ -29,6 +29,44 @@ def test_export_is_deterministic() -> None:
     assert dump(build()) == dump(build())
 
 
+def test_analysis_section_schema_declares_contract_fields() -> None:
+    """조건부 응답 필드도 OpenAPI 계약에서는 이름과 타입이 보여야 한다."""
+    schema = COMMITTED["components"]["schemas"]["AnalysisSection"]
+
+    assert set(schema["properties"]) == {
+        "title",
+        "text",
+        "segments",
+        "cached",
+        "cached_at",
+        "thesis",
+        "supporting",
+        "challenging",
+        "events",
+    }
+
+
+def test_analysis_section_keys_are_a_fixed_contract() -> None:
+    """요청과 응답 모두 프런트가 7개 섹션을 정적 타입으로 생성할 수 있어야 한다."""
+    expected = {
+        "current",
+        "changes",
+        "attention",
+        "risks",
+        "my_impact",
+        "thesis_check",
+        "next_events",
+    }
+    request_items = COMMITTED["components"]["schemas"]["AnalysisRequest"]["properties"][
+        "sections"
+    ]["anyOf"][0]["items"]
+    response_properties = COMMITTED["components"]["schemas"]["AnalysisSections"]["properties"]
+
+    assert set(request_items["enum"]) == expected
+    assert set(response_properties) == expected
+    assert COMMITTED["components"]["schemas"]["AnalysisSections"]["additionalProperties"] is False
+
+
 def test_every_path_is_prefixed_or_health() -> None:
     """프리픽스를 벗어난 경로가 생기면 프론트가 baseUrl을 못 맞춘다."""
     stray = [p for p in COMMITTED["paths"] if not p.startswith(API_PREFIX) and p != "/health"]

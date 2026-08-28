@@ -14,17 +14,18 @@ import asyncio
 import logging
 import re
 from datetime import datetime, time
-from typing import Any
+from enum import StrEnum
+from typing import Annotated, Any
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, WithJsonSchema, field_serializer
 
 from app.api.deps import CurrentUser, DbSession
 from app.core.adapters import ledger_source
 from app.core.enums import MetricSource, WikiSource
 from app.core.errors import InsufficientData, InvalidRequest
 from app.core.response_log import record
-from app.core.schemas import DataAsOf, Envelope, OptionalKeysModel, Segment
+from app.core.schemas import ContentModel, DataAsOf, Envelope, Segment
 from app.engines.portfolio import Holding, PortfolioEngine, PortfolioSnapshot
 from app.llm.client import NullLlmClient, get_llm_client
 from app.llm.generate import (
@@ -42,10 +43,21 @@ log = logging.getLogger("app.api.stocks")
 
 router = APIRouter(prefix="/stocks", tags=["stocks"])
 
-SECTIONS = (
-    "current", "changes", "attention", "risks",
-    "my_impact", "thesis_check", "next_events",
-)
+class AnalysisSectionKey(StrEnum):
+    CURRENT = "current"
+    CHANGES = "changes"
+    ATTENTION = "attention"
+    RISKS = "risks"
+    MY_IMPACT = "my_impact"
+    THESIS_CHECK = "thesis_check"
+    NEXT_EVENTS = "next_events"
+
+
+SECTIONS = tuple(key.value for key in AnalysisSectionKey)
+AnalysisSectionName = Annotated[
+    str,
+    WithJsonSchema({"type": "string", "enum": list(SECTIONS)}),
+]
 
 #: 명칭은 규제 대응이다. "긍정/부정 요인"은 의견 제시로 읽히므로 출처 귀속형으로 고정한다.
 SECTION_TITLES: dict[str, str] = {
@@ -66,7 +78,7 @@ _RAG_TOP_K = 6
 
 
 class AnalysisRequest(BaseModel):
-    sections: list[str] | None = Field(default=None)
+    sections: list[AnalysisSectionName] | None = Field(default=None)
     personalize: bool = True
 
 
@@ -76,7 +88,7 @@ class ThesisRecord(BaseModel):
     source: str
 
 
-class AnalysisSection(OptionalKeysModel):
+class AnalysisSection(ContentModel):
     title: str | None = None
     text: str
     segments: list[Segment]
@@ -88,10 +100,26 @@ class AnalysisSection(OptionalKeysModel):
     events: list[Any] | None = None
 
 
+class AnalysisSections(ContentModel):
+    current: AnalysisSection | None = None
+    changes: AnalysisSection | None = None
+    attention: AnalysisSection | None = None
+    risks: AnalysisSection | None = None
+    my_impact: AnalysisSection | None = None
+    thesis_check: AnalysisSection | None = None
+    next_events: AnalysisSection | None = None
+
+
 class AnalysisContent(BaseModel):
     ticker: str
     name: str
-    sections: dict[str, AnalysisSection | None]
+    sections: AnalysisSections
+
+    @field_serializer("sections")
+    def _serialize_sections(
+        self, sections: AnalysisSections
+    ) -> dict[str, dict[str, Any] | None]:
+        return sections.model_dump(mode="json", exclude_unset=True)
 
 
 # ── 원장 ─────────────────────────────────────────────────
