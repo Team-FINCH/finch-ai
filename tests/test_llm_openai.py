@@ -1,4 +1,4 @@
-"""OpenAI 어댑터 테스트.
+"""GMS(OpenAI 호환 Chat Completions) 어댑터 테스트.
 
 도구 루프는 Anthropic 표기로 메시지를 조립한다. 이 클래스가 하는 일은 그 표기와
 OpenAI API 사이를 옮기는 것이므로, 시험할 것도 번역이 맞는지 하나뿐이다.
@@ -14,9 +14,8 @@ import pytest
 
 from app.core.config import settings
 from app.llm.client import (
-    AnthropicClient,
+    GmsClient,
     NullLlmClient,
-    OpenAIClient,
     _system_text,
     _to_openai_messages,
     _turn_from_openai,
@@ -158,7 +157,7 @@ def test_인자가_깨져도_턴을_버리지_않는다() -> None:
 async def test_generate가_strict_스키마와_max_completion_tokens를_보낸다() -> None:
     """`max_tokens`는 400이다. strict는 스키마가 조건을 만족해 쓸 수 있다."""
     http = _FakeHttp(_chat({"content": '{"ok": true}'}))
-    client = OpenAIClient("k", model="gpt-5.4-mini", client=http)
+    client = GmsClient("k", model="gpt-5.4-mini", client=http)
 
     result = await client.generate(
         system=[{"type": "text", "text": "지시"}],
@@ -173,13 +172,14 @@ async def test_generate가_strict_스키마와_max_completion_tokens를_보낸�
     assert http.sent["max_completion_tokens"] == 99
     assert http.sent["response_format"]["json_schema"]["strict"] is True
     assert http.sent["reasoning_effort"] == "high"
-    assert http.sent["messages"][0] == {"role": "system", "content": "지시"}
+    assert http.sent["messages"][0] == {"role": "developer", "content": "지시"}
+    assert http.url == "https://api.openai.com/v1/chat/completions"
 
 
 @pytest.mark.asyncio
 async def test_converse가_도구를_function_모양으로_보낸다() -> None:
     http = _FakeHttp(_chat({"content": "답"}))
-    client = OpenAIClient("k", client=http)
+    client = GmsClient("k", client=http)
 
     await client.converse(
         system=[{"type": "text", "text": "지시"}],
@@ -204,30 +204,18 @@ async def test_converse가_도구를_function_모양으로_보낸다() -> None:
 async def test_JSON이_아닌_응답은_빈_payload로_넘긴다() -> None:
     """여기서 던지지 않는다. 스키마 검사가 걸러 내고 사유가 재생성에 실린다."""
     http = _FakeHttp(_chat({"content": "죄송하지만"}))
-    result = await OpenAIClient("k", client=http).generate(
+    result = await GmsClient("k", client=http).generate(
         system=[], user="질문", schema={"type": "object"}
     )
     assert result.payload == {}
 
 
 # ── 공급자 선택 ──────────────────────────────────────────
-@pytest.mark.parametrize(
-    ("provider", "openai", "anthropic", "want"),
-    [
-        ("openai", "k", "", OpenAIClient),
-        ("anthropic", "", "k", AnthropicClient),
-        # 고른 쪽 키가 없으면 넘어간다. 키를 넣었는데 무시당하는 편보다 낫다.
-        ("anthropic", "k", "", OpenAIClient),
-        ("openai", "", "k", AnthropicClient),
-        ("openai", "", "", NullLlmClient),
-    ],
-)
-def test_공급자를_설정과_키를_보고_고른다(
-    monkeypatch: pytest.MonkeyPatch, provider: str, openai: str, anthropic: str, want: type
+@pytest.mark.parametrize(("key", "want"), [("k", GmsClient), ("", NullLlmClient)])
+def test_GMS_키를_보고_클라이언트를_고른다(
+    monkeypatch: pytest.MonkeyPatch, key: str, want: type
 ) -> None:
-    monkeypatch.setattr(settings, "llm_provider", provider)
-    monkeypatch.setattr(settings, "openai_api_key", openai)
-    monkeypatch.setattr(settings, "anthropic_api_key", anthropic)
+    monkeypatch.setattr(settings, "gms_key", key)
     get_llm_client.cache_clear()
     assert isinstance(get_llm_client(), want)
     get_llm_client.cache_clear()

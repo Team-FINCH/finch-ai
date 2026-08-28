@@ -27,10 +27,10 @@ class Settings(BaseSettings):
     db_echo: bool = False
 
     # ── LLM ──────────────────────────────────────────────
-    anthropic_api_key: str = ""
-    # 어느 공급자로 붙을지. 고른 쪽 키가 비어 있으면 다른 쪽으로 넘어간다.
-    llm_provider: str = "openai"
-    llm_model: str = "claude-opus-5"
+    # GMS OpenAI 호환 Chat Completions API를 사용한다.
+    gms_key: str = ""
+    gms_base_url: str = "https://api.openai.com/v1"
+    llm_model: str = "gpt-5.4-mini"
     llm_max_tokens: int = 16_000
     llm_timeout_s: int = 30
 
@@ -46,10 +46,8 @@ class Settings(BaseSettings):
     embedding_batch_size: int = 30
 
     openai_api_key: str = ""
-    # 사내 게이트웨이를 쓰면 여기를 바꾼다. 비우면 순정 OpenAI로 붙는다.
+    # RAG 임베딩용 OpenAI 설정. GMS LLM 인증과 분리한다.
     openai_base_url: str = ""
-    # ANTHROPIC_API_KEY가 없는 동안 설명 생성을 대신 맡는 모델. 임시다.
-    openai_llm_model: str = "gpt-5.4-mini"
 
     # ── 외부 데이터 ──────────────────────────────────────
     kis_app_key: str = ""

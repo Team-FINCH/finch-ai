@@ -4,7 +4,7 @@ AI Part · Prompt & Response
 
 LLM에게 무엇을 주고, 무엇을 쓰게 하고, 무엇을 못 쓰게 할지 정의한다. 엔진이 계산한 값을 어떤 문장으로 바꿀 것인가에 대한 규칙 전부가 여기에 있다.
 
-**기본 모델** claude-opus-5 · **Thinking** adaptive · **출력** Structured Output · **언어** ko-KR
+**기본 모델** gpt-5.4-mini · **Thinking** adaptive · **출력** Structured Output · **언어** ko-KR
 
 ## §1 프롬프트 계층과 조립 순서
 
@@ -247,25 +247,25 @@ Wiki 항목의 `source`에 따라 인용 어투가 달라진다. 이 구분을 �
 
 ## §6 모델 라우팅
 
-사용자에게 보이는 설명은 전부 `claude-opus-5`로 생성한다. 작업 난이도는 모델이 아니라 `effort`로 조절한다.
+사용자에게 보이는 설명은 전부 `gpt-5.4-mini`로 생성한다. 작업 난이도는 모델이 아니라 `effort`로 조절한다.
 
 | 작업 | 모델 | effort | 근거 |
 | --- | --- | --- | --- |
-| Stock Analyst 섹션 | `claude-opus-5` | high | 공시·재무 해석, 다중 근거 종합 |
-| Ask My Portfolio | `claude-opus-5` | high | 도구 선택 + 다단 추론 |
-| Thesis Check | `claude-opus-5` | high | 논지와 신규 사실의 대조 판단 |
-| Portfolio Doctor | `claude-opus-5` | medium | 입력이 구조화되어 있어 추론 부담 낮음 |
-| Why Moved | `claude-opus-5` | medium | 동일 |
-| Before You Trade | `claude-opus-5` | low | 차분 설명, 2–3문장 |
-| Briefing 문장 | `claude-opus-5` | low | 입력 확정, 2문장 |
-| 출력단 의미 검사 | `claude-opus-5` | low | 분류 한 건, 저지연 |
+| Stock Analyst 섹션 | `gpt-5.4-mini` | high | 공시·재무 해석, 다중 근거 종합 |
+| Ask My Portfolio | `gpt-5.4-mini` | high | 도구 선택 + 다단 추론 |
+| Thesis Check | `gpt-5.4-mini` | high | 논지와 신규 사실의 대조 판단 |
+| Portfolio Doctor | `gpt-5.4-mini` | medium | 입력이 구조화되어 있어 추론 부담 낮음 |
+| Why Moved | `gpt-5.4-mini` | medium | 동일 |
+| Before You Trade | `gpt-5.4-mini` | low | 차분 설명, 2–3문장 |
+| Briefing 문장 | `gpt-5.4-mini` | low | 입력 확정, 2문장 |
+| 출력단 의미 검사 | `gpt-5.4-mini` | low | 분류 한 건, 저지연 |
 
 > **비용 선택지 — 팀 결정 사항**
-> 대량 배치 경로(이벤트 분류·태깅, 입력단 의도 분류)는 `claude-haiku-4-5`로 내리면 입력 기준 5분의 1 비용이 된다. 다만 **이는 품질과 비용을 맞바꾸는 결정이므로 팀이 명시적으로 선택해야 한다.** 기본값은 전 경로 `claude-opus-5`이며, 내리더라도 **사용자 대면 설명 경로는 내리지 않는다.** 전환 시 반드시 동일 평가셋으로 전후를 비교한다.
+> 대량 배치 경로(이벤트 분류·태깅, 입력단 의도 분류)는 `claude-haiku-4-5`로 내리면 입력 기준 5분의 1 비용이 된다. 다만 **이는 품질과 비용을 맞바꾸는 결정이므로 팀이 명시적으로 선택해야 한다.** 기본값은 전 경로 `gpt-5.4-mini`이며, 내리더라도 **사용자 대면 설명 경로는 내리지 않는다.** 전환 시 반드시 동일 평가셋으로 전후를 비교한다.
 
 | 모델 | 컨텍스트 | 입력 $/1M | 출력 $/1M |
 | --- | --- | --- | --- |
-| `claude-opus-5` | 1M | 5.00 | 25.00 |
+| `gpt-5.4-mini` | GMS 계약 기준 | - | - |
 | `claude-sonnet-5` | 1M | 3.00 | 15.00 |
 | `claude-haiku-4-5` | 200K | 1.00 | 5.00 |
 
@@ -328,4 +328,4 @@ Wiki 항목의 `source`에 따라 인용 어투가 달라진다. 이 구분을 �
 
 ---
 
-AI 투자 비서 · 프롬프트와 응답 정책 v0.1 — 기본 모델 claude-opus-5, 국내 주식 전용. 평가 체계와 골든 데이터셋은 별도 문서를 따른다.
+AI 투자 비서 · 프롬프트와 응답 정책 v0.1 — 기본 모델 gpt-5.4-mini, 국내 주식 전용. 평가 체계와 골든 데이터셋은 별도 문서를 따른다.

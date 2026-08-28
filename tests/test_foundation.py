@@ -102,7 +102,7 @@ def test_envelope_defaults() -> None:
     payload = Envelope[dict](content={}, data_as_of=DataAsOf()).model_dump(mode="json")
     assert payload["request_id"].startswith("req_")
     assert payload["generated_at"].endswith("+09:00"), "시각은 KST 오프셋을 명시한다"
-    assert payload["model"] == "claude-opus-5"
+    assert payload["model"] == "gpt-5.4-mini"
     assert payload["disclaimer"]
 
 

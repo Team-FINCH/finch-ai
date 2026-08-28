@@ -4,9 +4,7 @@
 키가 없는 환경은 :class:`NullLlmClient`를 받는다. `app.rag.embedding`의
 `NullEmbedder`와 같은 방식이다 — 없는 내용을 지어내느니 명시적으로 실패한다.
 
-공급자는 설정으로 고른다. 어느 쪽도 특별하지 않다 — :class:`OpenAIClient`와
-:class:`AnthropicClient`는 같은 계약의 두 구현이고, 호출부는 어느 쪽이 붙었는지
-모른다.
+운영 호출은 GMS OpenAI 호환 Chat Completions API를 사용한다.
 
 도구 루프(`app.llm.agent`)가 주고받는 메시지 모양은 Anthropic 표기를 따른다.
 공급자마다 이 표기를 고치는 대신, 표기와 자기 API 사이의 번역을 각 클라이언트가
@@ -28,15 +26,13 @@ from app.core.errors import InsufficientData, LLMTimeout
 
 log = logging.getLogger("app.llm.client")
 
-OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
-
 __all__ = [
     "LlmResult",
     "ToolUse",
     "ToolTurn",
     "LlmClient",
     "AnthropicClient",
-    "OpenAIClient",
+    "GmsClient",
     "NullLlmClient",
     "get_llm_client",
 ]
@@ -289,8 +285,8 @@ def _to_turn(message: Any) -> ToolTurn:
     )
 
 
-class OpenAIClient:
-    """OpenAI Chat Completions 구현.
+class GmsClient:
+    """GMS OpenAI 호환 Chat Completions 구현.
 
     Anthropic 표기와 다른 점만 여기서 흡수한다. 확인하고 맞춘 것들:
 
@@ -307,10 +303,10 @@ class OpenAIClient:
 
     def __init__(self, api_key: str, *, model: str | None = None, client: Any = None) -> None:
         if not api_key:
-            raise ValueError("OPENAI_API_KEY가 필요하다")
+            raise ValueError("GMS_KEY가 필요하다")
         self._key = api_key
-        self.model = model or settings.openai_llm_model
-        self._url = (settings.openai_base_url or OPENAI_DEFAULT_BASE_URL).rstrip("/")
+        self.model = model or settings.llm_model
+        self._url = settings.gms_base_url.rstrip("/")
         self._client = client
 
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -344,7 +340,7 @@ class OpenAIClient:
             {
                 "model": self.model,
                 "messages": [
-                    {"role": "system", "content": _system_text(system)},
+                    {"role": "developer", "content": _system_text(system)},
                     {"role": "user", "content": user},
                 ],
                 "response_format": {
@@ -384,7 +380,7 @@ class OpenAIClient:
         body = await self._post(
             {
                 "model": self.model,
-                "messages": [{"role": "system", "content": _system_text(system)}]
+                "messages": [{"role": "developer", "content": _system_text(system)}]
                 + _to_openai_messages(messages),
                 "tools": [
                     {
@@ -511,24 +507,9 @@ def _turn_from_openai(body: dict[str, Any]) -> ToolTurn:
 
 @lru_cache
 def get_llm_client() -> LlmClient:
-    """설정을 보고 구현을 고른다. 키가 없으면 Null이다.
+    """GMS 설정을 사용한다. 키가 없으면 Null이다."""
+    if settings.gms_key:
+        return GmsClient(settings.gms_key)
 
-    `LLM_PROVIDER`로 고르되, 고른 쪽 키가 비어 있으면 다른 쪽으로 넘어간다.
-    키를 넣었는데 조용히 무시당하는 편보다 낫다.
-    """
-    order = ("openai", "anthropic")
-    if settings.llm_provider == "anthropic":
-        order = ("anthropic", "openai")
-
-    for name in order:
-        if name == "openai" and settings.openai_api_key:
-            if settings.llm_provider != "openai":
-                log.warning("ANTHROPIC_API_KEY가 없어 OpenAI로 대신 붙는다")
-            return OpenAIClient(settings.openai_api_key)
-        if name == "anthropic" and settings.anthropic_api_key:
-            if settings.llm_provider != "anthropic":
-                log.warning("OPENAI_API_KEY가 없어 Anthropic으로 대신 붙는다")
-            return AnthropicClient(settings.anthropic_api_key)
-
-    log.warning("LLM 키가 없어 설명 생성을 건너뛴다. .env를 확인하라")
+    log.warning("GMS_KEY가 없어 설명 생성을 건너뛴다. .env를 확인하라")
     return NullLlmClient()

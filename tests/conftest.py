@@ -20,7 +20,7 @@ from app.llm.client import get_llm_client
 
 @pytest.fixture(autouse=True)
 def _no_live_api(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    for name in ("anthropic_api_key", "openai_api_key"):
+    for name in ("gms_key", "openai_api_key"):
         monkeypatch.setattr(settings, name, "", raising=False)
     get_llm_client.cache_clear()
     yield

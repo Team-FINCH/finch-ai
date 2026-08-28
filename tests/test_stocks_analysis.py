@@ -202,7 +202,7 @@ def test_검색_결과가_없어도_생성은_진행한다(client):
 
 def test_면책_문구와_모델이_봉투에_들어간다(client):
     body = _post(client, {"sections": ["current"]}).json()
-    assert body["model"] == "claude-opus-5"
+    assert body["model"] == "gpt-5.4-mini"
     assert body["disclaimer"]
     assert body["request_id"].startswith("req_")
 

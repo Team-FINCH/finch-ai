@@ -87,7 +87,7 @@ AI 서비스는 백엔드와 분리된 독립 서버로 동작한다. 포트폴�
     "news":      "2026-08-19T13:50:00+09:00",
     "macro":     null
   },
-  "model": "claude-opus-5",
+  "model": "gpt-5.4-mini",
   "cached": false,
   "content": { },
   "citations": [ ],
