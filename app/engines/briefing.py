@@ -101,6 +101,8 @@ class Candidate:
     days_ago: int
     related_tickers: tuple[str, ...] = ()
     deeplink: str | None = None
+    #: 이벤트의 근거 문서. 등락·구조 변화처럼 문서가 없는 후보는 None이다.
+    document_id: str | None = None
     #: 문장이 쓸 수 있는 엔진 수치. key는 프롬프트의 자리표시자 이름이 된다.
     values: Mapping[str, float] = field(default_factory=dict)
     #: 모델에게 넘길 엔진 판정 한 줄.
@@ -299,6 +301,7 @@ def event_candidates(
                 deeplink=(
                     f"/stocks/{event.ticker}?tab=ai" if event.ticker else "/portfolio"
                 ),
+                document_id=event.document_id,
                 values=(
                     {"weight": holding.weight} if holding is not None else {}
                 ),

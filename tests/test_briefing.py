@@ -11,7 +11,8 @@
 from __future__ import annotations
 
 import re
-from datetime import date, timedelta
+import uuid
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -103,9 +104,11 @@ class StubSession:
         self,
         *,
         events: list[tuple] | None = None,
+        documents: list[tuple] | None = None,
         payloads: list[dict] | None = None,
     ) -> None:
         self.events = events if events is not None else []
+        self.documents = documents if documents is not None else []
         #: 최근 7일 브리핑 봉투. 비어 있으면 전부 신규다.
         self.payloads = payloads if payloads is not None else []
         self.seen: list[str] = []
@@ -117,6 +120,8 @@ class StubSession:
         self.seen.append(sql)
         if "ai_responses" in sql:
             return StubResult([(payload,) for payload in self.payloads])
+        if "FROM documents" in sql:
+            return StubResult(self.documents)
         return StubResult(self.events)
 
     async def scalars(self, statement: Any) -> StubScalars:
@@ -383,6 +388,98 @@ def test_같은_날_브리핑은_LLM_호출_없이_재사용한다(
     assert second["content"] == first["content"]
     assert second["request_id"] != first["request_id"]
     assert second_client.llm.calls == []  # type: ignore[attr-defined]
+
+
+def test_이벤트_문서를_항목과_봉투의_같은_인용으로_연결한다(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document_id = uuid.uuid4()
+    events = [
+        (uuid.uuid4(), "macro", None, "기준금리 발표", DAY, document_id, 1.0),
+        (uuid.uuid4(), "macro", None, "통화정책 설명회", DAY, document_id, 0.9),
+    ]
+    published_at = datetime(2025, 9, 12, 10, 0)
+    documents = [
+        (
+            document_id,
+            "macro",
+            "한국은행 기준금리 결정",
+            "ECOS",
+            "한국은행",
+            "https://example.test/rate",
+            published_at,
+            "기준금리 결정과 경제 전망을 발표했다.",
+        )
+    ]
+
+    with _make_client(
+        monkeypatch, StubSession(events=events, documents=documents)
+    ) as test_client:
+        body = _get(test_client, HOLDER).json()
+
+    cited = [item for item in body["content"]["items"] if item["citations"]]
+    assert len(cited) == 2
+    assert all(item["citations"] == ["cit_1"] for item in cited)
+    assert body["citations"] == [
+        {
+            "id": "cit_1",
+            "type": "macro",
+            "title": "한국은행 기준금리 결정",
+            "source": "ECOS",
+            "publisher": "한국은행",
+            "url": "https://example.test/rate",
+            "published_at": "2025-09-12T10:00:00",
+            "snippet": "기준금리 결정과 경제 전망을 발표했다.",
+            "relevance": None,
+        }
+    ]
+    assert body["data_as_of"]["macro"] == "2025-09-12T10:00:00"
+
+
+def test_연결한_문서가_없어도_브리핑은_계속_생성한다(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events = [
+        (uuid.uuid4(), "macro", None, "기준금리 발표", DAY, uuid.uuid4(), 1.0)
+    ]
+    with _make_client(monkeypatch, StubSession(events=events)) as test_client:
+        body = _get(test_client, HOLDER).json()
+
+    assert body["content"]["status"] == "ready"
+    assert body["citations"] == []
+    assert all(item["citations"] == [] for item in body["content"]["items"])
+
+
+def test_캐시된_브리핑도_원래_인용을_보존한다(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document_id = uuid.uuid4()
+    events = [
+        (uuid.uuid4(), "macro", None, "기준금리 발표", DAY, document_id, 1.0)
+    ]
+    documents = [
+        (
+            document_id,
+            "macro",
+            "한국은행 기준금리 결정",
+            "ECOS",
+            "한국은행",
+            None,
+            datetime(2025, 9, 12, 10, 0),
+            None,
+        )
+    ]
+    with _make_client(
+        monkeypatch, StubSession(events=events, documents=documents)
+    ) as first_client:
+        first = _get(first_client, HOLDER).json()
+
+    with _make_client(monkeypatch, StubSession(payloads=[first])) as cached_client:
+        cached = _get(cached_client, HOLDER).json()
+
+    assert cached["cached"] is True
+    assert cached["citations"] == first["citations"]
+    assert cached["content"]["items"] == first["content"]["items"]
 
 
 def test_항목은_최대_4건이고_rank가_1부터_이어진다(client: TestClient) -> None:

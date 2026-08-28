@@ -1348,8 +1348,10 @@
         이때 <code>date</code>는 <code>null</code>일 수 있다(조회 시 <code>date</code>를 주지 않았고 기준 거래일도 못 잡은 경우).
       </p>
       <p>
-        <code>items[].citations</code>는 <strong>현재 구현에서 항상 빈 배열</strong>이다. 이 기능은 일정·시세에서 항목을 뽑을 뿐
-        문서를 조회하지 않아 인용할 원문이 없다. 봉투의 <code>citations</code>도 같은 이유로 비어 있다.
+        공시·뉴스·거시 이벤트가 <code>document_id</code>로 원문과 연결돼 있으면
+        <code>items[].citations</code>에 최상위 <code>citations</code>의 id를 넣는다. 여러 항목이 같은
+        문서를 가리키면 Citation 하나를 함께 쓴다. 보유 종목 등락·업종 변화처럼 문서에서 오지 않은 항목이나,
+        연결 문서가 삭제된 항목은 빈 배열이며 브리핑 생성 자체는 계속한다.
       </p>
 
       <div class="rule-box">
@@ -1650,7 +1652,6 @@
           <thead><tr><th>약속</th><th>현재 동작</th><th>응답에서 보이는 모습</th></tr></thead>
           <tbody>
             <tr><td>호출 한도 (<a href="#errors">§2.6</a>)</td><td><code>RATE_LIMITED</code>는 정의돼 있으나 세는 곳이 없음</td><td>429가 나가지 않는다</td></tr>
-            <tr><td>인용 원문 (<a href="#ep-briefing">§8</a>)</td><td>문서를 조회하지 않음</td><td><code>items[].citations</code>와 봉투 <code>citations</code>가 항상 빈 배열</td></tr>
             <tr><td><code>benchmark</code> 선택 (<a href="#ep-attribution">§6</a>)</td><td>요청 필드를 받기만 하고 쓰지 않음</td><td>어떤 값을 보내도 결과가 같다</td></tr>
           </tbody>
         </table>
