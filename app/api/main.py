@@ -24,7 +24,7 @@ from app.api.routes import (
     wiki,
 )
 from app.core.config import settings
-from app.core.db import engine
+from app.core.db import SessionFactory, engine
 from app.core.errors import AppError, ErrorCode
 from app.core.schemas import ErrorResponse, new_request_id
 from app.core.usage_limits import UsageGuard
@@ -47,7 +47,9 @@ def create_app() -> FastAPI:
         description="국내 주식 전용. 수치는 엔진에서만 나오고 LLM은 설명만 생성한다.",
         lifespan=lifespan,
     )
-    app.state.usage_guard = UsageGuard()
+    # 운영·스테이징은 PostgreSQL 장부를 공유한다. 로컬은 DB 없이도 개발할 수 있게
+    # 메모리 장부를 유지하며, DB 통합 테스트는 UsageGuard(SessionFactory)를 직접 쓴다.
+    app.state.usage_guard = UsageGuard(SessionFactory if settings.app_env != "local" else None)
 
     for module in (stocks, chat, portfolio, orders, briefing, wiki, feedback):
         app.include_router(module.router, prefix=API_PREFIX)

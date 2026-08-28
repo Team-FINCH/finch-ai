@@ -35,6 +35,9 @@ EXPECTED_TABLES = {
     "trade_watermarks",
     "ai_responses",
     "ai_feedback",
+    "ai_request_windows",
+    "ai_token_daily",
+    "ai_token_reservations",
 }
 
 

@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     ai_rate_limit_briefing_per_minute: int = 60
     ai_daily_token_budget: int = 500_000
     ai_gms_reservation_tokens: int = 20_000
+    ai_gms_reservation_ttl_s: int = 5 * 60
 
     # 데일리 브리핑 배치: 최초 시도를 포함한 횟수와 재시도 간 기본 대기 시간.
     briefing_batch_attempts: int = 3
