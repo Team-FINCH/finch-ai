@@ -84,6 +84,14 @@ class StubResult:
         return [row[0] for row in self._rows]
 
 
+class StubScalars:
+    def __init__(self, values: list[Any]) -> None:
+        self._values = values
+
+    def all(self) -> list[Any]:
+        return self._values
+
+
 class StubSession:
     """`events` 조회와 응답 로그에 답하는 최소 세션.
 
@@ -110,6 +118,10 @@ class StubSession:
         if "ai_responses" in sql:
             return StubResult([(payload,) for payload in self.payloads])
         return StubResult(self.events)
+
+    async def scalars(self, statement: Any) -> StubScalars:
+        self.seen.append(str(statement))
+        return StubScalars(self.payloads)
 
     def add(self, obj: Any) -> None:
         self.added.append(obj)
@@ -356,6 +368,21 @@ def test_이벤트_표가_비어도_보유_등락만으로_ready가_나온다(cl
     assert content["status"] == "ready"
     assert content["items"]
     assert {item["category"] for item in content["items"]} == {"holding_move"}
+
+
+def test_같은_날_브리핑은_LLM_호출_없이_재사용한다(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with _make_client(monkeypatch, StubSession()) as first_client:
+        first = _get(first_client, HOLDER).json()
+
+    with _make_client(monkeypatch, StubSession(payloads=[first])) as second_client:
+        second = _get(second_client, HOLDER).json()
+
+    assert second["cached"] is True
+    assert second["content"] == first["content"]
+    assert second["request_id"] != first["request_id"]
+    assert second_client.llm.calls == []  # type: ignore[attr-defined]
 
 
 def test_항목은_최대_4건이고_rank가_1부터_이어진다(client: TestClient) -> None:

@@ -37,6 +37,7 @@ from app.engines.portfolio import PortfolioEngine, PortfolioSnapshot
 from app.llm.client import NullLlmClient, get_llm_client
 from app.llm.generate import generate_section, ratio_segment
 from app.llm.guard import Feature
+from app.llm.versioning import prompt_version_for
 
 log = logging.getLogger("app.api.briefing")
 
@@ -99,17 +100,35 @@ async def get_briefing(
     보유 종목이 없거나 유의미한 항목이 없으면 409가 아니라 200 + status "empty"다.
     프런트가 그 값으로 섹션을 숨기기로 되어 있어서, 여기서 끊으면 화면이 에러를 문다.
 
-    ponytail: 배치가 없어 요청 시점에 계산한다. 스케줄러가 생기면 여기서 조회만 한다.
-    그래서 status는 ready 아니면 empty다 — generating을 돌려줄 주체가 없다.
+    배치가 먼저 만든 결과가 있으면 재사용하고, 아직 없다면 요청 시점에 만들어
+    저장한다. 따라서 배치가 잠시 늦어도 기존 화면은 계속 동작한다.
+    """
+    return await build_briefing(user_id, db, date)
+
+
+async def build_briefing(
+    user_id: str,
+    db: DbSession,
+    requested: Date | None = None,
+    *,
+    use_cache: bool = True,
+) -> Envelope[BriefingContent]:
+    """사용자·거래일별 브리핑을 조회하거나 생성한다.
+
+    배치와 HTTP 라우터가 같은 함수를 써서 순위·문장·저장 규칙이 갈라지지 않는다.
     """
     now = now_kst()
     ledger = await _ledger(user_id)
     if ledger is None:
-        return await _empty(db, user_id, date, now)
+        return await _empty(db, user_id, requested, now)
 
-    day = _resolve_day(ledger, date)
+    day = _resolve_day(ledger, requested)
     if day is None:
-        return await _empty(db, user_id, date, now)
+        return await _empty(db, user_id, requested, now)
+
+    if use_cache and (cached := await _cached_briefing(db, user_id, day)):
+        await record(db, cached, user_id=user_id, endpoint=_ENDPOINT)
+        return cached
 
     engine = PortfolioEngine(ledger)
     snapshot = engine.snapshot(day)
@@ -177,6 +196,46 @@ async def get_briefing(
     # 다음 날 novelty가 읽을 행이 되고, 피드백이 참조할 행이 된다(§10).
     await record(db, envelope, user_id=user_id, endpoint=_ENDPOINT)
     return envelope
+
+
+async def _cached_briefing(
+    db: DbSession, user_id: str, day: Date
+) -> Envelope[BriefingContent] | None:
+    """같은 사용자·거래일·프롬프트 버전의 가장 최근 브리핑."""
+    try:
+        payloads = (
+            await db.scalars(
+                select(AIResponse.payload)
+                .where(
+                    AIResponse.user_id == user_id,
+                    AIResponse.endpoint == _ENDPOINT,
+                    AIResponse.prompt_version == prompt_version_for(_ENDPOINT),
+                )
+                .order_by(AIResponse.created_at.desc())
+                .limit(20)
+            )
+        ).all()
+    except Exception:  # 캐시는 최적화다. 조회 장애 시 원래 생성 경로로 복귀한다.
+        log.warning("사용자 %s 브리핑 캐시 조회 실패", user_id, exc_info=True)
+        return None
+
+    for payload in payloads:
+        if not isinstance(payload, dict):
+            continue
+        content = payload.get("content")
+        if not isinstance(content, dict) or content.get("date") != day.isoformat():
+            continue
+        try:
+            previous = Envelope[BriefingContent].model_validate(payload)
+        except (TypeError, ValueError):
+            continue
+        return Envelope[BriefingContent](
+            content=previous.content,
+            citations=previous.citations,
+            data_as_of=previous.data_as_of,
+            cached=True,
+        )
+    return None
 
 
 # ── 응답 조립 ─────────────────────────────────────────────────────────────────
