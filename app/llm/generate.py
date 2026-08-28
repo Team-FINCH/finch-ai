@@ -239,6 +239,7 @@ def build_user_turn(
     citations: Sequence[Citation] = (),
     documents: str = "",
     wiki: str = "",
+    schedule: str = "",
     now: datetime | None = None,
     request: str | None = None,
 ) -> str:
@@ -252,6 +253,9 @@ def build_user_turn(
 
     if wiki:
         parts.append(f"[사용자 투자 논지]\n{wiki}")
+
+    if schedule:
+        parts.append(f"[확인된 예정 일정]\n{schedule}")
 
     if values:
         rows = "\n".join(
@@ -374,6 +378,7 @@ async def generate_section(
     documents: str = "",
     wiki: str = "",
     wiki_source: WikiSource | None = None,
+    schedule: str = "",
     now: datetime | None = None,
     request: str | None = None,
 ) -> SectionOutcome:
@@ -388,6 +393,7 @@ async def generate_section(
         citations=citations,
         documents=documents,
         wiki=wiki,
+        schedule=schedule,
         now=now,
         request=request,
     )

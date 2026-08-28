@@ -6,14 +6,16 @@ LLM도 검색도 붙지 않은 환경에서 도는 것이 요점이다. 키가 �
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.api.main import create_app
+from app.api.routes.stocks import UpcomingEvent
 from app.core.db import get_session
+from app.core.enums import EventType
 from app.core.models import AIFeedback, AIResponse
 from app.llm.client import LlmResult, NullLlmClient
 
@@ -88,6 +90,7 @@ def client(monkeypatch):
     monkeypatch.setattr("app.api.routes.stocks.get_llm_client", lambda: fake)
     monkeypatch.setattr("app.api.routes.stocks.search", _no_hits)
     monkeypatch.setattr("app.api.routes.stocks.get_active_thesis", _no_thesis)
+    monkeypatch.setattr("app.api.routes.stocks._upcoming_events", _no_upcoming_events)
     app = create_app()
     session = FeedbackSession()
     app.dependency_overrides[get_session] = lambda: session
@@ -103,6 +106,10 @@ async def _no_hits(*_: Any, **__: Any) -> list[dict]:
 
 async def _no_thesis(*_: Any, **__: Any) -> None:
     return None
+
+
+async def _no_upcoming_events(*_: Any, **__: Any) -> list[Any]:
+    return []
 
 
 def _post(client: TestClient, body: dict, *, user: str = HOLDER):
@@ -224,6 +231,38 @@ def test_논지와_관련된_검색_근거를_방향별로_분류한다(client, 
         }
     ]
     assert section["challenging"] == []
+
+
+def test_확정된_미래_일정을_next_events에_연결한다(client, monkeypatch):
+    async def _events(*_: Any, **__: Any) -> list[UpcomingEvent]:
+        return [
+            UpcomingEvent(
+                id="evt_1",
+                type=EventType.EARNINGS,
+                title="3분기 실적 발표",
+                event_date=date(2026, 10, 30),
+                confirmed=True,
+                days_until=63,
+            )
+        ]
+
+    monkeypatch.setattr("app.api.routes.stocks._upcoming_events", _events)
+
+    section = _post(client, {"sections": ["next_events"]}).json()["content"]["sections"][
+        "next_events"
+    ]
+
+    assert section["events"] == [
+        {
+            "id": "evt_1",
+            "type": "earnings",
+            "title": "3분기 실적 발표",
+            "event_date": "2026-10-30",
+            "confirmed": True,
+            "days_until": 63,
+        }
+    ]
+    assert "2026년 10월 30일 3분기 실적 발표" in client.llm.calls[0]["user"]
 
 
 # ── 봉투와 근거 ──────────────────────────────────────────

@@ -105,7 +105,9 @@
           "events": {
             "anyOf": [
               {
-                "items": {},
+                "items": {
+                  "$ref": "#/components/schemas/UpcomingEvent"
+                },
                 "type": "array"
               },
               {
@@ -1754,6 +1756,17 @@
         "title": "Envelope[WikiThesisOut]",
         "type": "object"
       },
+      "EventType": {
+        "enum": [
+          "earnings",
+          "filing",
+          "dividend",
+          "macro",
+          "product"
+        ],
+        "title": "EventType",
+        "type": "string"
+      },
       "FeedbackContent": {
         "additionalProperties": false,
         "properties": {
@@ -2596,6 +2609,45 @@
         ],
         "title": "Unit",
         "type": "string"
+      },
+      "UpcomingEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmed": {
+            "title": "Confirmed",
+            "type": "boolean"
+          },
+          "days_until": {
+            "title": "Days Until",
+            "type": "integer"
+          },
+          "event_date": {
+            "format": "date",
+            "title": "Event Date",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/EventType"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "title",
+          "event_date",
+          "confirmed",
+          "days_until"
+        ],
+        "title": "UpcomingEvent",
+        "type": "object"
       },
       "ValidationError": {
         "properties": {

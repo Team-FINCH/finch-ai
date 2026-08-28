@@ -846,13 +846,22 @@
       ],
       "challenging": [ ]
     },
-    "next_events": {
+      "next_events": {
       "title": "다음에 확인할 일정",
       "text": "…",
       "segments": [ ],
       "cached": false,
       "cached_at": null,
-      "events": [ ]
+      "events": [
+        {
+          "id": "evt_01JQ...",
+          "type": "earnings",
+          "title": "3분기 실적 발표",
+          "event_date": "2026-10-30",
+          "confirmed": true,
+          "days_until": 63
+        }
+      ]
     }
   }
 }</code></pre>
@@ -870,12 +879,13 @@
         </table>
       </div>
       <div class="rule-box warn">
-        <span class="label">근거 분류와 아직 비어 있는 자리</span>
+        <span class="label">근거 분류와 일정</span>
         <p>
           <code>thesis_check.supporting</code>·<code>challenging</code>은 검색된 공시·뉴스가 사용자의 논지를
           뒷받침하는지 약화하는지 분류한 결과다. 각 항목은 최상위 <code>citations</code>의 id와 제목·출처,
           논지와 연결되는 이유를 담는다. 중립이거나 관련 없는 자료는 넣지 않으므로 두 배열이 비어 있어도 정상이다.
-          <code>next_events.events</code>는 일정 원천이 아직 없어 항상 빈 배열이다.
+          <code>next_events.events</code>는 <code>events</code> 저장소에서 오늘부터 90일 안의 확정된 종목 일정을
+          날짜순으로 최대 5건 제공한다. 확정 일정이 없으면 빈 배열이다.
         </p>
       </div>
 
@@ -1642,7 +1652,6 @@
             <tr><td>캐시 (<a href="#errors">§2.6</a> TTL 표 · <a href="#ep-analysis">§3</a> 종목 단위 캐시)</td><td>캐시 계층 없음</td><td>봉투와 모든 Section의 <code>cached</code>가 항상 <code>false</code>, <code>cached_at</code>이 <code>null</code></td></tr>
             <tr><td>호출 한도 (<a href="#errors">§2.6</a>)</td><td><code>RATE_LIMITED</code>는 정의돼 있으나 세는 곳이 없음</td><td>429가 나가지 않는다</td></tr>
             <tr><td>브리핑 배치 생성</td><td>조회 시점에 생성</td><td><code>status</code>가 <code>ready</code> 아니면 <code>empty</code>. <code>generating</code>은 나오지 않는다</td></tr>
-            <tr><td>일정 캘린더</td><td>일정 원천 없음</td><td><code>next_events.events</code>가 항상 빈 배열</td></tr>
             <tr><td>인용 원문 (<a href="#ep-briefing">§8</a>)</td><td>문서를 조회하지 않음</td><td><code>items[].citations</code>와 봉투 <code>citations</code>가 항상 빈 배열</td></tr>
             <tr><td><code>benchmark</code> 선택 (<a href="#ep-attribution">§6</a>)</td><td>요청 필드를 받기만 하고 쓰지 않음</td><td>어떤 값을 보내도 결과가 같다</td></tr>
           </tbody>

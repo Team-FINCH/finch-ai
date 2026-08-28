@@ -13,19 +13,21 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from datetime import datetime, time
+from datetime import date, datetime, time, timedelta
 from enum import StrEnum
 from typing import Annotated, Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field, WithJsonSchema, field_serializer
+from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbSession
 from app.core.adapters import ledger_source
-from app.core.enums import MetricSource, WikiSource
+from app.core.enums import EventType, MetricSource, WikiSource
 from app.core.errors import InsufficientData, InvalidRequest
+from app.core.models import Event
 from app.core.response_log import record
-from app.core.schemas import ContentModel, DataAsOf, Envelope, Segment
+from app.core.schemas import ContentModel, DataAsOf, Envelope, Segment, now_kst
 from app.engines.portfolio import Holding, PortfolioEngine, PortfolioSnapshot
 from app.llm.client import NullLlmClient, get_llm_client
 from app.llm.generate import (
@@ -75,6 +77,8 @@ PERSONAL_SECTIONS = frozenset({"my_impact", "thesis_check"})
 
 _TICKER_RE = re.compile(r"\d{6}")
 _RAG_TOP_K = 6
+_UPCOMING_DAYS = 90
+_UPCOMING_LIMIT = 5
 
 
 class AnalysisRequest(BaseModel):
@@ -95,6 +99,15 @@ class ThesisEvidence(ContentModel):
     rationale: str
 
 
+class UpcomingEvent(ContentModel):
+    id: str
+    type: EventType
+    title: str
+    event_date: date
+    confirmed: bool
+    days_until: int
+
+
 class AnalysisSection(ContentModel):
     title: str | None = None
     text: str
@@ -104,7 +117,7 @@ class AnalysisSection(ContentModel):
     thesis: ThesisRecord | None = None
     supporting: list[ThesisEvidence] | None = None
     challenging: list[ThesisEvidence] | None = None
-    events: list[Any] | None = None
+    events: list[UpcomingEvent] | None = None
 
 
 class AnalysisSections(ContentModel):
@@ -165,6 +178,45 @@ def _impact_values(holding: Holding, snapshot: PortfolioSnapshot) -> dict[str, S
     }
 
 
+async def _upcoming_events(
+    db: DbSession, ticker: str, *, today: date | None = None
+) -> list[UpcomingEvent]:
+    base = today or now_kst().date()
+    end = base + timedelta(days=_UPCOMING_DAYS)
+    rows = (
+        await db.scalars(
+            select(Event)
+            .where(
+                Event.ticker == ticker,
+                Event.confirmed.is_(True),
+                Event.event_date >= base,
+                Event.event_date <= end,
+            )
+            .order_by(Event.event_date, Event.importance.desc())
+            .limit(_UPCOMING_LIMIT)
+        )
+    ).all()
+    return [
+        UpcomingEvent(
+            id=str(row.id),
+            type=EventType(row.event_type),
+            title=row.title,
+            event_date=row.event_date,
+            confirmed=row.confirmed,
+            days_until=(row.event_date - base).days,
+        )
+        for row in rows
+    ]
+
+
+def _schedule_block(events: list[UpcomingEvent]) -> str:
+    return "\n".join(
+        f"- {event.event_date.year}년 {event.event_date.month}월 {event.event_date.day}일 "
+        f"{event.title} ({event.type.value}, 확정)"
+        for event in events
+    )
+
+
 # ── 라우터 ───────────────────────────────────────────────
 @router.post("/{ticker}/analysis")
 async def create_analysis(
@@ -202,6 +254,9 @@ async def create_analysis(
         if body.personalize and "thesis_check" in requested
         else None
     )
+    upcoming_events = (
+        await _upcoming_events(db, ticker) if "next_events" in requested else []
+    )
 
     shared = {"citations": citations, "documents": documents, "client": client}
     tasks: dict[str, Any] = {}
@@ -229,7 +284,12 @@ async def create_analysis(
                 **shared,
             )
         else:
-            tasks[key] = generate_section(key, title=SECTION_TITLES[key], **shared)
+            tasks[key] = generate_section(
+                key,
+                title=SECTION_TITLES[key],
+                schedule=_schedule_block(upcoming_events) if key == "next_events" else "",
+                **shared,
+            )
 
     outcomes: list[SectionOutcome] = list(await asyncio.gather(*tasks.values()))
 
@@ -267,8 +327,9 @@ async def create_analysis(
             "challenging": _evidence_payload("challenging"),
         }
     if "next_events" in sections and sections["next_events"]:
-        # ponytail: 일정 캘린더 원천이 아직 없다. 수집기가 붙으면 여기를 채운다.
-        sections["next_events"]["events"] = []
+        sections["next_events"]["events"] = [
+            event.model_dump(mode="json") for event in upcoming_events
+        ]
 
     envelope = Envelope[AnalysisContent](
         content={
