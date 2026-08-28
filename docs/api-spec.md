@@ -93,6 +93,11 @@ AI 서비스는 백엔드와 분리된 독립 서버로 동작한다. 포트폴�
   "cached": false,
   "content": { },
   "citations": [ ],
+  "freshness_warnings": [
+    { "source": "news", "data_as_of": "2026-08-19T06:00:00+09:00",
+      "age_seconds": 29531, "threshold_seconds": 21600,
+      "message": "뉴스 정보가 평소보다 오래되었습니다." }
+  ],
   "disclaimer": "본 정보는 투자 판단을 돕기 위한 참고 자료이며 투자 권유가 아닙니다."
 }
 ```
@@ -105,9 +110,10 @@ AI 서비스는 백엔드와 분리된 독립 서버로 동작한다. 포트폴�
 | `cached` | boolean | 응답 전체 또는 일부가 캐시에서 왔는지. 종목 분석의 공통 섹션을 재사용하면 `true` |
 | `content` | object | 엔드포인트별 본문. 이 아래 §3–§8이 각각의 모양을 정의한다 |
 | `citations` | array | [§2.4](#citations) 근거 목록. 근거를 싣지 않는 엔드포인트에서는 빈 배열 |
+| `freshness_warnings` | array | 사용한 원천의 기준 시각이 허용 범위를 넘겼을 때만 표시하는 최신성 경고. 비어 있으면 경고 없음 |
 | `disclaimer` | string | 고지 문구. 하드코딩하지 말고 응답 값을 표시할 것 (규제 문구 변경 대응) |
 
-봉투의 여덟 키와 `data_as_of`의 다섯 키(`price · portfolio · filings · news · macro`)는 **항상 모두 실려 나온다.** 그 응답이 어떤 원천을 읽지 않았으면 키가 빠지는 것이 아니라 값이 `null`이다. 프론트는 키 존재 여부가 아니라 `null` 여부로 분기한다.
+봉투의 아홉 키와 `data_as_of`의 다섯 키(`price · portfolio · filings · news · macro`)는 **항상 모두 실려 나온다.** 그 응답이 어떤 원천을 읽지 않았으면 키가 빠지는 것이 아니라 값이 `null`이다. 프론트는 키 존재 여부가 아니라 `null` 여부로 분기한다.
 
 이 문서의 예시에서 `…`와 `"segments": [ ]`는 **지면상 줄인 자리**다. 키가 없다는 뜻이 아니며, 실제 응답에서 `segments`가 빈 배열인 경우는 그 문장에 수치 조각이 없을 때다.
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -119,8 +119,7 @@ class Section(BaseModel):
         joined = "".join(s.value for s in self.segments)
         if joined != self.text:
             raise ValueError(
-                "segments를 이어 붙인 결과가 text와 다르다. "
-                f"text={self.text!r} joined={joined!r}"
+                f"segments를 이어 붙인 결과가 text와 다르다. text={self.text!r} joined={joined!r}"
             )
         return self
 
@@ -173,6 +172,55 @@ class DataAsOf(BaseModel):
     macro: datetime | None = None
 
 
+class FreshnessWarning(BaseModel):
+    """사용자가 오래된 원천을 최신 정보로 오해하지 않게 하는 표시."""
+
+    source: Literal["price", "portfolio", "filings", "news", "macro"]
+    data_as_of: datetime
+    age_seconds: int
+    threshold_seconds: int
+    message: str
+
+
+_FRESHNESS_LABELS = {
+    "price": "시세",
+    "portfolio": "포트폴리오",
+    "filings": "공시",
+    "news": "뉴스",
+    "macro": "거시지표",
+}
+
+
+def _freshness_warnings(data: DataAsOf, generated_at: datetime) -> list[FreshnessWarning]:
+    limits = {
+        "price": settings.freshness_price_s,
+        "portfolio": settings.freshness_portfolio_s,
+        "filings": settings.freshness_filings_s,
+        "news": settings.freshness_news_s,
+        "macro": settings.freshness_macro_s,
+    }
+    warnings: list[FreshnessWarning] = []
+    for source, threshold in limits.items():
+        value = getattr(data, source)
+        if value is None or threshold <= 0:
+            continue
+        reference = generated_at
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=reference.tzinfo)
+        age = max(round((reference - value).total_seconds()), 0)
+        if age > threshold:
+            warnings.append(
+                FreshnessWarning(
+                    source=source,
+                    data_as_of=value,
+                    age_seconds=age,
+                    threshold_seconds=threshold,
+                    message=f"{_FRESHNESS_LABELS[source]} 정보가 평소보다 오래되었습니다.",
+                )
+            )
+    return warnings
+
+
 class Envelope[ContentT](BaseModel):
     request_id: str = Field(default_factory=new_request_id)
     generated_at: datetime = Field(default_factory=now_kst)
@@ -181,7 +229,13 @@ class Envelope[ContentT](BaseModel):
     cached: bool = False
     content: ContentT
     citations: list[Citation] = Field(default_factory=list)
+    freshness_warnings: list[FreshnessWarning] = Field(default_factory=list)
     disclaimer: str = Field(default_factory=lambda: settings.disclaimer)
+
+    @model_validator(mode="after")
+    def derive_freshness_warnings(self) -> Envelope[ContentT]:
+        self.freshness_warnings = _freshness_warnings(self.data_as_of, self.generated_at)
+        return self
 
 
 # ── 에러 응답 ────────────────────────────────────────────

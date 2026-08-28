@@ -6,6 +6,8 @@ DB 연결 없이 도는 테스트만 여기 둔다. 병렬 트랙이 각자 작�
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.dialects import postgresql
@@ -46,14 +48,12 @@ def test_all_tables_defined() -> None:
 def test_ddl_compiles_for_postgres(table_name: str) -> None:
     table = Base.metadata.tables[table_name]
     ddl = str(CreateTable(table).compile(dialect=postgresql.dialect()))
-    assert f'CREATE TABLE {table_name}' in ddl
+    assert f"CREATE TABLE {table_name}" in ddl
 
 
 def test_embedding_column_uses_configured_dimension() -> None:
     ddl = str(
-        CreateTable(Base.metadata.tables["document_chunks"]).compile(
-            dialect=postgresql.dialect()
-        )
+        CreateTable(Base.metadata.tables["document_chunks"]).compile(dialect=postgresql.dialect())
     )
     assert "VECTOR(1024)" in ddl.upper()
 
@@ -104,6 +104,26 @@ def test_envelope_defaults() -> None:
     assert payload["generated_at"].endswith("+09:00"), "시각은 KST 오프셋을 명시한다"
     assert payload["model"] == "gpt-5.4-mini"
     assert payload["disclaimer"]
+    assert payload["freshness_warnings"] == []
+
+
+def test_envelope_marks_only_stale_data_sources() -> None:
+    generated = datetime(2026, 8, 28, 12, 0, tzinfo=timezone(timedelta(hours=9)))
+    payload = Envelope[dict](
+        content={},
+        generated_at=generated,
+        data_as_of=DataAsOf(
+            price=generated - timedelta(minutes=21),
+            portfolio=generated - timedelta(minutes=5),
+            news=generated - timedelta(hours=7),
+        ),
+    ).model_dump(mode="json")
+
+    assert [warning["source"] for warning in payload["freshness_warnings"]] == [
+        "price",
+        "news",
+    ]
+    assert payload["freshness_warnings"][0]["age_seconds"] == 21 * 60
 
 
 # ── API 계약 ─────────────────────────────────────────────
@@ -198,9 +218,9 @@ def test_app_error_becomes_structured_response() -> None:
 @pytest.mark.parametrize(
     "order",
     [
-        {"ticker": "00066", "side": "buy", "quantity": 1},   # 6자리가 아님
+        {"ticker": "00066", "side": "buy", "quantity": 1},  # 6자리가 아님
         {"ticker": "000660", "side": "hold", "quantity": 1},  # 정의되지 않은 side
-        {"ticker": "000660", "side": "buy", "quantity": 0},   # 수량 0
+        {"ticker": "000660", "side": "buy", "quantity": 0},  # 수량 0
     ],
 )
 def test_validation_errors_use_invalid_request(order: dict) -> None:
