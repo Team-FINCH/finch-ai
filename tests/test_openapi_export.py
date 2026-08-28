@@ -67,6 +67,52 @@ def test_analysis_section_keys_are_a_fixed_contract() -> None:
     assert COMMITTED["components"]["schemas"]["AnalysisSections"]["additionalProperties"] is False
 
 
+def test_wiki_and_feedback_responses_have_typed_content() -> None:
+    """화면이 읽는 content가 빈 object로 퇴행하면 타입 생성 단계에서 잡아야 한다."""
+    expected = {
+        (f"{API_PREFIX}/wiki", "get"): "WikiContent",
+        (f"{API_PREFIX}/wiki/theses", "post"): "WikiThesisOut",
+        (f"{API_PREFIX}/wiki/theses/{{ticker}}", "put"): "WikiThesisOut",
+        (f"{API_PREFIX}/wiki/facts/{{fact_id}}", "delete"): "DeletedFactContent",
+        (f"{API_PREFIX}/feedback", "post"): "FeedbackContent",
+    }
+    schemas = COMMITTED["components"]["schemas"]
+
+    for (path, method), content_model in expected.items():
+        response_ref = COMMITTED["paths"][path][method]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"]["$ref"]
+        envelope = schemas[response_ref.rsplit("/", 1)[-1]]
+        assert envelope["properties"]["content"]["$ref"].endswith(f"/{content_model}")
+
+
+def test_wiki_and_feedback_content_keys_are_explicit() -> None:
+    schemas = COMMITTED["components"]["schemas"]
+
+    assert set(schemas["WikiContent"]["properties"]) == {"profile", "theses"}
+    assert set(schemas["WikiFactOut"]["properties"]) == {
+        "id",
+        "text",
+        "source",
+        "confidence",
+        "as_of",
+        "evidence",
+        "editable",
+    }
+    assert set(schemas["WikiThesisOut"]["properties"]) == {
+        "id",
+        "ticker",
+        "text",
+        "horizon",
+        "source",
+        "status",
+        "linked_trade_id",
+        "recorded_at",
+    }
+    assert set(schemas["DeletedFactContent"]["properties"]) == {"id", "deleted_at"}
+    assert set(schemas["FeedbackContent"]["properties"]) == {"recorded"}
+
+
 def test_every_path_is_prefixed_or_health() -> None:
     """프리픽스를 벗어난 경로가 생기면 프론트가 baseUrl을 못 맞춘다."""
     stray = [p for p in COMMITTED["paths"] if not p.startswith(API_PREFIX) and p != "/health"]

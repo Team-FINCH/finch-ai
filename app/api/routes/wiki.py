@@ -5,12 +5,15 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Any
+
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser, DbSession
-from app.core.enums import ThesisHorizon
-from app.core.schemas import Envelope
+from app.core.enums import Confidence, ThesisHorizon, ThesisStatus, WikiSource
+from app.core.schemas import ContentModel, Envelope
 from app.wiki.store import (
     fact_payload,
     list_facts,
@@ -31,14 +34,45 @@ class ThesisIn(BaseModel):
     linked_trade_id: str | None = None
 
 
+class WikiFactOut(ContentModel):
+    id: str
+    text: str
+    source: WikiSource
+    confidence: Confidence
+    as_of: datetime
+    evidence: dict[str, Any]
+    editable: bool
+
+
+class WikiThesisOut(ContentModel):
+    id: str
+    ticker: str
+    text: str
+    horizon: ThesisHorizon | None = None
+    source: WikiSource
+    status: ThesisStatus
+    linked_trade_id: str | None = None
+    recorded_at: datetime
+
+
+class WikiContent(ContentModel):
+    profile: list[WikiFactOut]
+    theses: list[WikiThesisOut]
+
+
+class DeletedFactContent(ContentModel):
+    id: str
+    deleted_at: datetime
+
+
 @router.get("")
-async def get_wiki(user_id: CurrentUser, db: DbSession) -> Envelope[dict]:
+async def get_wiki(user_id: CurrentUser, db: DbSession) -> Envelope[WikiContent]:
     """ "AI가 이해한 나" 화면 한 벌.
 
     항목마다 source를 그대로 실어 보낸다. ai_inferred는 단정투로 렌더링하면 안 되고,
     그 판단은 화면이 한다.
     """
-    return Envelope(
+    return Envelope[WikiContent](
         content={
             "profile": [fact_payload(f) for f in await list_facts(db, user_id)],
             "theses": [thesis_payload(t) for t in await list_theses(db, user_id)],
@@ -47,7 +81,9 @@ async def get_wiki(user_id: CurrentUser, db: DbSession) -> Envelope[dict]:
 
 
 @router.post("/theses")
-async def create_thesis(body: ThesisIn, user_id: CurrentUser, db: DbSession) -> Envelope[dict]:
+async def create_thesis(
+    body: ThesisIn, user_id: CurrentUser, db: DbSession
+) -> Envelope[WikiThesisOut]:
     """새 논지를 남긴다. 같은 종목의 이전 논지는 실패가 아니라 종료 처리된다."""
     thesis = await record_thesis(
         db,
@@ -58,13 +94,13 @@ async def create_thesis(body: ThesisIn, user_id: CurrentUser, db: DbSession) -> 
         linked_trade_id=body.linked_trade_id,
     )
     await db.commit()
-    return Envelope(content=thesis_payload(thesis))
+    return Envelope[WikiThesisOut](content=thesis_payload(thesis))
 
 
 @router.put("/theses/{ticker}")
 async def update_thesis(
     ticker: str, body: ThesisIn, user_id: CurrentUser, db: DbSession
-) -> Envelope[dict]:
+) -> Envelope[WikiThesisOut]:
     """활성 논지 수정. 경로의 ticker가 기준이다(본문 값은 무시한다)."""
     thesis = await update_active_thesis(
         db,
@@ -75,12 +111,16 @@ async def update_thesis(
         linked_trade_id=body.linked_trade_id,
     )
     await db.commit()
-    return Envelope(content=thesis_payload(thesis))
+    return Envelope[WikiThesisOut](content=thesis_payload(thesis))
 
 
 @router.delete("/facts/{fact_id}")
-async def delete_fact(fact_id: str, user_id: CurrentUser, db: DbSession) -> Envelope[dict]:
+async def delete_fact(
+    fact_id: str, user_id: CurrentUser, db: DbSession
+) -> Envelope[DeletedFactContent]:
     """소프트 삭제. 행은 남고 읽기 경로에서만 사라진다."""
     fact = await soft_delete_fact(db, user_id, fact_id)
     await db.commit()
-    return Envelope(content={"id": str(fact.id), "deleted_at": fact.deleted_at})
+    return Envelope[DeletedFactContent](
+        content={"id": str(fact.id), "deleted_at": fact.deleted_at}
+    )

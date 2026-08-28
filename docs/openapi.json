@@ -932,6 +932,15 @@
         "title": "CitationType",
         "type": "string"
       },
+      "Confidence": {
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "title": "Confidence",
+        "type": "string"
+      },
       "DataAsOf": {
         "description": "데이터 원천별 기준 시각. UI에 반드시 노출한다.\n\n시세는 지연될 수 있으므로 생성 시각과 별도로 관리한다.",
         "properties": {
@@ -997,6 +1006,26 @@
           }
         },
         "title": "DataAsOf",
+        "type": "object"
+      },
+      "DeletedFactContent": {
+        "additionalProperties": false,
+        "properties": {
+          "deleted_at": {
+            "format": "date-time",
+            "title": "Deleted At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "deleted_at"
+        ],
+        "title": "DeletedFactContent",
         "type": "object"
       },
       "DiagnosisContent": {
@@ -1457,6 +1486,50 @@
         "title": "Envelope[ChatContent]",
         "type": "object"
       },
+      "Envelope_DeletedFactContent_": {
+        "properties": {
+          "cached": {
+            "default": false,
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "content": {
+            "$ref": "#/components/schemas/DeletedFactContent"
+          },
+          "data_as_of": {
+            "$ref": "#/components/schemas/DataAsOf"
+          },
+          "disclaimer": {
+            "title": "Disclaimer",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "Envelope[DeletedFactContent]",
+        "type": "object"
+      },
       "Envelope_DiagnosisContent_": {
         "properties": {
           "cached": {
@@ -1499,6 +1572,50 @@
           "content"
         ],
         "title": "Envelope[DiagnosisContent]",
+        "type": "object"
+      },
+      "Envelope_FeedbackContent_": {
+        "properties": {
+          "cached": {
+            "default": false,
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "content": {
+            "$ref": "#/components/schemas/FeedbackContent"
+          },
+          "data_as_of": {
+            "$ref": "#/components/schemas/DataAsOf"
+          },
+          "disclaimer": {
+            "title": "Disclaimer",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "Envelope[FeedbackContent]",
         "type": "object"
       },
       "Envelope_PreviewContent_": {
@@ -1545,7 +1662,7 @@
         "title": "Envelope[PreviewContent]",
         "type": "object"
       },
-      "Envelope_dict_": {
+      "Envelope_WikiContent_": {
         "properties": {
           "cached": {
             "default": false,
@@ -1560,9 +1677,7 @@
             "type": "array"
           },
           "content": {
-            "additionalProperties": true,
-            "title": "Content",
-            "type": "object"
+            "$ref": "#/components/schemas/WikiContent"
           },
           "data_as_of": {
             "$ref": "#/components/schemas/DataAsOf"
@@ -1588,7 +1703,66 @@
         "required": [
           "content"
         ],
-        "title": "Envelope[dict]",
+        "title": "Envelope[WikiContent]",
+        "type": "object"
+      },
+      "Envelope_WikiThesisOut_": {
+        "properties": {
+          "cached": {
+            "default": false,
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "content": {
+            "$ref": "#/components/schemas/WikiThesisOut"
+          },
+          "data_as_of": {
+            "$ref": "#/components/schemas/DataAsOf"
+          },
+          "disclaimer": {
+            "title": "Disclaimer",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "Envelope[WikiThesisOut]",
+        "type": "object"
+      },
+      "FeedbackContent": {
+        "additionalProperties": false,
+        "properties": {
+          "recorded": {
+            "const": true,
+            "title": "Recorded",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "recorded"
+        ],
+        "title": "FeedbackContent",
         "type": "object"
       },
       "FeedbackIn": {
@@ -2370,6 +2544,14 @@
         "title": "ThesisRecord",
         "type": "object"
       },
+      "ThesisStatus": {
+        "enum": [
+          "active",
+          "closed"
+        ],
+        "title": "ThesisStatus",
+        "type": "string"
+      },
       "Unit": {
         "description": "비율은 항상 0~1 소수로 전달한다. 백분율 변환은 표시 단계의 몫이다.",
         "enum": [
@@ -2420,6 +2602,144 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "WikiContent": {
+        "additionalProperties": false,
+        "properties": {
+          "profile": {
+            "items": {
+              "$ref": "#/components/schemas/WikiFactOut"
+            },
+            "title": "Profile",
+            "type": "array"
+          },
+          "theses": {
+            "items": {
+              "$ref": "#/components/schemas/WikiThesisOut"
+            },
+            "title": "Theses",
+            "type": "array"
+          }
+        },
+        "required": [
+          "profile",
+          "theses"
+        ],
+        "title": "WikiContent",
+        "type": "object"
+      },
+      "WikiFactOut": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "confidence": {
+            "$ref": "#/components/schemas/Confidence"
+          },
+          "editable": {
+            "title": "Editable",
+            "type": "boolean"
+          },
+          "evidence": {
+            "additionalProperties": true,
+            "title": "Evidence",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/WikiSource"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "source",
+          "confidence",
+          "as_of",
+          "evidence",
+          "editable"
+        ],
+        "title": "WikiFactOut",
+        "type": "object"
+      },
+      "WikiSource": {
+        "description": "AI_INFERRED 항목은 단정할 수 없다. 질문형 어투만 허용한다.\n\n응답 정책 §4.2 참조.",
+        "enum": [
+          "user_stated",
+          "derived_from_trades",
+          "ai_inferred"
+        ],
+        "title": "WikiSource",
+        "type": "string"
+      },
+      "WikiThesisOut": {
+        "additionalProperties": false,
+        "properties": {
+          "horizon": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThesisHorizon"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "linked_trade_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Trade Id"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/WikiSource"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ThesisStatus"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "ticker": {
+            "title": "Ticker",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ticker",
+          "text",
+          "source",
+          "status",
+          "recorded_at"
+        ],
+        "title": "WikiThesisOut",
         "type": "object"
       }
     },
@@ -2556,7 +2876,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope_dict_"
+                  "$ref": "#/components/schemas/Envelope_FeedbackContent_"
                 }
               }
             },
@@ -2756,7 +3076,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope_dict_"
+                  "$ref": "#/components/schemas/Envelope_WikiContent_"
                 }
               }
             },
@@ -2799,7 +3119,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope_dict_"
+                  "$ref": "#/components/schemas/Envelope_DeletedFactContent_"
                 }
               }
             },
@@ -2841,7 +3161,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope_dict_"
+                  "$ref": "#/components/schemas/Envelope_WikiThesisOut_"
                 }
               }
             },
@@ -2894,7 +3214,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope_dict_"
+                  "$ref": "#/components/schemas/Envelope_WikiThesisOut_"
                 }
               }
             },

@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -19,7 +21,7 @@ from app.api.deps import CurrentUser, DbSession
 from app.core.enums import FeedbackRating, FeedbackReason
 from app.core.errors import InvalidRequest
 from app.core.models import AIFeedback, AIResponse
-from app.core.schemas import Envelope
+from app.core.schemas import ContentModel, Envelope
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 
@@ -31,10 +33,14 @@ class FeedbackIn(BaseModel):
     comment: str | None = Field(default=None, max_length=1000)
 
 
+class FeedbackContent(ContentModel):
+    recorded: Literal[True]
+
+
 @router.post("")
 async def submit_feedback(
     body: FeedbackIn, user_id: CurrentUser, db: DbSession
-) -> Envelope[dict]:
+) -> Envelope[FeedbackContent]:
     """평가를 기록한다.
 
     남의 응답에 평가를 달 수 없도록 `user_id`까지 함께 대조한다. 존재하지 않는
@@ -59,4 +65,4 @@ async def submit_feedback(
     row.comment = body.comment
     await db.commit()
 
-    return Envelope[dict](content={"recorded": True})
+    return Envelope[FeedbackContent](content={"recorded": True})
