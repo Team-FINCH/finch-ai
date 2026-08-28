@@ -91,7 +91,9 @@
           "challenging": {
             "anyOf": [
               {
-                "items": {},
+                "items": {
+                  "$ref": "#/components/schemas/ThesisEvidence"
+                },
                 "type": "array"
               },
               {
@@ -122,7 +124,9 @@
           "supporting": {
             "anyOf": [
               {
-                "items": {},
+                "items": {
+                  "$ref": "#/components/schemas/ThesisEvidence"
+                },
                 "type": "array"
               },
               {
@@ -2466,6 +2470,35 @@
           "segments"
         ],
         "title": "ThesisConflict",
+        "type": "object"
+      },
+      "ThesisEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "citation_id": {
+            "title": "Citation Id",
+            "type": "string"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "citation_id",
+          "title",
+          "source",
+          "rationale"
+        ],
+        "title": "ThesisEvidence",
         "type": "object"
       },
       "ThesisHorizon": {

@@ -41,7 +41,9 @@ log = logging.getLogger("app.llm.generate")
 
 __all__ = [
     "NARRATIVE_SCHEMA",
+    "THESIS_NARRATIVE_SCHEMA",
     "MAX_ATTEMPTS",
+    "ThesisEvidence",
     "SectionOutcome",
     "load_prompt",
     "build_system",
@@ -66,6 +68,31 @@ NARRATIVE_SCHEMA: dict[str, Any] = {
         "used_citations": {"type": "array", "items": {"type": "string"}},
     },
     "required": ["narrative", "used_placeholders", "used_citations"],
+    "additionalProperties": False,
+}
+
+THESIS_NARRATIVE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        **NARRATIVE_SCHEMA["properties"],
+        "evidence_classification": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "citation_id": {"type": "string"},
+                    "stance": {
+                        "type": "string",
+                        "enum": ["supporting", "challenging"],
+                    },
+                    "rationale": {"type": "string"},
+                },
+                "required": ["citation_id", "stance", "rationale"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": [*NARRATIVE_SCHEMA["required"], "evidence_classification"],
     "additionalProperties": False,
 }
 
@@ -269,6 +296,13 @@ def _regeneration_note(reasons: Sequence[str]) -> str:
 
 # ── 본체 ─────────────────────────────────────────────────
 @dataclass(frozen=True, slots=True)
+class ThesisEvidence:
+    citation_id: str
+    stance: str
+    rationale: str
+
+
+@dataclass(frozen=True, slots=True)
 class SectionOutcome:
     """섹션 하나의 생성 결과. 실패해도 예외를 던지지 않는다.
 
@@ -283,6 +317,48 @@ class SectionOutcome:
     blocked: bool = False
     cache_read_tokens: int = 0
     citations: tuple[Citation, ...] = field(default=())
+    thesis_evidence: tuple[ThesisEvidence, ...] = field(default=())
+
+
+def _thesis_evidence(
+    payload: Mapping[str, Any], available_citations: Sequence[str]
+) -> tuple[tuple[ThesisEvidence, ...], tuple[str, ...]]:
+    raw = payload.get("evidence_classification")
+    if not isinstance(raw, list):
+        return (), ("evidence_classification은 배열이어야 한다",)
+
+    available = set(available_citations)
+    seen: set[str] = set()
+    evidence: list[ThesisEvidence] = []
+    reasons: list[str] = []
+    for item in raw:
+        if not isinstance(item, Mapping):
+            reasons.append("evidence_classification 원소는 객체여야 한다")
+            continue
+        citation_id = item.get("citation_id")
+        stance = item.get("stance")
+        rationale = item.get("rationale")
+        if not isinstance(citation_id, str) or citation_id not in available:
+            reasons.append(f"사용할 수 없는 논지 근거 id: {citation_id!r}")
+            continue
+        if citation_id in seen:
+            reasons.append(f"논지 근거 id가 중복되었다: {citation_id}")
+            continue
+        if stance not in {"supporting", "challenging"}:
+            reasons.append(f"알 수 없는 논지 근거 방향: {stance!r}")
+            continue
+        if not isinstance(rationale, str) or not rationale.strip():
+            reasons.append(f"논지 근거 설명이 비어 있다: {citation_id}")
+            continue
+        seen.add(citation_id)
+        evidence.append(
+            ThesisEvidence(
+                citation_id=citation_id,
+                stance=stance,
+                rationale=rationale.strip(),
+            )
+        )
+    return tuple(evidence), tuple(reasons)
 
 
 async def generate_section(
@@ -315,6 +391,15 @@ async def generate_section(
         now=now,
         request=request,
     )
+    if feature is Feature.THESIS_CHECK:
+        user_turn += (
+            "\n\n[논지 근거 분류]\n"
+            "참고 자료가 사용자의 투자 논지를 뒷받침하면 supporting, "
+            "반박하거나 약화하면 challenging으로 분류하십시오. "
+            "중립이거나 관련 없는 자료는 배열에 넣지 마십시오. "
+            "citation_id는 제공된 근거 id만 사용하고 rationale에는 자료가 논지와 "
+            "어떻게 연결되는지 수치 없이 한 문장으로 설명하십시오."
+        )
 
     reasons: tuple[str, ...] = ()
     cache_read = 0
@@ -324,7 +409,11 @@ async def generate_section(
         result = await client.generate(
             system=build_system(prompt),
             user=user_turn if not feedback else f"{user_turn}\n\n{feedback}",
-            schema=NARRATIVE_SCHEMA,
+            schema=(
+                THESIS_NARRATIVE_SCHEMA
+                if feature is Feature.THESIS_CHECK
+                else NARRATIVE_SCHEMA
+            ),
             effort=effort,
         )
         cache_read = result.cache_read_tokens
@@ -346,16 +435,24 @@ async def generate_section(
             ),
         )
 
-        if report.passed:
+        thesis_evidence: tuple[ThesisEvidence, ...] = ()
+        evidence_reasons: tuple[str, ...] = ()
+        if feature is Feature.THESIS_CHECK:
+            thesis_evidence, evidence_reasons = _thesis_evidence(
+                result.payload, citation_ids
+            )
+
+        if report.passed and not evidence_reasons:
             return SectionOutcome(
                 key=key,
                 section=Section.from_segments(segments, title=title),
                 attempts=attempt,
                 cache_read_tokens=cache_read,
                 citations=tuple(citations),
+                thesis_evidence=thesis_evidence,
             )
 
-        reasons = report.reasons
+        reasons = (*report.reasons, *evidence_reasons)
         if report.disposition is Disposition.BLOCK:
             # 값이 어긋났다는 것은 파이프라인 고장이다. 다시 만들면 위험만 커진다.
             log.error("섹션 %s 차단 · %s", key, "; ".join(reasons))

@@ -42,13 +42,24 @@ class FakeClient:
             "동일 업황 노출이 겹칩니다. 분산 효과는 제한적입니다. "
             "업황 지표를 함께 확인하십시오."
         )
-        return LlmResult(
-            payload={
-                "narrative": narrative,
-                "used_placeholders": ["weight"] if uses_weight else [],
-                "used_citations": [],
-            }
-        )
+        payload = {
+            "narrative": narrative,
+            "used_placeholders": ["weight"] if uses_weight else [],
+            "used_citations": [],
+        }
+        if "evidence_classification" in kwargs["schema"]["properties"]:
+            payload["evidence_classification"] = (
+                [
+                    {
+                        "citation_id": "cit_1",
+                        "stance": "supporting",
+                        "rationale": "HBM 사업 확대가 기록된 투자 이유를 뒷받침합니다.",
+                    }
+                ]
+                if "[^cit_1]" in kwargs["user"]
+                else []
+            )
+        return LlmResult(payload=payload)
 
 
 class FeedbackSession:
@@ -174,6 +185,45 @@ def test_논지가_있으면_기록을_함께_돌려준다(client, monkeypatch):
     assert section["supporting"] == []
     # 논지 원문이 프롬프트에 실려야 대조가 성립한다.
     assert "HBM 구조적 성장에 베팅" in client.llm.calls[0]["user"]
+
+
+def test_논지와_관련된_검색_근거를_방향별로_분류한다(client, monkeypatch):
+    class Thesis:
+        text = "HBM 구조적 성장에 베팅"
+        recorded_at = datetime(2026, 3, 11, 10, 22)
+        source = "user_stated"
+
+    async def _thesis(*_: Any, **__: Any):
+        return Thesis()
+
+    async def _hits(*_: Any, **__: Any) -> list[dict]:
+        return [
+            {
+                "text": "HBM 사업 매출이 확대되었다",
+                "ticker": "005930",
+                "title": "분기보고서",
+                "source": "DART",
+                "published_at": datetime(2026, 8, 14, 16, 12),
+                "similarity": 0.91,
+            }
+        ]
+
+    monkeypatch.setattr("app.api.routes.stocks.get_active_thesis", _thesis)
+    monkeypatch.setattr("app.api.routes.stocks.search", _hits)
+
+    section = _post(client, {"sections": ["thesis_check"]}).json()["content"]["sections"][
+        "thesis_check"
+    ]
+
+    assert section["supporting"] == [
+        {
+            "citation_id": "cit_1",
+            "title": "분기보고서",
+            "source": "DART",
+            "rationale": "HBM 사업 확대가 기록된 투자 이유를 뒷받침합니다.",
+        }
+    ]
+    assert section["challenging"] == []
 
 
 # ── 봉투와 근거 ──────────────────────────────────────────

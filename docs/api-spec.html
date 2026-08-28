@@ -836,7 +836,14 @@
         "recorded_at": "2026-03-11T10:22:00+09:00",
         "source": "user_stated"
       },
-      "supporting": [ ],
+      "supporting": [
+        {
+          "citation_id": "cit_1",
+          "title": "분기보고서",
+          "source": "DART",
+          "rationale": "HBM 사업 확대가 기록한 성장 논지를 뒷받침합니다."
+        }
+      ],
       "challenging": [ ]
     },
     "next_events": {
@@ -863,11 +870,12 @@
         </table>
       </div>
       <div class="rule-box warn">
-        <span class="label">아직 비어 있는 자리</span>
+        <span class="label">근거 분류와 아직 비어 있는 자리</span>
         <p>
-          <code>thesis_check.supporting</code>·<code>challenging</code>과 <code>next_events.events</code>는
-          <strong>키는 있으나 현재 구현에서 항상 빈 배열</strong>이다. 근거를 지지·반박으로 가르는 추출 패스와 일정 캘린더 원천이 아직 없다.
-          서술만으로도 화면이 성립하므로 빈 배열로 두고, 원천이 붙을 때 채운다. 프론트는 <strong>이 배열이 비어 있는 것을 정상으로</strong> 다뤄야 한다.
+          <code>thesis_check.supporting</code>·<code>challenging</code>은 검색된 공시·뉴스가 사용자의 논지를
+          뒷받침하는지 약화하는지 분류한 결과다. 각 항목은 최상위 <code>citations</code>의 id와 제목·출처,
+          논지와 연결되는 이유를 담는다. 중립이거나 관련 없는 자료는 넣지 않으므로 두 배열이 비어 있어도 정상이다.
+          <code>next_events.events</code>는 일정 원천이 아직 없어 항상 빈 배열이다.
         </p>
       </div>
 
@@ -1634,7 +1642,7 @@
             <tr><td>캐시 (<a href="#errors">§2.6</a> TTL 표 · <a href="#ep-analysis">§3</a> 종목 단위 캐시)</td><td>캐시 계층 없음</td><td>봉투와 모든 Section의 <code>cached</code>가 항상 <code>false</code>, <code>cached_at</code>이 <code>null</code></td></tr>
             <tr><td>호출 한도 (<a href="#errors">§2.6</a>)</td><td><code>RATE_LIMITED</code>는 정의돼 있으나 세는 곳이 없음</td><td>429가 나가지 않는다</td></tr>
             <tr><td>브리핑 배치 생성</td><td>조회 시점에 생성</td><td><code>status</code>가 <code>ready</code> 아니면 <code>empty</code>. <code>generating</code>은 나오지 않는다</td></tr>
-            <tr><td>논지 근거 분류 · 일정 캘린더</td><td>추출 패스와 원천 없음</td><td><code>thesis_check.supporting</code>·<code>challenging</code>, <code>next_events.events</code>가 항상 빈 배열</td></tr>
+            <tr><td>일정 캘린더</td><td>일정 원천 없음</td><td><code>next_events.events</code>가 항상 빈 배열</td></tr>
             <tr><td>인용 원문 (<a href="#ep-briefing">§8</a>)</td><td>문서를 조회하지 않음</td><td><code>items[].citations</code>와 봉투 <code>citations</code>가 항상 빈 배열</td></tr>
             <tr><td><code>benchmark</code> 선택 (<a href="#ep-attribution">§6</a>)</td><td>요청 필드를 받기만 하고 쓰지 않음</td><td>어떤 값을 보내도 결과가 같다</td></tr>
           </tbody>

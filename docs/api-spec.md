@@ -300,7 +300,14 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
         "recorded_at": "2026-03-11T10:22:00+09:00",
         "source": "user_stated"
       },
-      "supporting": [ ],
+      "supporting": [
+        {
+          "citation_id": "cit_1",
+          "title": "분기보고서",
+          "source": "DART",
+          "rationale": "HBM 사업 확대가 기록한 성장 논지를 뒷받침합니다."
+        }
+      ],
       "challenging": [ ]
     },
     "next_events": {
@@ -324,8 +331,8 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 | `next_events` | Section 다섯 키에 `events`가 더 붙는다 |
 | `cached` · `cached_at` | 캐시 계층이 아직 없어 항상 `false` / `null` |
 
-> **아직 비어 있는 자리**
-> `thesis_check.supporting`·`challenging`과 `next_events.events`는 **키는 있으나 현재 구현에서 항상 빈 배열**이다. 근거를 지지·반박으로 가르는 추출 패스와 일정 캘린더 원천이 아직 없다. 서술만으로도 화면이 성립하므로 빈 배열로 두고, 원천이 붙을 때 채운다. 프론트는 **이 배열이 비어 있는 것을 정상으로** 다뤄야 한다.
+> **근거 분류와 아직 비어 있는 자리**
+> `thesis_check.supporting`·`challenging`은 검색된 공시·뉴스가 사용자의 논지를 뒷받침하는지 약화하는지 분류한 결과다. 각 항목은 최상위 `citations`의 id와 제목·출처, 논지와 연결되는 이유를 담는다. 중립이거나 관련 없는 자료는 넣지 않으므로 두 배열이 비어 있어도 정상이다. `next_events.events`는 일정 원천이 아직 없어 항상 빈 배열이다.
 
 > **비용 설계**
 > `current`·`changes`·`attention`·`risks`·`next_events`는 사용자와 무관하므로 **종목 단위로 캐시**한다(TTL 6시간). `my_impact`·`thesis_check`만 사용자별로 생성한다. 이 분리가 없으면 인기 종목에서 동일 분석을 수천 번 재생성한다. **아직 구현하지 않은 설계다** — 현재 동작은 [§14](#sources)를 보라.
@@ -951,7 +958,7 @@ Event Ranking | `/portfolio/attribution`
 | 캐시 ([§2.6](#errors) TTL 표 · [§3](#ep-analysis) 종목 단위 캐시) | 캐시 계층 없음 | 봉투와 모든 Section의 `cached`가 항상 `false`, `cached_at`이 `null` |
 | 호출 한도 ([§2.6](#errors)) | `RATE_LIMITED`는 정의돼 있으나 세는 곳이 없음 | 429가 나가지 않는다 |
 | 브리핑 배치 생성 | 조회 시점에 생성 | `status`가 `ready` 아니면 `empty`. `generating`은 나오지 않는다 |
-| 논지 근거 분류 · 일정 캘린더 | 추출 패스와 원천 없음 | `thesis_check.supporting`·`challenging`, `next_events.events`가 항상 빈 배열 |
+| 일정 캘린더 | 일정 원천 없음 | `next_events.events`가 항상 빈 배열 |
 | 인용 원문 ([§8](#ep-briefing)) | 문서를 조회하지 않음 | `items[].citations`와 봉투 `citations`가 항상 빈 배열 |
 | `benchmark` 선택 ([§6](#ep-attribution)) | 요청 필드를 받기만 하고 쓰지 않음 | 어떤 값을 보내도 결과가 같다 |
 

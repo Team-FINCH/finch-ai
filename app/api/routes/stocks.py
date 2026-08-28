@@ -88,6 +88,13 @@ class ThesisRecord(BaseModel):
     source: str
 
 
+class ThesisEvidence(ContentModel):
+    citation_id: str
+    title: str
+    source: str
+    rationale: str
+
+
 class AnalysisSection(ContentModel):
     title: str | None = None
     text: str
@@ -95,8 +102,8 @@ class AnalysisSection(ContentModel):
     cached: bool = False
     cached_at: datetime | None = None
     thesis: ThesisRecord | None = None
-    supporting: list[Any] | None = None
-    challenging: list[Any] | None = None
+    supporting: list[ThesisEvidence] | None = None
+    challenging: list[ThesisEvidence] | None = None
     events: list[Any] | None = None
 
 
@@ -227,6 +234,7 @@ async def create_analysis(
     outcomes: list[SectionOutcome] = list(await asyncio.gather(*tasks.values()))
 
     sections: dict[str, Any] = dict.fromkeys(requested)
+    outcomes_by_key = {outcome.key: outcome for outcome in outcomes}
     for outcome in outcomes:
         if outcome.section is None:
             log.warning("섹션 %s 생성 실패 · %s", outcome.key, "; ".join(outcome.reasons))
@@ -234,16 +242,29 @@ async def create_analysis(
         sections[outcome.key] = outcome.section.model_dump(mode="json")
 
     if "thesis_check" in sections and sections["thesis_check"] and thesis is not None:
+        evidence_by_id = {citation.id: citation for citation in citations}
+        classified = outcomes_by_key["thesis_check"].thesis_evidence
+
+        def _evidence_payload(stance: str) -> list[dict[str, str]]:
+            return [
+                {
+                    "citation_id": item.citation_id,
+                    "title": evidence_by_id[item.citation_id].title,
+                    "source": evidence_by_id[item.citation_id].source,
+                    "rationale": item.rationale,
+                }
+                for item in classified
+                if item.stance == stance
+            ]
+
         sections["thesis_check"] |= {
             "thesis": {
                 "text": thesis.text,
                 "recorded_at": thesis.recorded_at.isoformat(),
                 "source": thesis.source,
             },
-            # ponytail: supporting/challenging은 별도 추출 패스가 필요하다.
-            # 서술만으로도 화면이 성립하므로, 근거 분류 엔진이 붙을 때 채운다.
-            "supporting": [],
-            "challenging": [],
+            "supporting": _evidence_payload("supporting"),
+            "challenging": _evidence_payload("challenging"),
         }
     if "next_events" in sections and sections["next_events"]:
         # ponytail: 일정 캘린더 원천이 아직 없다. 수집기가 붙으면 여기를 채운다.

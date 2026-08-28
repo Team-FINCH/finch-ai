@@ -10,12 +10,13 @@ from typing import Any
 
 import pytest
 
-from app.core.enums import CitationType, MetricSource, SegmentType, Unit
+from app.core.enums import CitationType, MetricSource, SegmentType, Unit, WikiSource
 from app.core.errors import InsufficientData
 from app.core.schemas import Citation, Segment
 from app.llm.client import LlmResult, NullLlmClient, _to_result
 from app.llm.generate import (
     NARRATIVE_SCHEMA,
+    THESIS_NARRATIVE_SCHEMA,
     build_system,
     build_user_turn,
     citations_from_hits,
@@ -24,7 +25,7 @@ from app.llm.generate import (
     ratio_segment,
     segments_from_narrative,
 )
-from app.llm.guard import CheckName, CheckResult, GuardReport, Violation
+from app.llm.guard import CheckName, CheckResult, Feature, GuardReport, Violation
 
 
 class FakeClient:
@@ -57,6 +58,26 @@ def _ok_payload() -> dict[str, Any]:
         ),
         "used_placeholders": ["weight"],
         "used_citations": ["cit_1"],
+    }
+
+
+def _thesis_payload(citation_id: str = "cit_1") -> dict[str, Any]:
+    return {
+        "narrative": (
+            "기록한 논지는 HBM 성장입니다[^cit_1]. "
+            "확인된 자료는 사업 확대를 보여 줍니다. "
+            "현재 자료는 논지를 뒷받침합니다. "
+            "다음 공시에서도 같은 흐름을 확인해야 합니다."
+        ),
+        "used_placeholders": [],
+        "used_citations": ["cit_1"],
+        "evidence_classification": [
+            {
+                "citation_id": citation_id,
+                "stance": "supporting",
+                "rationale": "사업 확대가 성장 논지를 뒷받침합니다.",
+            }
+        ],
     }
 
 
@@ -159,6 +180,41 @@ async def test_스키마와_호출_파라미터가_넘어간다():
     assert call["schema"] == NARRATIVE_SCHEMA
     assert call["effort"] == "high"
     assert "current 섹션을 작성하십시오." in call["user"]
+
+
+async def test_논지_점검은_근거_방향을_구조화해_받는다():
+    client = FakeClient(_thesis_payload())
+
+    outcome = await generate_section(
+        "thesis_check",
+        client=client,
+        feature=Feature.THESIS_CHECK,
+        citations=_citations(),
+        wiki="HBM 구조적 성장",
+        wiki_source=WikiSource.USER_STATED,
+    )
+
+    assert client.calls[0]["schema"] == THESIS_NARRATIVE_SCHEMA
+    assert "중립이거나 관련 없는 자료는 배열에 넣지" in client.calls[0]["user"]
+    assert outcome.thesis_evidence[0].citation_id == "cit_1"
+    assert outcome.thesis_evidence[0].stance == "supporting"
+
+
+async def test_논지_점검의_존재하지_않는_근거_id는_재생성한다():
+    client = FakeClient(_thesis_payload("cit_9"), _thesis_payload())
+
+    outcome = await generate_section(
+        "thesis_check",
+        client=client,
+        feature=Feature.THESIS_CHECK,
+        citations=_citations(),
+        wiki="HBM 구조적 성장",
+        wiki_source=WikiSource.USER_STATED,
+    )
+
+    assert outcome.section is not None
+    assert outcome.attempts == 2
+    assert "사용할 수 없는 논지 근거 id" in client.calls[1]["user"]
 
 
 async def test_위반하면_사유를_붙여_재생성한다():
