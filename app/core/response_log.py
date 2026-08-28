@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.enums import RiskLevel
 from app.core.models import AIResponse
 from app.core.schemas import Envelope
+from app.llm.versioning import prompt_version_for
 
 log = logging.getLogger("app.core.response_log")
 
@@ -51,7 +52,7 @@ async def record(
         request_id=envelope.request_id,
         user_id=user_id,
         endpoint=endpoint,
-        prompt_version=prompt_version,
+        prompt_version=prompt_version or prompt_version_for(endpoint),
         model=envelope.model,
         effort=effort,
         cached=envelope.cached,

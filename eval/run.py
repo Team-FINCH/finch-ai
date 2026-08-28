@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -191,6 +192,11 @@ def main() -> int:
     p.add_argument("--metrics", action="store_true", help="지표 자체 점검")
     p.add_argument("--top-k", type=int, default=5)
     p.add_argument("--list", action="store_true", help="평가셋 요약")
+    p.add_argument("--feedback", action="store_true", help="프롬프트 버전별 피드백 통계")
+    p.add_argument("--days", type=int, default=30, help="피드백 집계 기간 (기본 30일)")
+    p.add_argument("--json", action="store_true", help="피드백 통계를 JSON으로 출력")
+    p.add_argument("--baseline", help="비교할 이전 prompt_version")
+    p.add_argument("--candidate", help="비교할 새 prompt_version")
     a = p.parse_args()
 
     if a.list:
@@ -202,6 +208,28 @@ def main() -> int:
         return 0
     if a.metrics:
         return run_metrics_selfcheck()
+    if a.feedback:
+        from eval.feedback import (
+            aggregate,
+            as_dict,
+            comparisons,
+            load,
+            render,
+            render_comparisons,
+        )
+
+        stats = aggregate(asyncio.run(load(a.days)))
+        if bool(a.baseline) != bool(a.candidate):
+            p.error("--baseline과 --candidate는 함께 지정해야 한다")
+        if a.baseline and a.candidate:
+            print(render_comparisons(comparisons(stats, a.baseline, a.candidate)))
+            return 0
+        print(
+            json.dumps([as_dict(item) for item in stats], ensure_ascii=False, indent=2)
+            if a.json
+            else render(stats)
+        )
+        return 0
     if a.retrieval:
         return asyncio.run(run_retrieval(a.top_k))
     p.print_help()

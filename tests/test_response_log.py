@@ -58,6 +58,7 @@ async def test_봉투를_통째로_남긴다() -> None:
     (row,) = s.added
     assert row.request_id == env.request_id
     assert row.endpoint == "portfolio.diagnosis"
+    assert row.prompt_version.startswith("prompt_")
     assert row.payload["content"]["risk_level"] == "high"
     assert s.commits == 1
 
