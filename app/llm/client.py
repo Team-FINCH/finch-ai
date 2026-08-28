@@ -23,6 +23,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from app.core.config import settings
 from app.core.errors import InsufficientData, LLMTimeout
+from app.core.usage_limits import cancel_gms, reserve_gms, settle_gms
 
 log = logging.getLogger("app.llm.client")
 
@@ -171,9 +172,7 @@ class AnthropicClient:
         if self._client is None:
             import anthropic
 
-            self._client = anthropic.AsyncAnthropic(
-                api_key=self._key, timeout=self._timeout
-            )
+            self._client = anthropic.AsyncAnthropic(api_key=self._key, timeout=self._timeout)
         return self._client
 
     async def generate(
@@ -336,21 +335,28 @@ class GmsClient:
         effort: str = "high",
         max_tokens: int | None = None,
     ) -> LlmResult:
-        body = await self._post(
-            {
-                "model": self.model,
-                "messages": [
-                    {"role": "developer", "content": _system_text(system)},
-                    {"role": "user", "content": user},
-                ],
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": {"name": "narrative", "schema": schema, "strict": True},
-                },
-                "reasoning_effort": _EFFORT.get(effort, "medium"),
-                "max_completion_tokens": max_tokens or settings.llm_max_tokens,
-            }
-        )
+        reservation = await reserve_gms()
+        try:
+            body = await self._post(
+                {
+                    "model": self.model,
+                    "messages": [
+                        {"role": "developer", "content": _system_text(system)},
+                        {"role": "user", "content": user},
+                    ],
+                    "response_format": {
+                        "type": "json_schema",
+                        "json_schema": {"name": "narrative", "schema": schema, "strict": True},
+                    },
+                    "reasoning_effort": _EFFORT.get(effort, "medium"),
+                    "max_completion_tokens": max_tokens or settings.llm_max_tokens,
+                }
+            )
+        except Exception:
+            await cancel_gms(reservation)
+            raise
+        usage = _usage(body)
+        await settle_gms(reservation, **usage)
 
         text = body["choices"][0]["message"].get("content") or ""
         try:
@@ -361,11 +367,13 @@ class GmsClient:
         if not isinstance(payload, dict):
             payload = {}
 
-        usage = _usage(body)
         result = LlmResult(payload=payload, **usage)
         log.info(
             "llm 호출 · model=%s cache_read=%d in=%d out=%d",
-            self.model, result.cache_read_tokens, result.input_tokens, result.output_tokens,
+            self.model,
+            result.cache_read_tokens,
+            result.input_tokens,
+            result.output_tokens,
         )
         return result
 
@@ -377,31 +385,41 @@ class GmsClient:
         tools: list[dict[str, Any]],
         max_tokens: int | None = None,
     ) -> ToolTurn:
-        body = await self._post(
-            {
-                "model": self.model,
-                "messages": [{"role": "developer", "content": _system_text(system)}]
-                + _to_openai_messages(messages),
-                "tools": [
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": t["name"],
-                            "description": t.get("description", ""),
-                            "parameters": t["input_schema"],
-                        },
-                    }
-                    for t in tools
-                ],
-                "max_completion_tokens": max_tokens or settings.llm_max_tokens,
-            }
-        )
+        reservation = await reserve_gms()
+        try:
+            body = await self._post(
+                {
+                    "model": self.model,
+                    "messages": [{"role": "developer", "content": _system_text(system)}]
+                    + _to_openai_messages(messages),
+                    "tools": [
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": t["name"],
+                                "description": t.get("description", ""),
+                                "parameters": t["input_schema"],
+                            },
+                        }
+                        for t in tools
+                    ],
+                    "max_completion_tokens": max_tokens or settings.llm_max_tokens,
+                }
+            )
+        except Exception:
+            await cancel_gms(reservation)
+            raise
+        await settle_gms(reservation, **_usage(body))
 
         turn = _turn_from_openai(body)
         log.info(
             "llm 도구 턴 · model=%s stop=%s tools=%d cache_read=%d in=%d out=%d",
-            self.model, turn.stop_reason, len(turn.tool_uses),
-            turn.cache_read_tokens, turn.input_tokens, turn.output_tokens,
+            self.model,
+            turn.stop_reason,
+            len(turn.tool_uses),
+            turn.cache_read_tokens,
+            turn.input_tokens,
+            turn.output_tokens,
         )
         return turn
 
@@ -468,7 +486,9 @@ def _to_openai_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _usage(body: dict[str, Any]) -> dict[str, int]:
     u = body.get("usage") or {}
     return {
-        "cache_read_tokens": int((u.get("prompt_tokens_details") or {}).get("cached_tokens", 0) or 0),
+        "cache_read_tokens": int(
+            (u.get("prompt_tokens_details") or {}).get("cached_tokens", 0) or 0
+        ),
         "input_tokens": int(u.get("prompt_tokens", 0) or 0),
         "output_tokens": int(u.get("completion_tokens", 0) or 0),
     }
@@ -497,9 +517,7 @@ def _turn_from_openai(body: dict[str, Any]) -> ToolTurn:
             args = {}
         use = ToolUse(id=str(call.get("id") or ""), name=str(fn.get("name") or ""), input=args)
         uses.append(use)
-        content.append(
-            {"type": "tool_use", "id": use.id, "name": use.name, "input": use.input}
-        )
+        content.append({"type": "tool_use", "id": use.id, "name": use.name, "input": use.input})
 
     stop = "tool_use" if choice.get("finish_reason") == "tool_calls" else "end_turn"
     return ToolTurn(stop_reason=stop, content=content, tool_uses=tuple(uses), **_usage(body))

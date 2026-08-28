@@ -27,6 +27,7 @@ from app.core.config import settings
 from app.core.db import engine
 from app.core.errors import AppError, ErrorCode
 from app.core.schemas import ErrorResponse, new_request_id
+from app.core.usage_limits import UsageGuard
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ def create_app() -> FastAPI:
         description="국내 주식 전용. 수치는 엔진에서만 나오고 LLM은 설명만 생성한다.",
         lifespan=lifespan,
     )
+    app.state.usage_guard = UsageGuard()
 
     for module in (stocks, chat, portfolio, orders, briefing, wiki, feedback):
         app.include_router(module.router, prefix=API_PREFIX)
@@ -53,18 +55,23 @@ def create_app() -> FastAPI:
     @app.exception_handler(AppError)
     async def handle_app_error(_: Request, exc: AppError) -> JSONResponse:
         body = ErrorResponse(
-            code=exc.code, message=exc.message, detail=exc.detail,
+            code=exc.code,
+            message=exc.message,
+            detail=exc.detail,
             request_id=new_request_id(),
         )
+        headers = None
+        retry_after = exc.detail.get("retry_after_seconds")
+        if exc.code == ErrorCode.RATE_LIMITED and retry_after is not None:
+            headers = {"Retry-After": str(retry_after)}
         return JSONResponse(
             status_code=exc.status_code,
             content=body.model_dump(mode="json"),
+            headers=headers,
         )
 
     @app.exception_handler(RequestValidationError)
-    async def handle_validation_error(
-        _: Request, exc: RequestValidationError
-    ) -> JSONResponse:
+    async def handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
         body = ErrorResponse(
             code=ErrorCode.INVALID_REQUEST,
             message="요청 형식이 올바르지 않습니다.",

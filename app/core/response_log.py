@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.enums import RiskLevel
 from app.core.models import AIResponse
 from app.core.schemas import Envelope
+from app.core.usage_limits import usage_values
 from app.llm.versioning import prompt_version_for
 
 log = logging.getLogger("app.core.response_log")
@@ -37,9 +38,9 @@ async def record(
     endpoint: str,
     prompt_version: str | None = None,
     effort: str | None = None,
-    input_tokens: int = 0,
-    output_tokens: int = 0,
-    cache_read_tokens: int = 0,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    cache_read_tokens: int | None = None,
     latency_ms: int | None = None,
     guardrail_result: dict[str, Any] | None = None,
 ) -> None:
@@ -48,6 +49,7 @@ async def record(
     커밋까지 여기서 한다. 호출부가 이미 응답을 만들어 놓은 뒤라, 이 트랜잭션이
     호출부의 세션 상태를 물고 늘어지면 기록 실패가 응답 실패로 번진다.
     """
+    measured = usage_values()
     row = AIResponse(
         request_id=envelope.request_id,
         user_id=user_id,
@@ -56,9 +58,11 @@ async def record(
         model=envelope.model,
         effort=effort,
         cached=envelope.cached,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        cache_read_tokens=cache_read_tokens,
+        input_tokens=measured["input_tokens"] if input_tokens is None else input_tokens,
+        output_tokens=measured["output_tokens"] if output_tokens is None else output_tokens,
+        cache_read_tokens=(
+            measured["cache_read_tokens"] if cache_read_tokens is None else cache_read_tokens
+        ),
         latency_ms=latency_ms,
         guardrail_result=guardrail_result,
         payload=envelope.model_dump(mode="json"),

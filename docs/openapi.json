@@ -1340,6 +1340,13 @@
             "title": "Disclaimer",
             "type": "string"
           },
+          "freshness_warnings": {
+            "items": {
+              "$ref": "#/components/schemas/FreshnessWarning"
+            },
+            "title": "Freshness Warnings",
+            "type": "array"
+          },
           "generated_at": {
             "format": "date-time",
             "title": "Generated At",
@@ -1383,6 +1390,13 @@
           "disclaimer": {
             "title": "Disclaimer",
             "type": "string"
+          },
+          "freshness_warnings": {
+            "items": {
+              "$ref": "#/components/schemas/FreshnessWarning"
+            },
+            "title": "Freshness Warnings",
+            "type": "array"
           },
           "generated_at": {
             "format": "date-time",
@@ -1428,6 +1442,13 @@
             "title": "Disclaimer",
             "type": "string"
           },
+          "freshness_warnings": {
+            "items": {
+              "$ref": "#/components/schemas/FreshnessWarning"
+            },
+            "title": "Freshness Warnings",
+            "type": "array"
+          },
           "generated_at": {
             "format": "date-time",
             "title": "Generated At",
@@ -1471,6 +1492,13 @@
           "disclaimer": {
             "title": "Disclaimer",
             "type": "string"
+          },
+          "freshness_warnings": {
+            "items": {
+              "$ref": "#/components/schemas/FreshnessWarning"
+            },
+            "title": "Freshness Warnings",
+            "type": "array"
           },
           "generated_at": {
             "format": "date-time",
@@ -1516,6 +1544,13 @@
             "title": "Disclaimer",
             "type": "string"
           },
+          "freshness_warnings": {
+            "items": {
+              "$ref": "#/components/schemas/FreshnessWarning"
+            },
+            "title": "Freshness Warnings",
+            "type": "array"
+          },
           "generated_at": {
             "format": "date-time",
             "title": "Generated At",
@@ -1559,6 +1594,13 @@
           "disclaimer": {
             "title": "Disclaimer",
             "type": "string"
+          },
+          "freshness_warnings": {
+            "items": {
+              "$ref": "#/components/schemas/FreshnessWarning"
+            },
+            "title": "Freshness Warnings",
+            "type": "array"
           },
           "generated_at": {
             "format": "date-time",
@@ -1604,6 +1646,13 @@
             "title": "Disclaimer",
             "type": "string"
           },
+          "freshness_warnings": {
+            "items": {
+              "$ref": "#/components/schemas/FreshnessWarning"
+            },
+            "title": "Freshness Warnings",
+            "type": "array"
+          },
           "generated_at": {
             "format": "date-time",
             "title": "Generated At",
@@ -1647,6 +1696,13 @@
           "disclaimer": {
             "title": "Disclaimer",
             "type": "string"
+          },
+          "freshness_warnings": {
+            "items": {
+              "$ref": "#/components/schemas/FreshnessWarning"
+            },
+            "title": "Freshness Warnings",
+            "type": "array"
           },
           "generated_at": {
             "format": "date-time",
@@ -1692,6 +1748,13 @@
             "title": "Disclaimer",
             "type": "string"
           },
+          "freshness_warnings": {
+            "items": {
+              "$ref": "#/components/schemas/FreshnessWarning"
+            },
+            "title": "Freshness Warnings",
+            "type": "array"
+          },
           "generated_at": {
             "format": "date-time",
             "title": "Generated At",
@@ -1735,6 +1798,13 @@
           "disclaimer": {
             "title": "Disclaimer",
             "type": "string"
+          },
+          "freshness_warnings": {
+            "items": {
+              "$ref": "#/components/schemas/FreshnessWarning"
+            },
+            "title": "Freshness Warnings",
+            "type": "array"
           },
           "generated_at": {
             "format": "date-time",
@@ -1838,6 +1908,48 @@
         ],
         "title": "FeedbackReason",
         "type": "string"
+      },
+      "FreshnessWarning": {
+        "description": "사용자가 오래된 원천을 최신 정보로 오해하지 않게 하는 표시.",
+        "properties": {
+          "age_seconds": {
+            "title": "Age Seconds",
+            "type": "integer"
+          },
+          "data_as_of": {
+            "format": "date-time",
+            "title": "Data As Of",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "price",
+              "portfolio",
+              "filings",
+              "news",
+              "macro"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "threshold_seconds": {
+            "title": "Threshold Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source",
+          "data_as_of",
+          "age_seconds",
+          "threshold_seconds",
+          "message"
+        ],
+        "title": "FreshnessWarning",
+        "type": "object"
       },
       "HTTPValidationError": {
         "properties": {

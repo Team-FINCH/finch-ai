@@ -24,7 +24,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import CurrentUser, DbSession, UsageLimit
 from app.api.routes.portfolio import (
     _FINDING_TITLES,
     _as_datetime,
@@ -378,9 +378,7 @@ def _summary_values(
 
 
 # ── 위키 ──────────────────────────────────────────────────────────────────────
-async def _stated_context(
-    db: DbSession, user_id: str, tickers: set[str]
-) -> tuple[list[Any], str]:
+async def _stated_context(db: DbSession, user_id: str, tickers: set[str]) -> tuple[list[Any], str]:
     """사용자가 *직접 진술한* 항목만 고른다(§7).
 
     AI가 추론한 성향(`ai_inferred`)으로 주문에 이의를 제기하면 근거 없는 참견이 된다.
@@ -392,9 +390,7 @@ async def _stated_context(
         if thesis.source == WikiSource.USER_STATED and thesis.ticker in tickers
     ]
     facts = [
-        fact.text
-        for fact in await list_facts(db, user_id)
-        if fact.source == WikiSource.USER_STATED
+        fact.text for fact in await list_facts(db, user_id) if fact.source == WikiSource.USER_STATED
     ]
     return theses, "\n".join(f"- {text}" for text in facts)
 
@@ -402,7 +398,7 @@ async def _stated_context(
 # ── 라우터 ────────────────────────────────────────────────────────────────────
 @router.post("/preview")
 async def preview(
-    body: PreviewRequest, user_id: CurrentUser, db: DbSession
+    body: PreviewRequest, user_id: CurrentUser, db: DbSession, _usage: UsageLimit
 ) -> Envelope[PreviewContent]:
     """주문 체결을 가정하고 진단을 다시 돌려 차분을 돌려준다(§7).
 
@@ -526,9 +522,7 @@ async def preview(
                     "severity": finding.severity.value,
                     "title": _FINDING_TITLES.get(finding.id, finding.id),
                     "metric": finding.metric,
-                    "before": next(
-                        (f.value for f in before.findings if f.id == finding.id), None
-                    ),
+                    "before": next((f.value for f in before.findings if f.id == finding.id), None),
                     "after": finding.value,
                     "threshold": finding.threshold,
                     **_section_fields(sections.get(f"warning:{finding.id}")),
@@ -563,9 +557,7 @@ async def preview(
 # ── 요청 문구 ─────────────────────────────────────────────────────────────────
 def _summary_request(order_summary: Sequence[Mapping[str, Any]], raised: Sequence[Finding]) -> str:
     """요약이 참고할 엔진 판정. 경고 목록은 여기서만 알려주고 다시 고르지 않게 한다."""
-    lines = ", ".join(
-        f"{row['ticker']} {row['side']} {row['quantity']}주" for row in order_summary
-    )
+    lines = ", ".join(f"{row['ticker']} {row['side']} {row['quantity']}주" for row in order_summary)
     titles = ", ".join(_FINDING_TITLES.get(f.id, f.id) for f in raised) or "없음"
     return (
         f"{_SUMMARY_KEY} 항목을 작성하십시오. 점검 대상 주문: {lines}. "

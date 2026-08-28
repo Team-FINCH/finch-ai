@@ -488,6 +488,14 @@
         <span class="label">분리 원칙</span>
         <p><strong>AI 기능의 구현은 AI 파트가 전부 소유한다.</strong> 다른 파트에 계산이나 조립 로직을 요구하지 않고, 신규 화면 개발도 요청하지 않는다. 프론트는 완성된 응답을 그대로 출력하고, 백엔드는 기존 원장을 읽게 해줄 뿐이다. 이 원칙은 편의가 아니라 <strong>책임 소재</strong>의 문제다 — 숫자가 틀리거나 근거가 어긋났을 때 원인이 AI 파트 밖에 있으면 품질을 통제할 수 없다.</p>
       </div>
+      <p>
+        요청 한도는 <code>X-User-Id</code>와 엔드포인트별로 독립 집계한다. 초과하면
+        <code>detail.reason=request_rate_limit</code>, <code>Retry-After</code> 헤더와
+        대기 시간을 반환한다. 실제 GMS 호출 직전에는 사용자별 일일 토큰을 예약한다.
+        캐시가 응답을 대신하면 예약하지 않는다. 일일 예산을 넘으면
+        <code>detail.reason=daily_token_budget</code>으로 429를 반환한다. 기본 예산은
+        입력·출력 합계 500,000 토큰이며 환경 변수로 조정할 수 있다.
+      </p>
 
       <h4>확정 전제</h4>
       <div class="t-wrap">
@@ -578,6 +586,11 @@
   "cached": false,
   "content": { },
   "citations": [ ],
+  "freshness_warnings": [
+    { "source": "news", "data_as_of": "2026-08-19T06:00:00+09:00",
+      "age_seconds": 29531, "threshold_seconds": 21600,
+      "message": "뉴스 정보가 평소보다 오래되었습니다." }
+  ],
   "disclaimer": "본 정보는 투자 판단을 돕기 위한 참고 자료이며 투자 권유가 아닙니다."
 }</code></pre>
       <div class="t-wrap">
@@ -590,12 +603,13 @@
             <tr><td><code>cached</code></td><td>boolean</td><td>응답 전체 또는 일부가 캐시에서 왔는지. 종목 분석의 공통 섹션을 재사용하면 <code>true</code></td></tr>
             <tr><td><code>content</code></td><td>object</td><td>엔드포인트별 본문. 이 아래 §3–§8이 각각의 모양을 정의한다</td></tr>
             <tr><td><code>citations</code></td><td>array</td><td><a href="#citations">§2.4</a> 근거 목록. 근거를 싣지 않는 엔드포인트에서는 빈 배열</td></tr>
+            <tr><td><code>freshness_warnings</code></td><td>array</td><td>사용한 원천의 기준 시각이 허용 범위를 넘겼을 때만 표시하는 최신성 경고. 비어 있으면 경고 없음</td></tr>
             <tr><td><code>disclaimer</code></td><td>string</td><td>고지 문구. 하드코딩하지 말고 응답 값을 표시할 것 (규제 문구 변경 대응)</td></tr>
           </tbody>
         </table>
       </div>
       <p>
-        봉투의 여덟 키와 <code>data_as_of</code>의 다섯 키(<code>price · portfolio · filings · news · macro</code>)는
+        봉투의 아홉 키와 <code>data_as_of</code>의 다섯 키(<code>price · portfolio · filings · news · macro</code>)는
         <strong>항상 모두 실려 나온다.</strong> 그 응답이 어떤 원천을 읽지 않았으면 키가 빠지는 것이 아니라 값이 <code>null</code>이다.
         프론트는 키 존재 여부가 아니라 <code>null</code> 여부로 분기한다.
       </p>
@@ -1348,8 +1362,10 @@
         이때 <code>date</code>는 <code>null</code>일 수 있다(조회 시 <code>date</code>를 주지 않았고 기준 거래일도 못 잡은 경우).
       </p>
       <p>
-        <code>items[].citations</code>는 <strong>현재 구현에서 항상 빈 배열</strong>이다. 이 기능은 일정·시세에서 항목을 뽑을 뿐
-        문서를 조회하지 않아 인용할 원문이 없다. 봉투의 <code>citations</code>도 같은 이유로 비어 있다.
+        공시·뉴스·거시 이벤트가 <code>document_id</code>로 원문과 연결돼 있으면
+        <code>items[].citations</code>에 최상위 <code>citations</code>의 id를 넣는다. 여러 항목이 같은
+        문서를 가리키면 Citation 하나를 함께 쓴다. 보유 종목 등락·업종 변화처럼 문서에서 오지 않은 항목이나,
+        연결 문서가 삭제된 항목은 빈 배열이며 브리핑 생성 자체는 계속한다.
       </p>
 
       <div class="rule-box">
@@ -1649,8 +1665,6 @@
         <table>
           <thead><tr><th>약속</th><th>현재 동작</th><th>응답에서 보이는 모습</th></tr></thead>
           <tbody>
-            <tr><td>호출 한도 (<a href="#errors">§2.6</a>)</td><td><code>RATE_LIMITED</code>는 정의돼 있으나 세는 곳이 없음</td><td>429가 나가지 않는다</td></tr>
-            <tr><td>인용 원문 (<a href="#ep-briefing">§8</a>)</td><td>문서를 조회하지 않음</td><td><code>items[].citations</code>와 봉투 <code>citations</code>가 항상 빈 배열</td></tr>
             <tr><td><code>benchmark</code> 선택 (<a href="#ep-attribution">§6</a>)</td><td>요청 필드를 받기만 하고 쓰지 않음</td><td>어떤 값을 보내도 결과가 같다</td></tr>
           </tbody>
         </table>

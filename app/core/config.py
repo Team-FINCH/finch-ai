@@ -21,9 +21,7 @@ class Settings(BaseSettings):
     )
 
     # ── 저장소 ───────────────────────────────────────────
-    database_url: str = (
-        "postgresql+asyncpg://ai_invest:ai_invest@localhost:5432/ai_invest"
-    )
+    database_url: str = "postgresql+asyncpg://ai_invest:ai_invest@localhost:5432/ai_invest"
     db_echo: bool = False
 
     # ── LLM ──────────────────────────────────────────────
@@ -33,6 +31,28 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-5.4-mini"
     llm_max_tokens: int = 16_000
     llm_timeout_s: int = 30
+
+    # 사용자 요청은 분당 횟수와 일일 GMS 토큰 예산을 함께 제한한다. 토큰은 실제
+    # GMS 호출 직전에 예약하므로 캐시 응답은 일일 예산을 소비하지 않는다.
+    ai_rate_limit_window_s: int = 60
+    ai_rate_limit_stocks_per_minute: int = 10
+    ai_rate_limit_chat_per_minute: int = 20
+    ai_rate_limit_portfolio_per_minute: int = 10
+    ai_rate_limit_orders_per_minute: int = 30
+    ai_rate_limit_briefing_per_minute: int = 60
+    ai_daily_token_budget: int = 500_000
+    ai_gms_reservation_tokens: int = 20_000
+
+    # 데일리 브리핑 배치: 최초 시도를 포함한 횟수와 재시도 간 기본 대기 시간.
+    briefing_batch_attempts: int = 3
+    briefing_batch_backoff_s: float = 1.0
+
+    # 응답 데이터 기준 시각이 이보다 오래되면 freshness_warnings에 표시한다.
+    freshness_price_s: int = 20 * 60
+    freshness_portfolio_s: int = 15 * 60
+    freshness_filings_s: int = 24 * 60 * 60
+    freshness_news_s: int = 6 * 60 * 60
+    freshness_macro_s: int = 7 * 24 * 60 * 60
 
     # ── 임베딩 ───────────────────────────────────────────
     # DDL 시점에 벡터 차원이 고정되므로, 모델을 바꾸면 마이그레이션이 필요하다.

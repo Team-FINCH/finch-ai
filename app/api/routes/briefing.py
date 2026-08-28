@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from datetime import date as Date
 from datetime import datetime, time, timedelta
 from typing import Any
@@ -16,13 +17,13 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from sqlalchemy import or_, select
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import CurrentUser, DbSession, UsageLimit
 from app.core.adapters import Ledger, ledger_source
-from app.core.enums import BriefingStatus, MetricSource, RateSensitivity
+from app.core.enums import BriefingStatus, CitationType, MetricSource, RateSensitivity
 from app.core.errors import InsufficientData
-from app.core.models import AIResponse, Event
+from app.core.models import AIResponse, Document, Event
 from app.core.response_log import record
-from app.core.schemas import DataAsOf, Envelope, Segment, now_kst
+from app.core.schemas import Citation, DataAsOf, Envelope, Segment, now_kst
 from app.engines.attribution import EventRecord
 from app.engines.briefing import (
     Candidate,
@@ -93,7 +94,7 @@ async def _ledger(user_id: str) -> Ledger | None:
 # ── 라우터 ────────────────────────────────────────────────────────────────────
 @router.get("")
 async def get_briefing(
-    user_id: CurrentUser, db: DbSession, date: Date | None = None
+    user_id: CurrentUser, db: DbSession, _usage: UsageLimit, date: Date | None = None
 ) -> Envelope[BriefingContent]:
     """그날 알아야 할 일 최대 4건(§8).
 
@@ -151,6 +152,8 @@ async def build_briefing(
     if not top:
         return await _empty(db, user_id, day, now)
 
+    citations_by_document, citations = await _briefing_citations(db, top)
+
     client = get_llm_client()
     if isinstance(client, NullLlmClient):
         # 키가 없으면 네 건이 같은 이유로 실패한다. 항목마다 null로 흩뿌리지 않는다.
@@ -182,7 +185,14 @@ async def build_briefing(
                 "브리핑 항목 %s 생성 실패 · %s", item.candidate.key, "; ".join(outcome.reasons)
             )
             continue
-        items.append(_item_payload(item, outcome.section.model_dump(mode="json"), len(items) + 1))
+        items.append(
+            _item_payload(
+                item,
+                outcome.section.model_dump(mode="json"),
+                len(items) + 1,
+                citations_by_document=citations_by_document,
+            )
+        )
 
     envelope = Envelope[BriefingContent](
         content={
@@ -191,7 +201,36 @@ async def build_briefing(
             "generated_at": now.isoformat(),
             "items": items,
         },
-        data_as_of=DataAsOf(price=_as_datetime(day), portfolio=_as_datetime(day)),
+        citations=citations,
+        data_as_of=DataAsOf(
+            price=_as_datetime(day),
+            portfolio=_as_datetime(day),
+            filings=max(
+                (
+                    citation.published_at
+                    for citation in citations
+                    if citation.type in {CitationType.FILING, CitationType.FINANCIAL}
+                    and citation.published_at is not None
+                ),
+                default=None,
+            ),
+            news=max(
+                (
+                    citation.published_at
+                    for citation in citations
+                    if citation.type is CitationType.NEWS and citation.published_at is not None
+                ),
+                default=None,
+            ),
+            macro=max(
+                (
+                    citation.published_at
+                    for citation in citations
+                    if citation.type is CitationType.MACRO and citation.published_at is not None
+                ),
+                default=None,
+            ),
+        ),
     )
     # 다음 날 novelty가 읽을 행이 되고, 피드백이 참조할 행이 된다(§10).
     await record(db, envelope, user_id=user_id, endpoint=_ENDPOINT)
@@ -255,7 +294,13 @@ async def _empty(
     return envelope
 
 
-def _item_payload(item: RankedItem, section: dict[str, Any], rank_: int) -> dict[str, Any]:
+def _item_payload(
+    item: RankedItem,
+    section: dict[str, Any],
+    rank_: int,
+    *,
+    citations_by_document: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """§8 `items` 한 줄. rank는 생성에 실패한 항목을 뺀 뒤 다시 매긴다."""
     candidate = item.candidate
     return {
@@ -267,10 +312,73 @@ def _item_payload(item: RankedItem, section: dict[str, Any], rank_: int) -> dict
         "segments": section["segments"],
         "related_tickers": list(candidate.related_tickers),
         "deeplink": candidate.deeplink,
-        # ponytail: 이 기능은 문서를 조회하지 않아 인용할 원문이 없다. events에
-        # document_id가 차면 그때 Citation을 실어 보낸다.
-        "citations": [],
+        "citations": (
+            [citation_id]
+            if candidate.document_id
+            and (citation_id := (citations_by_document or {}).get(candidate.document_id))
+            else []
+        ),
     }
+
+
+async def _briefing_citations(
+    db: DbSession, items: list[RankedItem]
+) -> tuple[dict[str, str], list[Citation]]:
+    """상위 브리핑 이벤트가 직접 연결한 문서를 한 번에 근거로 바꾼다."""
+    ordered_ids: list[uuid.UUID] = []
+    seen: set[uuid.UUID] = set()
+    for item in items:
+        raw = item.candidate.document_id
+        if not raw:
+            continue
+        try:
+            document_id = uuid.UUID(raw)
+        except (TypeError, ValueError, AttributeError):
+            log.warning("브리핑 이벤트의 document_id가 UUID가 아니다: %r", raw)
+            continue
+        if document_id not in seen:
+            seen.add(document_id)
+            ordered_ids.append(document_id)
+
+    if not ordered_ids:
+        return {}, []
+
+    rows = (
+        await db.execute(
+            select(
+                Document.id,
+                Document.doc_type,
+                Document.title,
+                Document.source,
+                Document.publisher,
+                Document.url,
+                Document.published_at,
+                Document.body,
+            ).where(Document.id.in_(ordered_ids))
+        )
+    ).all()
+    documents = {row[0]: row for row in rows}
+    mapping: dict[str, str] = {}
+    citations: list[Citation] = []
+    for document_id in ordered_ids:
+        row = documents.get(document_id)
+        if row is None:
+            continue
+        citation_id = f"cit_{len(citations) + 1}"
+        mapping[str(document_id)] = citation_id
+        citations.append(
+            Citation(
+                id=citation_id,
+                type=CitationType(row[1]),
+                title=row[2],
+                source=row[3],
+                publisher=row[4],
+                url=row[5],
+                published_at=row[6],
+                snippet=(row[7] or "")[:180] or None,
+            )
+        )
+    return mapping, citations
 
 
 def _values(candidate: Candidate) -> dict[str, Segment]:
@@ -291,9 +399,7 @@ def _resolve_day(ledger: Ledger, requested: Date | None) -> Date | None:
     return past[-1] if past else None
 
 
-def _baseline_snapshot(
-    engine: PortfolioEngine, ledger: Ledger, day: Date
-) -> PortfolioSnapshot:
+def _baseline_snapshot(engine: PortfolioEngine, ledger: Ledger, day: Date) -> PortfolioSnapshot:
     """구조 변화의 비교 기준. 한 달 안에 거래일이 하나뿐이면 자기 자신이라 변화가 0이다."""
     window = day - timedelta(days=_SHIFT_LOOKBACK_DAYS)
     earlier = [d for d in ledger.trading_days if window <= d <= day]
@@ -307,9 +413,7 @@ def _rate_sensitivity(snapshot: PortfolioSnapshot) -> RateSensitivity:
     return _rate_exposure(snapshot).level
 
 
-async def _events(
-    db: DbSession, snapshot: PortfolioSnapshot, day: Date
-) -> list[EventRecord]:
+async def _events(db: DbSession, snapshot: PortfolioSnapshot, day: Date) -> list[EventRecord]:
     """보유 종목 이벤트와 매크로 이벤트. 표가 비어 있으면 빈 목록이다.
 
     되짚는 구간은 novelty와 같은 7일이다 — recency가 exp(−days/2)라 그보다 오래된

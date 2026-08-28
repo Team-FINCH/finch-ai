@@ -14,7 +14,7 @@ from datetime import datetime
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import CurrentUser, DbSession, UsageLimit
 from app.core.enums import Screen
 from app.core.errors import GuardrailBlocked, InsufficientData, InvalidRequest
 from app.core.response_log import record
@@ -55,15 +55,13 @@ class ChatContent(ContentModel):
 
 @router.post("")
 async def chat(
-    body: ChatRequest, user_id: CurrentUser, db: DbSession
+    body: ChatRequest, user_id: CurrentUser, db: DbSession, _usage: UsageLimit
 ) -> Envelope[ChatContent]:
     question = body.message.strip()
     if not question:
         raise InvalidRequest("질문이 비어 있습니다.")
     if len(question) > _MAX_MESSAGE:
-        raise InvalidRequest(
-            "질문이 너무 깁니다.", detail={"max_length": _MAX_MESSAGE}
-        )
+        raise InvalidRequest("질문이 너무 깁니다.", detail={"max_length": _MAX_MESSAGE})
     # 입력단 가드 — 제어문자 정리 후 인젝션 휴리스틱을 본다(guard/input).
     question = sanitize(question)
     if injection_hit(question):
@@ -72,9 +70,7 @@ async def chat(
             detail={"reason": "prompt_injection"},
         )
     if body.context.ticker and not _TICKER_RE.fullmatch(body.context.ticker):
-        raise InvalidRequest(
-            "종목코드는 6자리 숫자입니다.", detail={"ticker": body.context.ticker}
-        )
+        raise InvalidRequest("종목코드는 6자리 숫자입니다.", detail={"ticker": body.context.ticker})
 
     client = get_llm_client()
     if isinstance(client, NullLlmClient):
