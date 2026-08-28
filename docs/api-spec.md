@@ -21,7 +21,7 @@ AI 서비스는 백엔드와 분리된 독립 서버로 동작한다. 포트폴�
 | 포트폴리오 | 앱 내 가상 포트폴리오. 실계좌·마이데이터 연동 없음 |
 | 계산 주체 | Attribution · Risk 엔진 모두 AI 파트가 구현 |
 | 통화 | KRW 단일. 환율·국가 노출 분석 없음 |
-| 데이터 원천 | KIS OpenAPI(시세) · pykrx(히스토리) · DART(공시·재무) · ECOS(거시) |
+| 데이터 원천 | KIS OpenAPI(시세) · pykrx(히스토리) · DART(공시·재무) · NAVER API HUB(뉴스 검색 결과) · ECOS(거시) |
 | 제외 항목 | 애널리스트 컨센서스, 목표주가 — 무료 소스 부재 및 규제 리스크 |
 
 > **설계 원칙**
@@ -178,7 +178,7 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 | --- | --- |
 | `filing` | DART 공시 원문 |
 | `financial` | 재무제표 항목 |
-| `news` | 언론 기사 |
+| `news` | NAVER API HUB 뉴스 검색 결과(제목·요약·원문 링크) |
 | `price` | 시세 · 거래 데이터 |
 | `macro` | ECOS 거시지표 |
 | `engine` | 자체 계산 결과 (외부 URL 없음) |
@@ -827,7 +827,7 @@ AI 품질 지표 수집. 모든 AI 응답 영역에 노출한다.
 | --- | --- |
 | `instruments` | 종목 마스터 — 종목코드, 종목명, 시장, 섹터, DART 고유번호 |
 | `price_daily` | 일별 시세 — 변동성·상관관계 계산 기반 (최소 60거래일) |
-| `documents` · `embeddings` | 공시·뉴스 원문과 벡터 (pgvector) |
+| `documents` · `embeddings` | 공시 원문·뉴스 검색 요약과 벡터 (pgvector) |
 | `events` | 실적·공시·거시 일정과 중요도 점수 |
 | `wiki` | 사용자 투자 논지·성향 |
 | `ai_responses` | 응답 로그 · 피드백 · 평가 데이터셋 |

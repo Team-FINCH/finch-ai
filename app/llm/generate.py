@@ -181,9 +181,11 @@ def citations_from_hits(
     return [
         Citation(
             id=f"cit_{index}",
-            type=citation_type,
+            type=CitationType(hit.get("doc_type") or citation_type),
             title=hit.get("title") or "제목 없음",
-            source=source,
+            source=hit.get("source") or source,
+            publisher=hit.get("publisher"),
+            url=hit.get("url"),
             published_at=hit.get("published_at"),
             snippet=(hit.get("text") or "")[:180],
             relevance=hit.get("similarity"),

@@ -48,7 +48,7 @@ from app.api.routes.portfolio import (
     _period_start,
 )
 from app.core.adapters import Ledger, ledger_source
-from app.core.enums import MetricSource, OrderSide, Period, Screen, WikiSource
+from app.core.enums import DocumentType, MetricSource, OrderSide, Period, Screen, WikiSource
 from app.core.errors import AppError
 from app.core.schemas import Segment
 from app.engines.attribution import ContributorRow, attribute
@@ -222,14 +222,16 @@ TOOLS: list[dict[str, Any]] = [
 
 TOOL_NAMES: tuple[str, ...] = tuple(tool["name"] for tool in TOOLS)
 
-#: 같은 색인을 질의 성격만 바꿔 훑는다. `Document.doc_type`이 있지만
-#: `app.rag.search.search()`가 아직 노출하지 않는다.
-# ponytail: 검색이 doc_type 필터를 열면 세 도구를 그 인자로 갈라 붙인다.
-#           지금은 질의 보강이 유일한 구분이고, 근거 제목은 원문 그대로 나간다.
 _QUERY_HINT: dict[str, str] = {
     "search_filings": "공시 사업보고서",
     "search_news": "뉴스 보도",
     "get_financials": "매출 영업이익 재무제표",
+}
+
+_SEARCH_TYPES: dict[str, DocumentType] = {
+    "search_filings": DocumentType.FILING,
+    "search_news": DocumentType.NEWS,
+    "get_financials": DocumentType.FINANCIAL,
 }
 
 
@@ -391,7 +393,12 @@ async def _search(ctx: ToolContext, name: str, args: dict[str, Any]) -> dict[str
         return {"unavailable": "검색어가 필요합니다."}
 
     ticker = str(args.get("ticker") or "").strip() or None
-    hits = await search(f"{query} {_QUERY_HINT[name]}", top_k=_TOP_K, ticker=ticker)
+    hits = await search(
+        f"{query} {_QUERY_HINT[name]}",
+        top_k=_TOP_K,
+        ticker=ticker,
+        doc_type=_SEARCH_TYPES[name],
+    )
     if not hits:
         # 임베딩이 없어도 `search`는 빈 목록을 돌려준다. 모델이 이 둘을 구분할
         # 필요는 없다 — 어느 쪽이든 "근거를 못 찾았다"가 정확한 사실이다.

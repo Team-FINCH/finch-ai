@@ -19,6 +19,7 @@ from sqlalchemy import bindparam, func, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.db import SessionFactory, engine
+from app.core.enums import DocumentType
 from app.core.errors import RetrievalFailed
 from app.core.models import Document, DocumentChunk
 from app.rag.embedding import NullEmbedder, get_embedder
@@ -129,13 +130,19 @@ def fuse(
             "ticker": r.ticker,
             "title": r.title,
             "published_at": r.published_at,
+            "doc_type": r.doc_type,
+            "source": r.source,
+            "publisher": r.publisher,
+            "url": r.url,
             "similarity": round(scores[r[0]], 6),
         }
         for r in final[:top_k]
     ]
 
 
-async def _dense_candidates(query_vec, *, ticker: str | None, limit: int):
+async def _dense_candidates(
+    query_vec, *, ticker: str | None, doc_type: DocumentType | None, limit: int
+):
     """밀집(벡터) 경로 후보."""
     distance = DocumentChunk.embedding.cosine_distance(query_vec)
     stmt = (
@@ -145,6 +152,10 @@ async def _dense_candidates(query_vec, *, ticker: str | None, limit: int):
             Document.ticker,
             Document.title,
             Document.published_at,
+            Document.doc_type,
+            Document.source,
+            Document.publisher,
+            Document.url,
             distance.label("distance"),
         )
         .join(Document, Document.id == DocumentChunk.document_id)
@@ -152,6 +163,8 @@ async def _dense_candidates(query_vec, *, ticker: str | None, limit: int):
     )
     if ticker:
         stmt = stmt.where(Document.ticker == ticker)
+    if doc_type:
+        stmt = stmt.where(Document.doc_type == doc_type)
     stmt = stmt.order_by(distance).limit(limit)
 
     try:
@@ -169,7 +182,13 @@ async def _run(stmt):
         return (await session.execute(stmt)).all()
 
 
-async def search(query: str, *, top_k: int = 5, ticker: str | None = None) -> list[dict]:
+async def search(
+    query: str,
+    *,
+    top_k: int = 5,
+    ticker: str | None = None,
+    doc_type: DocumentType | None = None,
+) -> list[dict]:
     """질의와 가까운 조각을 돌려준다 — 하이브리드(밀집 + 어휘 RRF).
 
     조각과 함께 원문 제목·공시일을 붙여, 호출부가 근거를 구성할 때 문서를
@@ -192,7 +211,9 @@ async def search(query: str, *, top_k: int = 5, ticker: str | None = None) -> li
         log.error("질의 임베딩에 실패했다")
         raise RetrievalFailed("근거 검색에 실패했습니다.")
 
-    dense_rows = await _dense_candidates(vec, ticker=ticker, limit=CANDIDATE_POOL)
+    dense_rows = await _dense_candidates(
+        vec, ticker=ticker, doc_type=doc_type, limit=CANDIDATE_POOL
+    )
 
     lexical_rows: list = []
     tsq = lexical_tsquery(query)
@@ -207,6 +228,10 @@ async def search(query: str, *, top_k: int = 5, ticker: str | None = None) -> li
                     Document.ticker,
                     Document.title,
                     Document.published_at,
+                    Document.doc_type,
+                    Document.source,
+                    Document.publisher,
+                    Document.url,
                     rank,
                 )
                 .join(Document, Document.id == DocumentChunk.document_id)
@@ -214,6 +239,8 @@ async def search(query: str, *, top_k: int = 5, ticker: str | None = None) -> li
             )
             if ticker:
                 stmt = stmt.where(Document.ticker == ticker)
+            if doc_type:
+                stmt = stmt.where(Document.doc_type == doc_type)
             stmt = stmt.order_by(rank.desc()).limit(CANDIDATE_POOL)
             lexical_rows = await _run(stmt)
         except SQLAlchemyError:

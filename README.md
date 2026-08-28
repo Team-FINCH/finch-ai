@@ -141,6 +141,15 @@ DB 나 의존성이 준비되지 않았으면 무엇을 실행해야 하는지 �
 
 필요한 외부 키는 `.env.example`를 참고하세요. **키는 절대 커밋하지 않습니다.**
 
+공시와 뉴스 근거는 종목 마스터를 만든 뒤 증분 적재합니다. 뉴스는 NAVER API HUB가
+제공하는 제목·요약·원문 링크만 저장하며 언론사 본문을 별도로 크롤링하지 않습니다.
+
+```bash
+python -m app.rag.dart --tickers 005930,000660 --days 30
+python -m ingest.news --tickers 005930,000660 --days 7
+python -m app.rag.search --backfill
+```
+
 > 컨테이너 런타임은 **podman**을 씁니다. `compose.yaml`은 표준 Compose 규격이라
 > Docker를 쓰는 팀원은 `docker compose up -d`로 그대로 사용할 수 있습니다.
 
