@@ -21,9 +21,7 @@ class Settings(BaseSettings):
     )
 
     # ── 저장소 ───────────────────────────────────────────
-    database_url: str = (
-        "postgresql+asyncpg://ai_invest:ai_invest@localhost:5432/ai_invest"
-    )
+    database_url: str = "postgresql+asyncpg://ai_invest:ai_invest@localhost:5432/ai_invest"
     db_echo: bool = False
 
     # ── LLM ──────────────────────────────────────────────
@@ -33,6 +31,17 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-5.4-mini"
     llm_max_tokens: int = 16_000
     llm_timeout_s: int = 30
+
+    # 사용자 요청은 분당 횟수와 일일 GMS 토큰 예산을 함께 제한한다. 토큰은 실제
+    # GMS 호출 직전에 예약하므로 캐시 응답은 일일 예산을 소비하지 않는다.
+    ai_rate_limit_window_s: int = 60
+    ai_rate_limit_stocks_per_minute: int = 10
+    ai_rate_limit_chat_per_minute: int = 20
+    ai_rate_limit_portfolio_per_minute: int = 10
+    ai_rate_limit_orders_per_minute: int = 30
+    ai_rate_limit_briefing_per_minute: int = 60
+    ai_daily_token_budget: int = 500_000
+    ai_gms_reservation_tokens: int = 20_000
 
     # ── 임베딩 ───────────────────────────────────────────
     # DDL 시점에 벡터 차원이 고정되므로, 모델을 바꾸면 마이그레이션이 필요하다.

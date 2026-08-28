@@ -21,7 +21,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import CurrentUser, DbSession, UsageLimit
 from app.core.adapters import Ledger, ledger_source
 from app.core.enums import MetricSource, Period
 from app.core.errors import InsufficientData, InvalidRequest
@@ -257,9 +257,7 @@ _FINDING_VALUE_KEYS: dict[str, tuple[str, ...]] = {
 
 def _finding_values(finding: Finding, indicators: dict[str, Segment]) -> dict[str, Segment]:
     values = {
-        key: indicators[key]
-        for key in _FINDING_VALUE_KEYS.get(finding.id, ())
-        if key in indicators
+        key: indicators[key] for key in _FINDING_VALUE_KEYS.get(finding.id, ()) if key in indicators
     }
     if finding.id != "macro_exposure":
         values["threshold"] = ratio_segment(finding.threshold, _SOURCE)
@@ -303,7 +301,9 @@ def _summary_request(result: RiskAssessment) -> str:
 
 # ── 라우터 ────────────────────────────────────────────────────────────────────
 @router.post("/diagnosis")
-async def diagnosis(user_id: CurrentUser, db: DbSession) -> Envelope[DiagnosisContent]:
+async def diagnosis(
+    user_id: CurrentUser, db: DbSession, _usage: UsageLimit
+) -> Envelope[DiagnosisContent]:
     """위험 지표를 계산하고 상위 항목을 설명한다(§5).
 
     히스토리가 짧으면 409로 끊지 않는다. 집중도·현금·금리민감도 진단은 그대로 유효해서
@@ -407,7 +407,7 @@ async def diagnosis(user_id: CurrentUser, db: DbSession) -> Envelope[DiagnosisCo
 
 @router.post("/attribution")
 async def attribution(
-    body: AttributionRequest, user_id: CurrentUser, db: DbSession
+    body: AttributionRequest, user_id: CurrentUser, db: DbSession, _usage: UsageLimit
 ) -> Envelope[AttributionContent]:
     """기간 수익률을 시장·섹터·선택으로 분해한다(§6).
 

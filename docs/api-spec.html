@@ -488,6 +488,14 @@
         <span class="label">분리 원칙</span>
         <p><strong>AI 기능의 구현은 AI 파트가 전부 소유한다.</strong> 다른 파트에 계산이나 조립 로직을 요구하지 않고, 신규 화면 개발도 요청하지 않는다. 프론트는 완성된 응답을 그대로 출력하고, 백엔드는 기존 원장을 읽게 해줄 뿐이다. 이 원칙은 편의가 아니라 <strong>책임 소재</strong>의 문제다 — 숫자가 틀리거나 근거가 어긋났을 때 원인이 AI 파트 밖에 있으면 품질을 통제할 수 없다.</p>
       </div>
+      <p>
+        요청 한도는 <code>X-User-Id</code>와 엔드포인트별로 독립 집계한다. 초과하면
+        <code>detail.reason=request_rate_limit</code>, <code>Retry-After</code> 헤더와
+        대기 시간을 반환한다. 실제 GMS 호출 직전에는 사용자별 일일 토큰을 예약한다.
+        캐시가 응답을 대신하면 예약하지 않는다. 일일 예산을 넘으면
+        <code>detail.reason=daily_token_budget</code>으로 429를 반환한다. 기본 예산은
+        입력·출력 합계 500,000 토큰이며 환경 변수로 조정할 수 있다.
+      </p>
 
       <h4>확정 전제</h4>
       <div class="t-wrap">
@@ -1651,7 +1659,6 @@
         <table>
           <thead><tr><th>약속</th><th>현재 동작</th><th>응답에서 보이는 모습</th></tr></thead>
           <tbody>
-            <tr><td>호출 한도 (<a href="#errors">§2.6</a>)</td><td><code>RATE_LIMITED</code>는 정의돼 있으나 세는 곳이 없음</td><td>429가 나가지 않는다</td></tr>
             <tr><td><code>benchmark</code> 선택 (<a href="#ep-attribution">§6</a>)</td><td>요청 필드를 받기만 하고 쓰지 않음</td><td>어떤 값을 보내도 결과가 같다</td></tr>
           </tbody>
         </table>

@@ -17,7 +17,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from sqlalchemy import or_, select
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import CurrentUser, DbSession, UsageLimit
 from app.core.adapters import Ledger, ledger_source
 from app.core.enums import BriefingStatus, CitationType, MetricSource, RateSensitivity
 from app.core.errors import InsufficientData
@@ -94,7 +94,7 @@ async def _ledger(user_id: str) -> Ledger | None:
 # ── 라우터 ────────────────────────────────────────────────────────────────────
 @router.get("")
 async def get_briefing(
-    user_id: CurrentUser, db: DbSession, date: Date | None = None
+    user_id: CurrentUser, db: DbSession, _usage: UsageLimit, date: Date | None = None
 ) -> Envelope[BriefingContent]:
     """그날 알아야 할 일 최대 4건(§8).
 
@@ -209,8 +209,7 @@ async def build_briefing(
                 (
                     citation.published_at
                     for citation in citations
-                    if citation.type
-                    in {CitationType.FILING, CitationType.FINANCIAL}
+                    if citation.type in {CitationType.FILING, CitationType.FINANCIAL}
                     and citation.published_at is not None
                 ),
                 default=None,
@@ -219,8 +218,7 @@ async def build_briefing(
                 (
                     citation.published_at
                     for citation in citations
-                    if citation.type is CitationType.NEWS
-                    and citation.published_at is not None
+                    if citation.type is CitationType.NEWS and citation.published_at is not None
                 ),
                 default=None,
             ),
@@ -228,8 +226,7 @@ async def build_briefing(
                 (
                     citation.published_at
                     for citation in citations
-                    if citation.type is CitationType.MACRO
-                    and citation.published_at is not None
+                    if citation.type is CitationType.MACRO and citation.published_at is not None
                 ),
                 default=None,
             ),
@@ -402,9 +399,7 @@ def _resolve_day(ledger: Ledger, requested: Date | None) -> Date | None:
     return past[-1] if past else None
 
 
-def _baseline_snapshot(
-    engine: PortfolioEngine, ledger: Ledger, day: Date
-) -> PortfolioSnapshot:
+def _baseline_snapshot(engine: PortfolioEngine, ledger: Ledger, day: Date) -> PortfolioSnapshot:
     """구조 변화의 비교 기준. 한 달 안에 거래일이 하나뿐이면 자기 자신이라 변화가 0이다."""
     window = day - timedelta(days=_SHIFT_LOOKBACK_DAYS)
     earlier = [d for d in ledger.trading_days if window <= d <= day]
@@ -418,9 +413,7 @@ def _rate_sensitivity(snapshot: PortfolioSnapshot) -> RateSensitivity:
     return _rate_exposure(snapshot).level
 
 
-async def _events(
-    db: DbSession, snapshot: PortfolioSnapshot, day: Date
-) -> list[EventRecord]:
+async def _events(db: DbSession, snapshot: PortfolioSnapshot, day: Date) -> list[EventRecord]:
     """보유 종목 이벤트와 매크로 이벤트. 표가 비어 있으면 빈 목록이다.
 
     되짚는 구간은 novelty와 같은 7일이다 — recency가 exp(−days/2)라 그보다 오래된

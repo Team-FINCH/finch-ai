@@ -22,7 +22,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field, WithJsonSchema, field_serializer
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import CurrentUser, DbSession, UsageLimit
 from app.core.adapters import ledger_source
 from app.core.enums import EventType, MetricSource, WikiSource
 from app.core.errors import InsufficientData, InvalidRequest
@@ -46,6 +46,7 @@ from app.wiki.store import get_active_thesis
 log = logging.getLogger("app.api.stocks")
 
 router = APIRouter(prefix="/stocks", tags=["stocks"])
+
 
 class AnalysisSectionKey(StrEnum):
     CURRENT = "current"
@@ -140,9 +141,7 @@ class AnalysisContent(BaseModel):
     sections: AnalysisSections
 
     @field_serializer("sections")
-    def _serialize_sections(
-        self, sections: AnalysisSections
-    ) -> dict[str, dict[str, Any] | None]:
+    def _serialize_sections(self, sections: AnalysisSections) -> dict[str, dict[str, Any] | None]:
         return sections.model_dump(mode="json", exclude_unset=True)
 
 
@@ -313,6 +312,7 @@ async def create_analysis(
     body: AnalysisRequest,
     user_id: CurrentUser,
     db: DbSession,
+    _usage: UsageLimit,
 ) -> Envelope[AnalysisContent]:
     if not _TICKER_RE.fullmatch(ticker):
         raise InvalidRequest("종목코드는 6자리 숫자입니다.", detail={"ticker": ticker})
@@ -332,9 +332,7 @@ async def create_analysis(
         if body.personalize and "thesis_check" in requested
         else None
     )
-    generation_keys = [
-        key for key in requested if cached is None or key not in cached.sections
-    ]
+    generation_keys = [key for key in requested if cached is None or key not in cached.sections]
     generation_keys = [
         key
         for key in generation_keys
@@ -361,9 +359,7 @@ async def create_analysis(
     if generation_keys and not hits:
         log.warning("종목 %s 검색 결과 0건 — 근거 없이 생성한다", ticker)
 
-    upcoming_events = (
-        await _upcoming_events(db, ticker) if "next_events" in generation_keys else []
-    )
+    upcoming_events = await _upcoming_events(db, ticker) if "next_events" in generation_keys else []
 
     shared = {"citations": citations, "documents": documents, "client": client}
     tasks: dict[str, Any] = {}
@@ -443,11 +439,7 @@ async def create_analysis(
         content={
             "ticker": ticker,
             "name": (
-                _display_name(snapshot, ticker)
-                if snapshot
-                else cached.name
-                if cached
-                else ticker
+                _display_name(snapshot, ticker) if snapshot else cached.name if cached else ticker
             ),
             "sections": sections,
         },

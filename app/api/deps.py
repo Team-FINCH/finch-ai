@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import hmac
+from collections.abc import AsyncIterator
 from typing import Annotated
 
-from fastapi import Depends, Header
+from fastapi import Depends, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.db import get_session
 from app.core.errors import Unauthorized
+from app.core.schemas import now_kst
+from app.core.usage_limits import (
+    UsageGuard,
+    bind_guard,
+    reset_usage,
+    unbind_guard,
+)
 
 DbSession = Annotated[AsyncSession, Depends(get_session)]
 
@@ -41,9 +49,7 @@ def _check_internal_token(token: str | None) -> None:
 
 async def get_current_user_id(
     user_id: Annotated[str | None, Header(alias=settings.trusted_user_header)] = None,
-    internal_token: Annotated[
-        str | None, Header(alias=settings.internal_token_header)
-    ] = None,
+    internal_token: Annotated[str | None, Header(alias=settings.internal_token_header)] = None,
 ) -> str:
     """백엔드가 넘긴 신뢰 헤더에서 사용자 식별자를 꺼낸다.
 
@@ -64,3 +70,45 @@ async def get_current_user_id(
 
 
 CurrentUser = Annotated[str, Depends(get_current_user_id)]
+
+
+def _usage_endpoint(path: str) -> str | None:
+    if path.endswith("/analysis") and "/stocks/" in path:
+        return "stocks.analysis"
+    suffixes = {
+        "/chat": "chat",
+        "/portfolio/diagnosis": "portfolio.diagnosis",
+        "/portfolio/attribution": "portfolio.attribution",
+        "/orders/preview": "orders.preview",
+        "/briefing": "briefing",
+    }
+    return next((name for suffix, name in suffixes.items() if path.endswith(suffix)), None)
+
+
+async def enforce_usage_limit(
+    request: Request,
+    user_id: CurrentUser,
+    db: DbSession,
+) -> AsyncIterator[None]:
+    """LLM 기능의 요청 횟수와 사용자 일일 토큰 예산 문맥을 연다."""
+    endpoint = _usage_endpoint(request.url.path)
+    if endpoint is None:
+        yield
+        return
+    guard: UsageGuard = request.app.state.usage_guard
+    now = now_kst()
+    token = await guard.enter(
+        user_id,
+        endpoint,
+        now=now,
+        db=db,
+    )
+    bind_guard(guard, token)
+    try:
+        yield
+    finally:
+        unbind_guard()
+        reset_usage(token)
+
+
+UsageLimit = Annotated[None, Depends(enforce_usage_limit)]
