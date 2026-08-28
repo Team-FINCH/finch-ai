@@ -21,6 +21,8 @@ from app.llm.client import get_llm_client
 @pytest.fixture(autouse=True)
 def _no_live_api(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setattr(settings, "gms_key", "")
+    monkeypatch.setattr(settings, "naver_client_id", "")
+    monkeypatch.setattr(settings, "naver_client_secret", "")
     get_llm_client.cache_clear()
     yield
     get_llm_client.cache_clear()

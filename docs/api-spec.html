@@ -498,7 +498,7 @@
             <tr><td>포트폴리오</td><td>앱 내 가상 포트폴리오. 실계좌·마이데이터 연동 없음</td></tr>
             <tr><td>계산 주체</td><td>Attribution · Risk 엔진 모두 AI 파트가 구현</td></tr>
             <tr><td>통화</td><td>KRW 단일. 환율·국가 노출 분석 없음</td></tr>
-            <tr><td>데이터 원천</td><td>KIS OpenAPI(시세) · pykrx(히스토리) · DART(공시·재무) · ECOS(거시)</td></tr>
+            <tr><td>데이터 원천</td><td>KIS OpenAPI(시세) · pykrx(히스토리) · DART(공시·재무) · NAVER API HUB(뉴스 검색 결과) · ECOS(거시)</td></tr>
             <tr><td>제외 항목</td><td>애널리스트 컨센서스, 목표주가 — 무료 소스 부재 및 규제 리스크</td></tr>
           </tbody>
         </table>
@@ -683,7 +683,7 @@
           <tbody>
             <tr><td><code>filing</code></td><td>DART 공시 원문</td></tr>
             <tr><td><code>financial</code></td><td>재무제표 항목</td></tr>
-            <tr><td><code>news</code></td><td>언론 기사</td></tr>
+            <tr><td><code>news</code></td><td>NAVER API HUB 뉴스 검색 결과(제목·요약·원문 링크)</td></tr>
             <tr><td><code>price</code></td><td>시세 · 거래 데이터</td></tr>
             <tr><td><code>macro</code></td><td>ECOS 거시지표</td></tr>
             <tr><td><code>engine</code></td><td>자체 계산 결과 (외부 URL 없음)</td></tr>
@@ -1486,7 +1486,7 @@
           <tbody>
             <tr><td><code>instruments</code></td><td>종목 마스터 — 종목코드, 종목명, 시장, 섹터, DART 고유번호</td></tr>
             <tr><td><code>price_daily</code></td><td>일별 시세 — 변동성·상관관계 계산 기반 (최소 60거래일)</td></tr>
-            <tr><td><code>documents</code> · <code>embeddings</code></td><td>공시·뉴스 원문과 벡터 (pgvector)</td></tr>
+            <tr><td><code>documents</code> · <code>embeddings</code></td><td>공시 원문·뉴스 검색 요약과 벡터 (pgvector)</td></tr>
             <tr><td><code>events</code></td><td>실적·공시·거시 일정과 중요도 점수</td></tr>
             <tr><td><code>wiki</code></td><td>사용자 투자 논지·성향</td></tr>
             <tr><td><code>ai_responses</code></td><td>응답 로그 · 피드백 · 평가 데이터셋</td></tr>

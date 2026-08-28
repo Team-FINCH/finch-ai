@@ -113,6 +113,27 @@ def test_검색_결과가_근거로_바뀐다():
     assert citations[0].relevance == 0.9
 
 
+def test_뉴스_근거는_실제_출처와_url을_유지한다():
+    citations = citations_from_hits(
+        [
+            {
+                "doc_type": "news",
+                "source": "NAVER_API_HUB",
+                "publisher": "news.example.com",
+                "url": "https://news.example.com/1",
+                "title": "반도체 공급 확대",
+                "text": "기사 요약",
+                "similarity": 0.8,
+            }
+        ]
+    )
+    citation = citations[0]
+    assert citation.type.value == "news"
+    assert citation.source == "NAVER_API_HUB"
+    assert citation.publisher == "news.example.com"
+    assert citation.url == "https://news.example.com/1"
+
+
 # ── 생성 ─────────────────────────────────────────────────
 async def test_통과하면_섹션이_나온다():
     client = FakeClient(_ok_payload())

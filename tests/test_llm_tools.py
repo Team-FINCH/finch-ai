@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from app.core.enums import MetricSource, Screen, WikiSource
+from app.core.enums import DocumentType, MetricSource, Screen, WikiSource
 from app.llm import tools as tool_mod
 from app.llm.tools import TOOL_NAMES, TOOLS, ToolContext, dispatch
 
@@ -131,6 +131,21 @@ def test_검색_결과에_근거_id가_순서대로_붙는다(ctx, monkeypatch):
     assert second["hits"][0]["citation"] == "cit_2"
     # 누적 순서가 곧 citations_from_hits가 매길 번호다.
     assert len(ctx.hits) == 2
+
+
+def test_검색_도구마다_문서_유형을_고정한다(ctx, monkeypatch):
+    seen: list[DocumentType] = []
+
+    async def _capture(*_: Any, **kwargs: Any):
+        seen.append(kwargs["doc_type"])
+        return []
+
+    monkeypatch.setattr(tool_mod, "search", _capture)
+    run(dispatch("search_filings", {"query": "실적"}, ctx))
+    run(dispatch("search_news", {"query": "최근 사건"}, ctx))
+    run(dispatch("get_financials", {"query": "매출"}, ctx))
+
+    assert seen == [DocumentType.FILING, DocumentType.NEWS, DocumentType.FINANCIAL]
 
 
 def test_임베딩이_없으면_없다고_말한다(ctx, monkeypatch):
