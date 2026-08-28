@@ -1,7 +1,7 @@
 """임베딩 구현 테스트.
 
-네트워크 없이 돈다. 사내 게이트웨이 주소를 모르는 상태에서도 계약을 고정해두려는
-것이라, 실제 응답 대신 httpx.MockTransport로 OpenAI 스키마를 흉내낸다.
+네트워크 없이 돈다. 실제 응답 대신 httpx.MockTransport로 GMS의 OpenAI 호환
+스키마를 흉내낸다.
 """
 
 from __future__ import annotations
@@ -10,7 +10,6 @@ import httpx
 import pytest
 
 from app.rag.embedding import (
-    OPENAI_DEFAULT_BASE_URL,
     Embedder,
     NullEmbedder,
     OpenAIEmbedder,
@@ -46,9 +45,9 @@ def test_requires_api_key() -> None:
         OpenAIEmbedder("")
 
 
-def test_default_base_url_is_openai() -> None:
+def test_default_base_url_is_gms() -> None:
     e = OpenAIEmbedder("k")
-    assert e._url == OPENAI_DEFAULT_BASE_URL
+    assert e._url == "https://api.openai.com/v1"
 
 
 def test_gateway_base_url_overrides() -> None:

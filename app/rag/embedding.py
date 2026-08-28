@@ -1,6 +1,6 @@
-"""임베딩.
+"""GMS 임베딩.
 
-인터페이스와 OpenAI 구현. 제공자를 바꿔도 호출부는 `get_embedder()`만 본다.
+GMS의 OpenAI 호환 Embeddings API를 사용한다. 호출부는 `get_embedder()`만 본다.
 
 text-embedding-3 계열은 `dimensions`로 축소를 지원한다(Matryoshka). 기본 1536 대신
 1024를 요청해 `document_chunks.embedding`의 DDL을 건드리지 않는다.
@@ -21,7 +21,6 @@ from app.core.config import settings
 
 log = logging.getLogger("app.rag.embedding")
 
-OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 HTTP_TIMEOUT = 60.0
 
 # 429를 맞고 재시도하는 것도 일당 요청 한도를 깎는다. 그래서 재시도는 최후의
@@ -80,10 +79,7 @@ def _batched(texts: Sequence[str], size: int) -> Iterator[tuple[int, list[str]]]
 
 
 class OpenAIEmbedder(Embedder):
-    """OpenAI 호환 임베딩 엔드포인트.
-
-    사내 게이트웨이도 같은 스키마를 쓰므로 base_url만 바꾸면 그대로 붙는다.
-    """
+    """GMS OpenAI 호환 임베딩 엔드포인트."""
 
     def __init__(
         self,
@@ -96,11 +92,11 @@ class OpenAIEmbedder(Embedder):
         client: httpx.Client | None = None,
     ) -> None:
         if not api_key:
-            raise ValueError("OPENAI_API_KEY가 필요하다")
+            raise ValueError("GMS_KEY가 필요하다")
         self.model = model or settings.embedding_model
         self.dim = dim or settings.embedding_dim
         self._batch = batch_size or settings.embedding_batch_size
-        self._url = (base_url or settings.openai_base_url or OPENAI_DEFAULT_BASE_URL).rstrip("/")
+        self._url = (base_url or settings.gms_base_url).rstrip("/")
         self._key = api_key
         self._client = client
         self._warned_truncate = False
@@ -217,7 +213,7 @@ class OpenAIEmbedder(Embedder):
 
 def get_embedder() -> Embedder:
     """설정을 보고 구현을 고른다. 키가 없으면 Null이다."""
-    if settings.openai_api_key:
-        return OpenAIEmbedder(settings.openai_api_key)
-    log.warning("OPENAI_API_KEY가 없어 임베딩을 건너뛴다. .env를 확인하라")
+    if settings.gms_key:
+        return OpenAIEmbedder(settings.gms_key)
+    log.warning("GMS_KEY가 없어 임베딩을 건너뛴다. .env를 확인하라")
     return NullEmbedder()
