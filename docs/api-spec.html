@@ -776,7 +776,10 @@
       <p>
         요청 한도는 <code>X-User-Id</code>와 엔드포인트별로 독립 집계한다. 운영에서는
         PostgreSQL 장부를 사용하므로 Pod가 여러 개이거나 재시작되어도 같은 한도를
-        공유한다. 초과하면 <code>detail.reason=request_rate_limit</code>,
+        공유한다. 창은 고정 구간으로 끊되 직전 창을 겹치는 비율만큼 함께 세므로,
+        창이 바뀌는 순간 한도가 통째로 초기화되어 두 배가 몰려 들어오지 않는다.
+        거절된 요청은 창에 기록하지 않는다 &mdash; 연타가 다음 창까지 눌러서는 안 된다.
+        초과하면 <code>detail.reason=request_rate_limit</code>,
         <code>Retry-After</code> 헤더와 대기 시간을 반환한다. 실제 GMS 호출 직전에는
         사용자별 일일 토큰을 예약하고 캐시 응답은 예약하지 않는다. 호출 중 Pod가
         종료되어도 예약은 기본 5분 뒤 자동 회수된다. 일일 예산을 넘으면

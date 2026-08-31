@@ -336,7 +336,11 @@ class AIResponse(Base):
 
 
 class AIRequestWindow(Base):
-    """모든 Pod가 공유하는 사용자·엔드포인트별 요청 창."""
+    """모든 Pod가 공유하는 사용자·엔드포인트별 요청 창.
+
+    직전 창의 건수를 함께 들고 있어야 창이 바뀌는 순간 한도가 통째로 초기화되지
+    않는다. 두 칸을 겹치는 비율로 가중 합산한다.
+    """
 
     __tablename__ = "ai_request_windows"
 
@@ -344,6 +348,7 @@ class AIRequestWindow(Base):
     endpoint: Mapped[str] = mapped_column(String(60), primary_key=True)
     window_started_at: Mapped[datetime] = mapped_column(TS, nullable=False)
     request_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    previous_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 
 
 class AITokenDaily(Base):

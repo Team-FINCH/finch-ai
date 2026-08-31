@@ -16,6 +16,7 @@ from collections import defaultdict, deque
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from math import ceil
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -216,50 +217,69 @@ class PersistentUsageStore:
     async def check_request(
         self, user_id: str, endpoint: str, *, now: datetime, limit: int
     ) -> None:
-        cutoff = now - timedelta(seconds=settings.ai_rate_limit_window_s)
+        """현재 창과 직전 창을 겹치는 비율로 가중 합산해 한도를 본다.
+
+        창 하나만 세면 경계에서 카운터가 통째로 초기화되어, 창 끝에 한도만큼
+        보내고 창이 바뀌자마자 한도만큼 더 보내는 두 배 버스트가 통과한다.
+        직전 창을 남은 비율만큼 함께 세면 그 구멍이 닫힌다.
+
+        요청마다 타임스탬프를 쌓는 메모리 장부와 달리 행 하나만 유지하므로,
+        정확한 값이 아니라 근사값이다. 창 안에서 요청이 고르게 분포한다고 볼 때의
+        추정치이며, 그 대가로 사용자·엔드포인트당 행 하나로 끝난다.
+        """
+        window_s = settings.ai_rate_limit_window_s
+        start = _window_start(now, window_s)
+        elapsed = (now - start).total_seconds()
+        overlap = (window_s - elapsed) / window_s
         async with self._sessions() as db, db.begin():
+            # 읽고 나서 쓰므로 같은 사용자·엔드포인트끼리는 직렬화해야 한다.
+            await self._lock(db, f"ai-request:{user_id}:{endpoint}")
             row = (
                 await db.execute(
                     text(
-                        """
-                        INSERT INTO ai_request_windows
-                            (user_id, endpoint, window_started_at, request_count)
-                        VALUES (:user_id, :endpoint, :now, 1)
-                        ON CONFLICT (user_id, endpoint) DO UPDATE SET
-                            window_started_at = CASE
-                                WHEN ai_request_windows.window_started_at <= :cutoff
-                                THEN :now ELSE ai_request_windows.window_started_at END,
-                            request_count = CASE
-                                WHEN ai_request_windows.window_started_at <= :cutoff
-                                THEN 1 ELSE ai_request_windows.request_count + 1 END
-                        RETURNING window_started_at, request_count
-                        """
+                        "SELECT window_started_at, request_count, previous_count "
+                        "FROM ai_request_windows "
+                        "WHERE user_id=:user_id AND endpoint=:endpoint"
                     ),
-                    {
-                        "user_id": user_id,
+                    {"user_id": user_id, "endpoint": endpoint},
+                )
+            ).one_or_none()
+            current, previous = _window_counts(row, start, timedelta(seconds=window_s))
+            if previous * overlap + current + 1 > limit:
+                # 거절은 기록하지 않는다. 막힌 요청까지 세면 그 숫자가 다음 창의
+                # 직전 값이 되어, 연타한 사용자가 다음 창까지 눌린 채로 시작한다.
+                raise RateLimited(
+                    "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+                    detail={
+                        "reason": "request_rate_limit",
                         "endpoint": endpoint,
-                        "now": now,
-                        "cutoff": cutoff,
+                        "retry_after_seconds": _retry_after(
+                            previous=previous,
+                            current=current,
+                            limit=limit,
+                            elapsed=elapsed,
+                            window_s=window_s,
+                        ),
                     },
                 )
-            ).one()
-        if row.request_count > limit:
-            retry_after = max(
-                1,
-                round(
-                    (
-                        row.window_started_at
-                        + timedelta(seconds=settings.ai_rate_limit_window_s)
-                        - now
-                    ).total_seconds()
+            await db.execute(
+                text(
+                    """
+                    INSERT INTO ai_request_windows
+                        (user_id, endpoint, window_started_at, request_count, previous_count)
+                    VALUES (:user_id, :endpoint, :start, :count, :previous)
+                    ON CONFLICT (user_id, endpoint) DO UPDATE SET
+                        window_started_at = :start,
+                        request_count = :count,
+                        previous_count = :previous
+                    """
                 ),
-            )
-            raise RateLimited(
-                "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
-                detail={
-                    "reason": "request_rate_limit",
+                {
+                    "user_id": user_id,
                     "endpoint": endpoint,
-                    "retry_after_seconds": retry_after,
+                    "start": start,
+                    "count": current + 1,
+                    "previous": previous,
                 },
             )
 
@@ -350,6 +370,43 @@ class PersistentUsageStore:
                 text("DELETE FROM ai_token_reservations WHERE id=:id"),
                 {"id": reservation.id},
             )
+
+
+def _window_start(now: datetime, window_s: int) -> datetime:
+    """창 경계를 절대 시각 격자에 맞춘다.
+
+    첫 요청 시각을 기준으로 삼으면 창마다 격자가 밀려서, 지금 창의 직전 한 칸이
+    어디였는지 특정할 수 없다. 격자에 고정해야 "직전 창"이 한 값으로 정해진다.
+    """
+    seconds = now.timestamp()
+    return datetime.fromtimestamp(seconds - seconds % window_s, tz=now.tzinfo)
+
+
+def _window_counts(row: Any, start: datetime, window: timedelta) -> tuple[int, int]:
+    """(이번 창 건수, 직전 창 건수). 두 칸보다 오래된 기록은 버린다."""
+    if row is None:
+        return 0, 0
+    if row.window_started_at == start:
+        return row.request_count, row.previous_count
+    if row.window_started_at == start - window:
+        return 0, row.request_count
+    return 0, 0
+
+
+def _retry_after(
+    *, previous: int, current: int, limit: int, elapsed: float, window_s: int
+) -> int:
+    """직전 창의 무게가 충분히 빠질 때까지 남은 초.
+
+    이번 창 건수만으로 이미 한도를 채웠다면 창이 바뀌어야 열리므로 창 끝까지
+    기다린다. 그렇지 않으면 `previous * 남은비율 + current + 1 <= limit`을 만족하는
+    가장 이른 시점을 그대로 푼다.
+    """
+    remaining = window_s - elapsed
+    allowance = limit - current - 1
+    if previous > 0 and allowance >= 0:
+        remaining = max(remaining - allowance * window_s / previous, 0.0)
+    return max(1, ceil(remaining))
 
 
 def default_guard() -> UsageGuard:
