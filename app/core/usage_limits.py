@@ -31,8 +31,12 @@ class UsageCounter:
     user_id: str
     endpoint: str
     day: date
+    #: 이 문맥을 연 장부. GMS 호출 직전에 여기로 예약과 정산이 돌아온다.
+    guard: UsageGuard
     #: 이 문맥에 적용할 일일 토큰 상한. 사용자 요청과 배치가 서로 다른 값을 쓴다.
     budget: int = 0
+    #: 메모리 장부가 시작값을 응답 로그에서 읽을 때만 쓴다. DB 장부는 자기 테이블에
+    #: 오늘 합계를 들고 있어 이 값이 필요 없으므로 DB 모드에서는 항상 None이다.
     db: Any = None
     input_tokens: int = 0
     output_tokens: int = 0
@@ -87,7 +91,11 @@ class UsageGuard:
             await self._store.check_request(user_id, endpoint, now=now, limit=limit)
             return _current.set(
                 UsageCounter(
-                    user_id=user_id, endpoint=endpoint, day=now.date(), budget=budget
+                    user_id=user_id,
+                    endpoint=endpoint,
+                    day=now.date(),
+                    guard=self,
+                    budget=budget,
                 )
             )
         async with self._lock:
@@ -108,7 +116,12 @@ class UsageGuard:
             window.append(timestamp)
         return _current.set(
             UsageCounter(
-                user_id=user_id, endpoint=endpoint, day=now.date(), budget=budget, db=db
+                user_id=user_id,
+                endpoint=endpoint,
+                day=now.date(),
+                guard=self,
+                budget=budget,
+                db=db,
             )
         )
 
@@ -127,7 +140,13 @@ class UsageGuard:
         새는 것은 요금이므로 토큰 쪽만 잠근다.
         """
         return _current.set(
-            UsageCounter(user_id=user_id, endpoint=endpoint, day=now.date(), budget=budget)
+            UsageCounter(
+                user_id=user_id,
+                endpoint=endpoint,
+                day=now.date(),
+                guard=self,
+                budget=budget,
+            )
         )
 
     async def reserve(self, amount: int) -> TokenReservation | None:
@@ -439,12 +458,13 @@ def reset_usage(token: Token[UsageCounter | None]) -> None:
     _current.reset(token)
 
 
+# GMS 호출부(app/llm/client.py)는 문맥이 열려 있는지 모른 채 이 함수들을 부른다.
+# 문맥이 없으면 — 배치 밖의 스크립트나 단위 테스트 — 조용히 넘어간다.
 async def reserve_gms() -> TokenReservation | None:
     counter = _current.get()
     if counter is None:
         return None
-    guard = _guard_by_counter.get(id(counter))
-    return await guard.reserve(settings.ai_gms_reservation_tokens) if guard else None
+    return await counter.guard.reserve(settings.ai_gms_reservation_tokens)
 
 
 async def settle_gms(
@@ -455,36 +475,21 @@ async def settle_gms(
     cache_read_tokens: int = 0,
 ) -> None:
     counter = _current.get()
-    guard = _guard_by_counter.get(id(counter)) if counter else None
-    if guard:
-        await guard.settle(
-            reservation,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cache_read_tokens=cache_read_tokens,
-        )
+    if counter is None:
+        return
+    await counter.guard.settle(
+        reservation,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cache_read_tokens=cache_read_tokens,
+    )
 
 
 async def cancel_gms(reservation: TokenReservation | None) -> None:
     counter = _current.get()
-    guard = _guard_by_counter.get(id(counter)) if counter else None
-    if guard:
-        await guard.cancel(reservation)
-
-
-_guard_by_counter: dict[int, UsageGuard] = {}
-
-
-def bind_guard(guard: UsageGuard, token: Token[UsageCounter | None]) -> None:
-    counter = _current.get()
-    if counter is not None:
-        _guard_by_counter[id(counter)] = guard
-
-
-def unbind_guard() -> None:
-    counter = _current.get()
-    if counter is not None:
-        _guard_by_counter.pop(id(counter), None)
+    if counter is None:
+        return
+    await counter.guard.cancel(reservation)
 
 
 def usage_values() -> dict[str, int]:

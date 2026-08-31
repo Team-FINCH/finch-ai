@@ -33,10 +33,8 @@ from app.core.schemas import Envelope, now_kst
 from app.core.usage_limits import (
     BRIEFING_BATCH_USER,
     UsageGuard,
-    bind_guard,
     default_guard,
     reset_usage,
-    unbind_guard,
 )
 
 log = logging.getLogger("ingest.briefings")
@@ -100,12 +98,10 @@ async def _generate(
         now=now_kst(),
         budget=settings.ai_batch_daily_token_budget,
     )
-    bind_guard(guard, token)
     try:
         async with SessionFactory() as session:
             return await build_briefing(user_id, session, day, use_cache=not force)
     finally:
-        unbind_guard()
         reset_usage(token)
 
 

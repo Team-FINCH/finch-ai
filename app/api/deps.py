@@ -13,12 +13,7 @@ from app.core.config import settings
 from app.core.db import get_session
 from app.core.errors import Unauthorized
 from app.core.schemas import now_kst
-from app.core.usage_limits import (
-    UsageGuard,
-    bind_guard,
-    reset_usage,
-    unbind_guard,
-)
+from app.core.usage_limits import UsageGuard, reset_usage
 
 DbSession = Annotated[AsyncSession, Depends(get_session)]
 
@@ -103,11 +98,9 @@ async def enforce_usage_limit(
         now=now,
         db=db,
     )
-    bind_guard(guard, token)
     try:
         yield
     finally:
-        unbind_guard()
         reset_usage(token)
 
 
