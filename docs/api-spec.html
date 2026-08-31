@@ -783,6 +783,14 @@
         <code>detail.reason=daily_token_budget</code>으로 429를 반환한다.
       </p>
 
+      <p>
+        브리핑 선생성 배치처럼 사용자가 누르지 않은 호출은 개인 예산이 아니라
+        <code>system:briefing-batch</code> 장부에서 토큰을 쓴다. 사용자 몫을 미리
+        깎지 않으면서 총량 상한과 토큰 기록은 남긴다. 배치에는 분당 횟수 한도를
+        걸지 않는다 &mdash; 대상 사용자 수만큼 도는 작업이라 그대로 적용하면 대상이
+        늘수록 정상 실행이 막힌다.
+      </p>
+
       <h2 id="ep-analysis"><span class="num">§3</span>종목 AI 분석</h2>
 
       <div class="ep">

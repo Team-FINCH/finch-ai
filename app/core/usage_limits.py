@@ -2,6 +2,9 @@
 
 요청 횟수는 API 진입에서 세고, 토큰은 실제 GMS 호출 직전에 예약한다. 캐시가
 응답을 대신하면 GMS 예약 함수가 호출되지 않으므로 토큰 예산을 쓰지 않는다.
+
+배치처럼 사용자가 누르지 않은 호출은 `enter_system`으로 시스템 몫의 장부를 연다.
+개인 예산과 섞이지 않으면서 총량 상한과 토큰 기록은 그대로 남는다.
 """
 
 from __future__ import annotations
@@ -27,6 +30,8 @@ class UsageCounter:
     user_id: str
     endpoint: str
     day: date
+    #: 이 문맥에 적용할 일일 토큰 상한. 사용자 요청과 배치가 서로 다른 값을 쓴다.
+    budget: int = 0
     db: Any = None
     input_tokens: int = 0
     output_tokens: int = 0
@@ -51,6 +56,10 @@ _current: ContextVar[UsageCounter | None] = ContextVar("ai_usage", default=None)
 log = logging.getLogger("app.core.usage_limits")
 KST = ZoneInfo("Asia/Seoul")
 
+#: 브리핑 배치가 쓰는 시스템 장부의 주인. 실제 사용자 ID와 겹치지 않도록 접두를
+#: 붙인다. 장부 테이블의 user_id 컬럼이 40자이므로 이름을 더 늘리지 않는다.
+BRIEFING_BATCH_USER = "system:briefing-batch"
+
 
 class UsageGuard:
     """DB 설정 시 모든 Pod가 공유하고, 없으면 로컬 메모리로 동작하는 장부."""
@@ -72,9 +81,14 @@ class UsageGuard:
         key = (user_id, endpoint)
         limit = endpoint_limit(endpoint)
         timestamp = now.timestamp()
+        budget = settings.ai_daily_token_budget
         if self._store is not None:
             await self._store.check_request(user_id, endpoint, now=now, limit=limit)
-            return _current.set(UsageCounter(user_id=user_id, endpoint=endpoint, day=now.date()))
+            return _current.set(
+                UsageCounter(
+                    user_id=user_id, endpoint=endpoint, day=now.date(), budget=budget
+                )
+            )
         async with self._lock:
             window = self._requests[key]
             cutoff = timestamp - settings.ai_rate_limit_window_s
@@ -91,11 +105,33 @@ class UsageGuard:
                     },
                 )
             window.append(timestamp)
-        return _current.set(UsageCounter(user_id=user_id, endpoint=endpoint, day=now.date(), db=db))
+        return _current.set(
+            UsageCounter(
+                user_id=user_id, endpoint=endpoint, day=now.date(), budget=budget, db=db
+            )
+        )
+
+    async def enter_system(
+        self,
+        user_id: str,
+        endpoint: str,
+        *,
+        now: datetime,
+        budget: int,
+    ) -> Token[UsageCounter | None]:
+        """배치·스케줄러용 문맥. 토큰 장부만 열고 요청 창은 세지 않는다.
+
+        분당 횟수 한도는 한 사람이 화면을 연타하는 것을 막는 장치다. 대상 사용자
+        수만큼 도는 배치에 그대로 걸면 대상이 늘어날수록 정상 실행이 막힌다.
+        새는 것은 요금이므로 토큰 쪽만 잠근다.
+        """
+        return _current.set(
+            UsageCounter(user_id=user_id, endpoint=endpoint, day=now.date(), budget=budget)
+        )
 
     async def reserve(self, amount: int) -> TokenReservation | None:
         counter = _current.get()
-        if counter is None or settings.ai_daily_token_budget <= 0:
+        if counter is None or counter.budget <= 0:
             return None
         amount = max(amount, 1)
         if self._store is not None:
@@ -103,7 +139,7 @@ class UsageGuard:
                 counter.user_id,
                 counter.day,
                 amount=amount,
-                limit=settings.ai_daily_token_budget,
+                limit=counter.budget,
             )
         key = (counter.user_id, counter.day)
         async with self._lock:
@@ -115,14 +151,14 @@ class UsageGuard:
                 self._daily.setdefault(key, DailyUsage(spent=baseline))
         async with self._lock:
             usage = self._daily.setdefault(key, DailyUsage(spent=0))
-            if usage.spent + usage.reserved + amount > settings.ai_daily_token_budget:
+            if usage.spent + usage.reserved + amount > counter.budget:
                 raise RateLimited(
                     "오늘 사용할 수 있는 AI 분석량을 모두 사용했습니다.",
                     detail={
                         "reason": "daily_token_budget",
                         "used_tokens": usage.spent,
                         "reserved_tokens": usage.reserved,
-                        "limit_tokens": settings.ai_daily_token_budget,
+                        "limit_tokens": counter.budget,
                     },
                 )
             usage.reserved += amount
@@ -314,6 +350,17 @@ class PersistentUsageStore:
                 text("DELETE FROM ai_token_reservations WHERE id=:id"),
                 {"id": reservation.id},
             )
+
+
+def default_guard() -> UsageGuard:
+    """환경에 맞는 장부를 고른다. 앱과 배치가 서로 다른 규칙을 쓰면 안 된다.
+
+    운영·스테이징은 PostgreSQL 장부를 공유하고, 로컬은 DB 없이도 개발할 수 있게
+    프로세스 메모리 장부를 쓴다.
+    """
+    from app.core.db import SessionFactory
+
+    return UsageGuard(SessionFactory if settings.app_env != "local" else None)
 
 
 def endpoint_limit(endpoint: str) -> int:

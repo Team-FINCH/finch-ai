@@ -7,6 +7,9 @@ from typing import Any
 
 import pytest
 
+from app.core.config import settings
+from app.core.errors import RateLimited
+from app.core.usage_limits import BRIEFING_BATCH_USER, current_usage, reserve_gms
 from ingest import briefings
 
 
@@ -89,3 +92,61 @@ async def test_실패한_사용자만_재시도하고_운영_지표를_남긴다
     assert result.retries == 3
     assert result.failed_users == ("fail",)
     assert result.as_dict()["targeted"] == 3
+
+
+@pytest.mark.anyio
+async def test_배치는_사용자가_아니라_배치_장부로_토큰을_센다(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "ai_batch_daily_token_budget", 100_000)
+    seen: list[tuple[str, str, int]] = []
+
+    async def _build(_user_id: str, _db: Any, _day: Any, *, use_cache: bool):
+        counter = current_usage()
+        assert counter is not None
+        seen.append((counter.user_id, counter.endpoint, counter.budget))
+        # GMS 호출 직전 경로. Guard가 문맥에 묶여 있어야 예약이 잡힌다.
+        reservation = await reserve_gms()
+        assert reservation is not None
+        assert reservation.user_id == BRIEFING_BATCH_USER
+        return SimpleNamespace(cached=False, content=SimpleNamespace(status="ready"))
+
+    monkeypatch.setattr(briefings, "SessionFactory", SessionContext)
+    monkeypatch.setattr(briefings, "build_briefing", _build)
+
+    await briefings.run(["u1", "u2"])
+
+    # 사용자 ID가 아니라 시스템 장부의 주인으로 집계된다.
+    assert seen == [(BRIEFING_BATCH_USER, "briefing.batch", 100_000)] * 2
+    # 문맥은 사용자마다 닫힌다. 남아 있으면 다음 요청의 토큰이 배치에 섞인다.
+    assert current_usage() is None
+
+
+@pytest.mark.anyio
+async def test_예산이_소진되면_재시도하지_않고_남은_사용자를_건너뛴다(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    async def _build(user_id: str, _db: Any, _day: Any, *, use_cache: bool):
+        calls.append(user_id)
+        if user_id == "second":
+            raise RateLimited(
+                "오늘 사용할 수 있는 AI 분석량을 모두 사용했습니다.",
+                detail={"reason": "daily_token_budget"},
+            )
+        return SimpleNamespace(cached=False, content=SimpleNamespace(status="ready"))
+
+    monkeypatch.setattr(briefings, "SessionFactory", SessionContext)
+    monkeypatch.setattr(briefings, "build_briefing", _build)
+
+    result = await briefings.run(["first", "second", "third"], attempts=3, backoff_s=0)
+
+    # 예산이 바닥난 뒤로는 재시도도 다음 사용자도 없다.
+    assert calls == ["first", "second"]
+    assert result.generated == 1
+    assert result.failed == 0
+    assert result.retries == 0
+    assert result.skipped == 2
+    assert result.budget_exhausted is True
+    assert result.as_dict()["budget_exhausted"] is True

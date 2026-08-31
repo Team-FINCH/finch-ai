@@ -72,6 +72,47 @@ async def test_DB의_오늘_사용량도_예산에_포함한다(
 
 
 @pytest.mark.asyncio
+async def test_배치_문맥은_요청_한도_없이_별도_예산을_쓴다(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "ai_rate_limit_briefing_per_minute", 1)
+    monkeypatch.setattr(settings, "ai_daily_token_budget", 1)
+    guard = UsageGuard()
+
+    # 대상 사용자 수만큼 도는 배치는 분당 횟수 한도에 걸리지 않는다.
+    for _ in range(5):
+        token = await guard.enter_system("system:batch", "briefing.batch", now=NOW, budget=30_000)
+        reset_usage(token)
+
+    token = await guard.enter_system("system:batch", "briefing.batch", now=NOW, budget=30_000)
+    try:
+        assert await guard.reserve(20_000) is not None
+        with pytest.raises(RateLimited) as caught:
+            await guard.reserve(20_000)
+        assert caught.value.detail["limit_tokens"] == 30_000
+    finally:
+        reset_usage(token)
+
+
+@pytest.mark.asyncio
+async def test_배치_소비는_사용자_예산을_깎지_않는다(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "ai_daily_token_budget", 20_000)
+    guard = UsageGuard()
+
+    batch = await guard.enter_system("system:batch", "briefing.batch", now=NOW, budget=30_000)
+    await guard.settle(await guard.reserve(20_000), input_tokens=20_000, output_tokens=0)
+    reset_usage(batch)
+
+    token = await guard.enter("u1", "briefing", now=NOW)
+    try:
+        assert await guard.reserve(20_000) is not None
+    finally:
+        reset_usage(token)
+
+
+@pytest.mark.asyncio
 async def test_캐시_응답은_GMS_예산을_예약하지_않는다(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

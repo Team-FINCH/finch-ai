@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     ai_gms_reservation_tokens: int = 20_000
     ai_gms_reservation_ttl_s: int = 5 * 60
 
+    # 배치·스케줄러는 사용자가 누른 요청이 아니므로 개인 예산을 깎지 않는다. 대신
+    # 시스템 몫의 장부를 따로 두어, 상한 없이 GMS 요금이 새는 경로를 막는다.
+    ai_batch_daily_token_budget: int = 2_000_000
+
     # 데일리 브리핑 배치: 최초 시도를 포함한 횟수와 재시도 간 기본 대기 시간.
     briefing_batch_attempts: int = 3
     briefing_batch_backoff_s: float = 1.0

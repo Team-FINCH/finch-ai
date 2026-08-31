@@ -84,6 +84,38 @@ async def test_토큰_예약과_정산을_Guard_간에_공유한다(
 
 
 @pytest.mark.asyncio
+async def test_배치_장부는_영속되고_사용자_예산과_섞이지_않는다(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_user = f"system:batch-{uuid.uuid4().hex[:8]}"
+    user_id = f"test-{uuid.uuid4().hex}"
+    monkeypatch.setattr(settings, "ai_daily_token_budget", 20_000)
+    await _clean(batch_user)
+    await _clean(user_id)
+    try:
+        first = UsageGuard(TestSessions)
+        token = await first.enter_system(batch_user, "briefing.batch", now=NOW, budget=30_000)
+        await first.settle(await first.reserve(20_000), input_tokens=20_000, output_tokens=0)
+        reset_usage(token)
+
+        # 다른 Pod의 배치도 같은 장부를 본다.
+        second = UsageGuard(TestSessions)
+        token = await second.enter_system(batch_user, "briefing.batch", now=NOW, budget=30_000)
+        with pytest.raises(RateLimited) as caught:
+            await second.reserve(20_000)
+        assert caught.value.detail["limit_tokens"] == 30_000
+        reset_usage(token)
+
+        # 배치가 쓴 20,000 토큰은 사용자 몫을 건드리지 않는다.
+        token = await second.enter(user_id, "briefing", now=NOW)
+        assert await second.reserve(20_000) is not None
+        reset_usage(token)
+    finally:
+        await _clean(batch_user)
+        await _clean(user_id)
+
+
+@pytest.mark.asyncio
 async def test_Pod_장애로_남은_예약은_만료_후_회수된다(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
