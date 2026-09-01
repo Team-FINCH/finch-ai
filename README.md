@@ -59,7 +59,7 @@ AI 기능의 구현은 AI 파트가 전부 소유합니다. 다른 파트에 계
 우리가 `price_daily` · `instruments` 에 적재한 것을 씁니다 — 자세한 분담은
 [`docs/api/aiApiSpec.md`](../docs/api/aiApiSpec.md) §4.1 에 있습니다.
 
-### ⚠️ 배포 조건 — AI 서버는 외부에 노출하지 않습니다
+### 배포 조건 — AI 서버는 외부에 노출하지 않습니다
 
 호출 경로는 **프런트 → 백엔드 → AI** 입니다. JWT 검증은 백엔드가 끝내고, AI 는 백엔드가 넘긴
 `X-Internal-Token` 으로 호출자가 백엔드인지만 확인한 뒤 `X-User-Id` 헤더를 **검증 없이 그대로
