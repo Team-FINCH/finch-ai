@@ -2908,6 +2908,10 @@
             ],
             "title": "Linked Trade Id"
           },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
           "recorded_at": {
             "format": "date-time",
             "title": "Recorded At",
@@ -2931,6 +2935,7 @@
         "required": [
           "id",
           "ticker",
+          "name",
           "text",
           "source",
           "status",

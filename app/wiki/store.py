@@ -178,10 +178,11 @@ def fact_payload(fact: WikiFact) -> dict[str, Any]:
     }
 
 
-def thesis_payload(thesis: WikiThesis) -> dict[str, Any]:
+def thesis_payload(thesis: WikiThesis, *, name: str | None = None) -> dict[str, Any]:
     return {
         "id": str(thesis.id),
         "ticker": thesis.ticker,
+        "name": name or thesis.ticker,
         "text": thesis.text,
         "horizon": thesis.horizon,
         "source": thesis.source,  # 어투 판단용. 빼지 말 것.

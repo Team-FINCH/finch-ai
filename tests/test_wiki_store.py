@@ -206,6 +206,7 @@ async def test_논지_직렬화는_source와_status를_싣는다(db: AsyncSessio
     assert payload["status"] == ThesisStatus.ACTIVE
     assert payload["linked_trade_id"] == "2025-09-01#0000"
     assert payload["ticker"] == TICKER
+    assert payload["name"] == TICKER
 
 
 async def test_활성_논지_조회는_닫힌_것을_주지_않는다(db: AsyncSession, user_id: str) -> None:

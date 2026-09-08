@@ -102,6 +102,7 @@ def test_wiki_and_feedback_content_keys_are_explicit() -> None:
     assert set(schemas["WikiThesisOut"]["properties"]) == {
         "id",
         "ticker",
+        "name",
         "text",
         "horizon",
         "source",

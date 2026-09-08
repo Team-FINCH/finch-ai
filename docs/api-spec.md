@@ -779,7 +779,7 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 {
   "profile": [
     {
-      "fact_id": "fct_01JQ...",
+      "id": "fct_01JQ...",
       "text": "분산 투자를 중시하며 단일 업종 40% 이상을 피하고자 함",
       "source": "user_stated",
       "confidence": "high",
@@ -803,7 +803,7 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 
 Phase 1에는 논지 삭제 API가 없다. `status`는 서버가 새 논지를 기록할 때 이전 논지를 `active`에서 `closed`로 보관하기 위한 내부 이력 상태이며, `PUT`으로 바꾸는 입력값이 아니다. 따라서 화면에는 논지 수정만 제공하고 삭제 동작은 제공하지 않는다.
 
-**DELETE** `/api/ai/v1/wiki/facts/{factId}`  —  Phase 1
+**DELETE** `/api/ai/v1/wiki/facts/{fact_id}`  —  Phase 1
 
 항목 삭제. 즉시 이후 모든 응답에서 제외된다.
 

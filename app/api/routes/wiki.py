@@ -12,6 +12,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser, DbSession
+from app.core.adapters import ledger_source
 from app.core.enums import Confidence, ThesisHorizon, ThesisStatus, WikiSource
 from app.core.schemas import ContentModel, Envelope
 from app.wiki.store import (
@@ -47,6 +48,7 @@ class WikiFactOut(ContentModel):
 class WikiThesisOut(ContentModel):
     id: str
     ticker: str
+    name: str
     text: str
     horizon: ThesisHorizon | None = None
     source: WikiSource
@@ -72,10 +74,12 @@ async def get_wiki(user_id: CurrentUser, db: DbSession) -> Envelope[WikiContent]
     항목마다 source를 그대로 실어 보낸다. ai_inferred는 단정투로 렌더링하면 안 되고,
     그 판단은 화면이 한다.
     """
+    theses = await list_theses(db, user_id)
+    names = await _thesis_names(user_id, [thesis.ticker for thesis in theses])
     return Envelope[WikiContent](
         content={
             "profile": [fact_payload(f) for f in await list_facts(db, user_id)],
-            "theses": [thesis_payload(t) for t in await list_theses(db, user_id)],
+            "theses": [thesis_payload(thesis, name=names.get(thesis.ticker)) for thesis in theses],
         }
     )
 
@@ -94,7 +98,8 @@ async def create_thesis(
         linked_trade_id=body.linked_trade_id,
     )
     await db.commit()
-    return Envelope[WikiThesisOut](content=thesis_payload(thesis))
+    names = await _thesis_names(user_id, [thesis.ticker])
+    return Envelope[WikiThesisOut](content=thesis_payload(thesis, name=names.get(thesis.ticker)))
 
 
 @router.put("/theses/{ticker}")
@@ -111,7 +116,24 @@ async def update_thesis(
         linked_trade_id=body.linked_trade_id,
     )
     await db.commit()
-    return Envelope[WikiThesisOut](content=thesis_payload(thesis))
+    names = await _thesis_names(user_id, [thesis.ticker])
+    return Envelope[WikiThesisOut](content=thesis_payload(thesis, name=names.get(thesis.ticker)))
+
+
+async def _thesis_names(user_id: str, tickers: list[str]) -> dict[str, str]:
+    """원장에서 논지 종목의 표시명을 찾는다.
+
+    논지는 과거에 보유했던 종목에도 남는다. 원장에 없는 종목은 ticker를 그대로
+    표시해 논지 조회 자체가 원장 상태에 막히지 않게 한다.
+    """
+    source = ledger_source()
+    if source is None:
+        return {}
+    try:
+        ledger = await source.load(user_id)
+    except (KeyError, FileNotFoundError, OSError):
+        return {}
+    return {ticker: ledger.instrument(ticker).name for ticker in tickers}
 
 
 @router.delete("/facts/{fact_id}")
