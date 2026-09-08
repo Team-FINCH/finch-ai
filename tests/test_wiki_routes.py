@@ -60,3 +60,33 @@ def test_위키_논지에_원장_종목명을_싣고_미보유는_ticker로_대�
         ("005930", "삼성전자"),
         ("999999", "999999"),
     ]
+
+
+def test_논지_생성은_커밋_후_원장_예외에도_ticker로_성공한다(monkeypatch) -> None:
+    thesis = _thesis("005930")
+
+    class _CommittedSession:
+        async def commit(self) -> None:
+            pass
+
+    class _FailingLedgerSource:
+        async def load(self, _user_id: str) -> Ledger:
+            raise ValueError("원장 데이터가 올바르지 않습니다")
+
+    async def _record_thesis(_db, _user_id, _ticker, _text, **_kwargs):
+        return thesis
+
+    monkeypatch.setattr("app.api.routes.wiki.ledger_source", lambda: _FailingLedgerSource())
+    monkeypatch.setattr("app.api.routes.wiki.record_thesis", _record_thesis)
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: _CommittedSession()
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/ai/v1/wiki/theses",
+            json={"ticker": "005930", "text": "장기 보유"},
+            headers={"X-User-Id": "u1"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["content"]["name"] == "005930"

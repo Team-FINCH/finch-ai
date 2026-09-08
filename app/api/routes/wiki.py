@@ -131,7 +131,8 @@ async def _thesis_names(user_id: str, tickers: list[str]) -> dict[str, str]:
         return {}
     try:
         ledger = await source.load(user_id)
-    except (KeyError, FileNotFoundError, OSError):
+    # 커밋 뒤 쓰기 응답에서도 호출되므로 원장 실패가 영속된 논지를 500으로 만들면 안 된다.
+    except Exception:
         return {}
     return {ticker: ledger.instrument(ticker).name for ticker in tickers}
 
