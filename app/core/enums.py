@@ -173,7 +173,9 @@ class Screen(StrEnum):
 
     HOME = "home"
     PORTFOLIO = "portfolio"
+    BRIEFING = "briefing"
     STOCK_DETAIL = "stock_detail"
+    NEWS_DETAIL = "news_detail"
     ORDER = "order"
     CHAT = "chat"
 

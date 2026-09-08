@@ -60,7 +60,9 @@ MAX_TOOL_CALLS = 12
 _SCREEN_HINT: dict[Screen, str] = {
     Screen.HOME: "홈 화면",
     Screen.PORTFOLIO: "포트폴리오 화면",
+    Screen.BRIEFING: "브리핑 화면",
     Screen.STOCK_DETAIL: "종목 상세 화면",
+    Screen.NEWS_DETAIL: "뉴스 상세 화면",
     Screen.ORDER: "주문 화면",
     Screen.CHAT: "대화 화면",
 }

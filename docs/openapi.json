@@ -2425,7 +2425,9 @@
         "enum": [
           "home",
           "portfolio",
+          "briefing",
           "stock_detail",
+          "news_detail",
           "order",
           "chat"
         ],

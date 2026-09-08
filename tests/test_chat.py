@@ -15,8 +15,9 @@ from fastapi.testclient import TestClient
 
 from app.api.main import create_app
 from app.core.db import get_session
+from app.core.enums import Screen
 from app.core.models import AIFeedback, AIResponse
-from app.llm.agent import MAX_TOOL_CALLS, MAX_TOOL_TURNS
+from app.llm.agent import _SCREEN_HINT, MAX_TOOL_CALLS, MAX_TOOL_TURNS
 from app.llm.client import LlmResult, NullLlmClient, ToolTurn, ToolUse
 
 URL = "/api/ai/v1/chat"
@@ -179,6 +180,45 @@ def test_화면_종목이_대명사를_푼다(monkeypatch):
     assert "이거" in opening
     # 인자 없이 부른 시세 도구가 화면 종목으로 해결됐다.
     assert body["content"]["tools_used"] == ["get_price_history"]
+
+
+@pytest.mark.parametrize(
+    ("screen", "hint"),
+    [("briefing", "브리핑 화면"), ("news_detail", "뉴스 상세 화면")],
+)
+def test_새_화면_문맥이_고유_힌트로_프롬프트에_실린다(monkeypatch, screen, hint):
+    fake = FakeClient((_use("get_portfolio"),))
+    with build(fake, monkeypatch) as client:
+        response = _post(client, {"message": "요약해 줘", "context": {"screen": screen}})
+
+    assert response.status_code == 200
+    opening = fake.turns[0]["messages"][0]["content"]
+    assert hint in opening
+    assert "대화 화면" not in opening
+
+
+@pytest.mark.parametrize(
+    ("screen", "hint"),
+    [
+        (Screen.HOME, "홈 화면"),
+        (Screen.PORTFOLIO, "포트폴리오 화면"),
+        (Screen.STOCK_DETAIL, "종목 상세 화면"),
+        (Screen.ORDER, "주문 화면"),
+        (Screen.CHAT, "대화 화면"),
+    ],
+)
+def test_기존_화면_힌트는_바뀌지_않는다(screen, hint):
+    assert _SCREEN_HINT[screen] == hint
+
+
+def test_목록_밖_화면은_거부한다(portfolio_client):
+    response = _post(
+        portfolio_client,
+        {"message": "요약해 줘", "context": {"screen": "unknown_screen"}},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "INVALID_REQUEST"
 
 
 def test_종목코드가_6자리가_아니면_거부한다(portfolio_client):

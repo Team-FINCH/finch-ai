@@ -377,7 +377,7 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 }
 ```
 
-`conversation_id`를 생략하면 새 대화를 시작하고 응답 `content.conversation_id`로 발급한다. `context`는 화면 맥락으로, 사용자가 "이거 어때?"처럼 대명사로 물을 때 지시 대상을 해소한다. `screen`은 `home · portfolio · stock_detail · order · chat` 중 하나. `message`는 공백만으로는 안 되고 2,000자를 넘으면 `INVALID_REQUEST`다 — 그보다 긴 것은 대화가 아니라 문서 붙여넣기다.
+`conversation_id`를 생략하면 새 대화를 시작하고 응답 `content.conversation_id`로 발급한다. `context`는 화면 맥락으로, 사용자가 "이거 어때?"처럼 대명사로 물을 때 지시 대상을 해소한다. `screen`은 `home · portfolio · briefing · stock_detail · news_detail · order · chat` 중 하나. `message`는 공백만으로는 안 되고 2,000자를 넘으면 `INVALID_REQUEST`다 — 그보다 긴 것은 대화가 아니라 문서 붙여넣기다.
 
 #### Response — content
 
