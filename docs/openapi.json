@@ -3335,13 +3335,8 @@
             "name": "reason",
             "required": false,
             "schema": {
-              "default": "user_deleted",
-              "enum": [
-                "user_deleted",
-                "guess_rejected"
-              ],
-              "title": "Reason",
-              "type": "string"
+              "$ref": "#/components/schemas/DeleteReason",
+              "default": "user_deleted"
             }
           }
         ],

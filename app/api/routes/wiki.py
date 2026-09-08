@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser, DbSession
@@ -143,17 +143,10 @@ async def delete_fact(
     fact_id: str,
     user_id: CurrentUser,
     db: DbSession,
-    reason: str = Query(
-        default=DeleteReason.USER_DELETED,
-        json_schema_extra={"enum": [reason.value for reason in DeleteReason]},
-    ),
+    reason: DeleteReason = DeleteReason.USER_DELETED,
 ) -> Envelope[DeletedFactContent]:
     """소프트 삭제. 행과 삭제 사유는 남고 읽기 경로에서만 사라진다."""
-    try:
-        delete_reason = DeleteReason(reason)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail="지원하지 않는 삭제 사유입니다.") from exc
-    fact = await soft_delete_fact(db, user_id, fact_id, reason=delete_reason)
+    fact = await soft_delete_fact(db, user_id, fact_id, reason=reason)
     await db.commit()
     return Envelope[DeletedFactContent](
         content={"id": str(fact.id), "deleted_at": fact.deleted_at, "reason": fact.deleted_reason}
