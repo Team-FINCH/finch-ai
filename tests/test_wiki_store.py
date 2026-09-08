@@ -18,9 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
-from app.core.enums import Confidence, ThesisHorizon, ThesisStatus, WikiSource
+from app.core.enums import Confidence, DeleteReason, ThesisHorizon, ThesisStatus, WikiSource
 from app.core.errors import InvalidRequest
-from app.core.models import WikiThesis
+from app.core.models import WikiFact, WikiThesis
 from app.wiki.store import (
     add_fact,
     fact_payload,
@@ -76,6 +76,33 @@ async def test_소프트_삭제된_항목은_읽기에서_빠진다(db: AsyncSes
 
     assert [f.id for f in await list_facts(db, user_id)] == [keep.id]
     assert drop.deleted_at is not None  # 행은 남아 있다
+    assert drop.deleted_reason == DeleteReason.USER_DELETED
+
+
+async def test_추측_거절_사유를_함께_기록한다(db: AsyncSession, user_id: str) -> None:
+    fact = await add_fact(db, user_id, "반도체를 선호하시는 것 같습니다", source=WikiSource.AI_INFERRED)
+
+    deleted = await soft_delete_fact(
+        db, user_id, str(fact.id), reason=DeleteReason.GUESS_REJECTED
+    )
+
+    assert deleted.deleted_reason == DeleteReason.GUESS_REJECTED
+    stored = await db.get(WikiFact, fact.id)
+    assert stored is not None
+    assert stored.deleted_reason == DeleteReason.GUESS_REJECTED
+
+
+def test_삭제_사유_쿼리값이_잘못되면_표준_오류_봉투를_돌려준다() -> None:
+    from fastapi.testclient import TestClient
+
+    from app.api.main import API_PREFIX, app
+
+    response = TestClient(app).delete(
+        f"{API_PREFIX}/wiki/facts/{uuid.uuid4()}?reason=bogus", headers={"X-User-Id": "test"}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "INVALID_REQUEST"
 
 
 async def test_추론_항목은_source를_잃지_않는다(db: AsyncSession, user_id: str) -> None:

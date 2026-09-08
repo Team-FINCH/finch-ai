@@ -110,7 +110,7 @@ def test_wiki_and_feedback_content_keys_are_explicit() -> None:
         "linked_trade_id",
         "recorded_at",
     }
-    assert set(schemas["DeletedFactContent"]["properties"]) == {"id", "deleted_at"}
+    assert set(schemas["DeletedFactContent"]["properties"]) == {"id", "deleted_at", "reason"}
     assert set(schemas["FeedbackContent"]["properties"]) == {"recorded"}
 
 

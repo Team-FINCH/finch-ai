@@ -143,6 +143,13 @@ class Confidence(StrEnum):
     HIGH = "high"
 
 
+class DeleteReason(StrEnum):
+    """사용자가 위키 팩트를 지운 이유. 아직은 기록만 한다."""
+
+    USER_DELETED = "user_deleted"
+    GUESS_REJECTED = "guess_rejected"
+
+
 class ThesisHorizon(StrEnum):
     SHORT = "short"
     MID = "mid"
