@@ -217,7 +217,7 @@ def test_목록_밖_화면은_거부한다(portfolio_client):
         {"message": "요약해 줘", "context": {"screen": "unknown_screen"}},
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 400
     assert response.json()["code"] == "INVALID_REQUEST"
 
 

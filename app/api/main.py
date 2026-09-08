@@ -74,21 +74,13 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
-        errors = exc.errors()
         body = ErrorResponse(
             code=ErrorCode.INVALID_REQUEST,
             message="요청 형식이 올바르지 않습니다.",
-            detail={"errors": errors},
+            detail={"errors": exc.errors()},
             request_id=new_request_id(),
         )
-        # 화면 값은 클라이언트가 OpenAPI enum으로 바로 보정할 수 있는 계약 위반이다.
-        # 다른 요청 형식 오류(주문 수량 등)는 기존처럼 400으로 유지한다.
-        is_unknown_screen = any(
-            error["type"] == "enum" and error["loc"] == ("body", "context", "screen")
-            for error in errors
-        )
-        status_code = 422 if is_unknown_screen else 400
-        return JSONResponse(status_code=status_code, content=body.model_dump(mode="json"))
+        return JSONResponse(status_code=400, content=body.model_dump(mode="json"))
 
     @app.get("/health", tags=["ops"])
     async def health() -> dict[str, str]:
