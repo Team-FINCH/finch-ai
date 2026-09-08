@@ -1014,6 +1014,15 @@
         "title": "DataAsOf",
         "type": "object"
       },
+      "DeleteReason": {
+        "description": "사용자가 위키 팩트를 지운 이유. 아직은 기록만 한다.",
+        "enum": [
+          "user_deleted",
+          "guess_rejected"
+        ],
+        "title": "DeleteReason",
+        "type": "string"
+      },
       "DeletedFactContent": {
         "additionalProperties": false,
         "properties": {
@@ -1025,11 +1034,15 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/DeleteReason"
           }
         },
         "required": [
           "id",
-          "deleted_at"
+          "deleted_at",
+          "reason"
         ],
         "title": "DeletedFactContent",
         "type": "object"
@@ -3305,7 +3318,7 @@
     },
     "/api/ai/v1/wiki/facts/{fact_id}": {
       "delete": {
-        "description": "소프트 삭제. 행은 남고 읽기 경로에서만 사라진다.",
+        "description": "소프트 삭제. 행과 삭제 사유는 남고 읽기 경로에서만 사라진다.",
         "operationId": "delete_fact_api_ai_v1_wiki_facts__fact_id__delete",
         "parameters": [
           {
@@ -3314,6 +3327,20 @@
             "required": true,
             "schema": {
               "title": "Fact Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reason",
+            "required": false,
+            "schema": {
+              "default": "user_deleted",
+              "enum": [
+                "user_deleted",
+                "guess_rejected"
+              ],
+              "title": "Reason",
               "type": "string"
             }
           }

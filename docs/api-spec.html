@@ -1470,7 +1470,7 @@
           <span class="path">/api/ai/v1/wiki/facts/<span class="var">{fact_id}</span></span>
           <span class="tag p1">Phase 1</span>
         </div>
-        <div class="ep-body"><p class="ep-note">항목 삭제. 즉시 이후 모든 응답에서 제외된다.</p></div>
+        <div class="ep-body"><p class="ep-note">항목 삭제. 쿼리 파라미터 <code>reason</code>은 <code>user_deleted</code>(기본값) 또는 <code>guess_rejected</code>(AI 추측에 대한 "아니에요")만 허용하며, 응답에도 저장된 사유를 포함한다. 즉시 이후 모든 응답에서 제외된다.</p><p class="ep-note">삭제 사유는 추후 AI 추측 제외 목록의 원천으로 기록만 한다. 이 단계에서는 제외 목록을 소비하는 생성 로직이 아직 구현되지 않았다.</p></div>
       </div>
 
       <div class="t-wrap">

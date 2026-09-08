@@ -256,6 +256,7 @@ class WikiFact(Base):
     evidence: Mapped[dict | None] = mapped_column(JSONB)
     editable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     deleted_at: Mapped[datetime | None] = mapped_column(TS)
+    deleted_reason: Mapped[str | None] = mapped_column(String(20))
 
     __table_args__ = (Index("ix_wiki_facts_user", "user_id", "deleted_at"),)
 

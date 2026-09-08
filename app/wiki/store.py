@@ -19,7 +19,7 @@ from typing import Any
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import Confidence, ThesisHorizon, ThesisStatus, WikiSource
+from app.core.enums import Confidence, DeleteReason, ThesisHorizon, ThesisStatus, WikiSource
 from app.core.errors import InvalidRequest
 from app.core.models import WikiFact, WikiThesis
 from app.core.schemas import now_kst
@@ -59,8 +59,14 @@ async def add_fact(
     return fact
 
 
-async def soft_delete_fact(db: AsyncSession, user_id: str, fact_id: str) -> WikiFact:
-    """행을 지우지 않고 deleted_at만 찍는다.
+async def soft_delete_fact(
+    db: AsyncSession,
+    user_id: str,
+    fact_id: str,
+    *,
+    reason: DeleteReason = DeleteReason.USER_DELETED,
+) -> WikiFact:
+    """행을 지우지 않고 삭제 시각과 사유를 남긴다.
 
     사용자가 지운 항목을 AI가 다시 추론해 되살리면 지운 의미가 없다. 흔적을 남겨야
     수집기가 같은 문장을 다시 제안하지 않는지 나중에 확인할 수 있다.
@@ -72,6 +78,7 @@ async def soft_delete_fact(db: AsyncSession, user_id: str, fact_id: str) -> Wiki
     if not fact.editable:
         raise InvalidRequest("사용자가 지울 수 없는 항목입니다.")
     fact.deleted_at = now_kst()
+    fact.deleted_reason = reason
     await db.flush()
     return fact
 
