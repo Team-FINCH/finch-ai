@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
 
 from app.api.routes import (
     briefing,
@@ -24,9 +25,15 @@ from app.api.routes import (
     wiki,
 )
 from app.core.config import settings
-from app.core.db import engine
+from app.core.db import SessionFactory, engine
 from app.core.errors import AppError, ErrorCode
-from app.core.schemas import ErrorResponse, new_request_id
+from app.core.models import Document, DocumentChunk, PriceDaily
+from app.core.schemas import (
+    ErrorResponse,
+    HealthResponse,
+    IngestState,
+    new_request_id,
+)
 from app.core.usage_limits import default_guard
 
 logger = logging.getLogger(__name__)
@@ -82,9 +89,37 @@ def create_app() -> FastAPI:
         )
         return JSONResponse(status_code=400, content=body.model_dump(mode="json"))
 
-    @app.get("/health", tags=["ops"])
-    async def health() -> dict[str, str]:
-        return {"status": "ok", "env": settings.app_env, "model": settings.llm_model}
+    @app.get("/health", tags=["ops"], response_model=HealthResponse)
+    async def health() -> HealthResponse:
+        """RAG 문서·임베딩과 시세 적재 상태를 HTTP 200으로 보고한다."""
+        ingest = IngestState(documents=False, embeddings=False, price_daily=False)
+        try:
+            async with SessionFactory() as session:
+                ingest.documents = (
+                    (await session.execute(select(1).select_from(Document).limit(1))).first() is not None
+                )
+                ingest.embeddings = (
+                    (await session.execute(
+                        select(1)
+                        .select_from(DocumentChunk)
+                        .where(DocumentChunk.embedding.is_not(None))
+                        .limit(1)
+                    )).first()
+                    is not None
+                )
+                ingest.price_daily = (
+                    (await session.execute(select(1).select_from(PriceDaily).limit(1))).first()
+                    is not None
+                )
+        except Exception:
+            logger.warning("health ingest-state query failed")
+
+        return HealthResponse(
+            status="ok" if all(ingest.model_dump().values()) else "degraded",
+            env=settings.app_env,
+            model=settings.llm_model,
+            ingest=ingest,
+        )
 
     return app
 

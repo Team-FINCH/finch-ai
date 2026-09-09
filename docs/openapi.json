@@ -1977,6 +1977,62 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HealthResponse": {
+        "description": "인증 없이 읽는 운영 점검 응답.\n\n상태가 나빠도 로드밸런서가 진단 본문을 받을 수 있도록 HTTP 상태는 항상 200이다.",
+        "properties": {
+          "env": {
+            "title": "Env",
+            "type": "string"
+          },
+          "ingest": {
+            "$ref": "#/components/schemas/IngestState"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "degraded"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "env",
+          "model",
+          "ingest"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "IngestState": {
+        "description": "검색에 필요한 적재 상태.",
+        "properties": {
+          "documents": {
+            "title": "Documents",
+            "type": "boolean"
+          },
+          "embeddings": {
+            "title": "Embeddings",
+            "type": "boolean"
+          },
+          "price_daily": {
+            "title": "Price Daily",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "documents",
+          "embeddings",
+          "price_daily"
+        ],
+        "title": "IngestState",
+        "type": "object"
+      },
       "MetricSource": {
         "description": "수치가 어느 엔진에서 나왔는지. 출력단 대조 검증의 기준이 된다.",
         "enum": [
@@ -3465,17 +3521,14 @@
     },
     "/health": {
       "get": {
+        "description": "RAG 문서·임베딩과 시세 적재 상태를 HTTP 200으로 보고한다.",
         "operationId": "health_health_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Health Health Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/HealthResponse"
                 }
               }
             },
