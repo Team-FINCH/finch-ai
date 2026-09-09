@@ -422,6 +422,32 @@ def test_응답을_저장해_피드백을_받는다(client):
     assert feedback.status_code == 200
 
 
+# ── 응답 키 계약 (GitLab #58) ────────────────────────────
+def test_스칼라_키는_값이_없어도_응답에_남는다(client):
+    """exclude_unset이 중첩까지 전파되면 cached·direction 같은 키가 통째로 사라진다.
+
+    계약상 필수인 키가 응답에서 빠지면 프론트가 6종 전부에 방어 코드를 진다.
+    값이 없으면 null로 실려야 한다.
+    """
+    section = _post(client, {"sections": ["current"]}).json()["content"]["sections"]["current"]
+
+    assert "cached" in section
+    assert "cached_at" in section
+    assert "title" in section
+    for segment in section["segments"]:
+        for key in ("raw", "unit", "source", "direction"):
+            assert key in segment, f"{key}가 세그먼트에서 빠졌다"
+
+
+def test_없는_섹션은_여전히_생략된다(client):
+    """섹션 단위 생략은 정상 동작이다. 키 누락을 고치면서 이걸 깨면 안 된다."""
+    sections = _post(client, {"sections": ["current"]}).json()["content"]["sections"]
+
+    assert "current" in sections
+    assert "changes" not in sections
+    assert "my_impact" not in sections
+
+
 # ── 거부 경로 ────────────────────────────────────────────
 def test_종목코드가_6자리가_아니면_거부한다(client):
     response = client.post(

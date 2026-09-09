@@ -125,6 +125,24 @@ class AnalysisSection(ContentModel):
     events: list[UpcomingEvent] | None = None
 
 
+# thesis_check·next_events 전용 키다. 일반 섹션에는 실리지 않는다.
+_SECTION_ONLY_KEYS = frozenset({"thesis", "supporting", "challenging", "events"})
+
+
+def _section_payload(section: AnalysisSection) -> dict[str, Any]:
+    """섹션 하나를 직렬화한다.
+
+    exclude_unset을 쓰면 안 된다. 중첩 모델까지 전파돼 세그먼트의
+    raw·unit·source·direction과 섹션의 cached까지 통째로 떨어진다. 계약상
+    필수인 키가 사라져 프론트가 6종 전부에 방어 코드를 지게 된다 (GitLab #58).
+    조건부 키만 골라 뺀다.
+    """
+    payload = section.model_dump(mode="json")
+    for key in _SECTION_ONLY_KEYS - section.model_fields_set:
+        payload.pop(key, None)
+    return payload
+
+
 class AnalysisSections(ContentModel):
     current: AnalysisSection | None = None
     changes: AnalysisSection | None = None
@@ -142,7 +160,13 @@ class AnalysisContent(BaseModel):
 
     @field_serializer("sections")
     def _serialize_sections(self, sections: AnalysisSections) -> dict[str, dict[str, Any] | None]:
-        return sections.model_dump(mode="json", exclude_unset=True)
+        # 어떤 섹션 키를 실을지는 model_fields_set이 정한다 — 요청하지 않은 섹션은
+        # 빠지고, 요청했으나 자료가 없는 섹션은 null로 남는다.
+        out: dict[str, dict[str, Any] | None] = {}
+        for key in sections.model_fields_set:
+            section = getattr(sections, key)
+            out[key] = None if section is None else _section_payload(section)
+        return out
 
 
 # ── 원장 ─────────────────────────────────────────────────
