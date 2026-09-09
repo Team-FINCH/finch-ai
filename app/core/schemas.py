@@ -51,6 +51,27 @@ class ContentModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+# ── 운영 상태 ────────────────────────────────────────────
+class IngestState(BaseModel):
+    """검색에 필요한 적재 상태."""
+
+    documents: bool
+    embeddings: bool
+    price_daily: bool
+
+
+class HealthResponse(BaseModel):
+    """인증 없이 읽는 운영 점검 응답.
+
+    상태가 나빠도 로드밸런서가 진단 본문을 받을 수 있도록 HTTP 상태는 항상 200이다.
+    """
+
+    status: Literal["ok", "degraded"]
+    env: str
+    model: str
+    ingest: IngestState
+
+
 # ── 응답 조각 ────────────────────────────────────────────
 class Segment(BaseModel):
     """문장을 텍스트와 수치로 쪼갠 조각.

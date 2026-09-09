@@ -130,8 +130,72 @@ def test_envelope_marks_only_stale_data_sources() -> None:
 
 
 # ── API 계약 ─────────────────────────────────────────────
-def test_health() -> None:
-    assert client.get("/health").status_code == 200
+class _HealthResult:
+    def __init__(self, exists: bool) -> None:
+        self._exists = exists
+
+    def first(self) -> object | None:
+        return object() if self._exists else None
+
+
+class _HealthSession:
+    def __init__(self, exists: list[bool]) -> None:
+        self._exists = iter(exists)
+
+    async def __aenter__(self) -> _HealthSession:
+        return self
+
+    async def __aexit__(self, *_: object) -> None:
+        return None
+
+    async def execute(self, _: object) -> _HealthResult:
+        return _HealthResult(next(self._exists))
+
+
+@pytest.mark.parametrize(
+    ("exists", "status"),
+    [
+        ([True, True, True], "ok"),
+        ([False, True, True], "degraded"),
+        ([True, False, True], "degraded"),
+        ([True, True, False], "degraded"),
+    ],
+)
+def test_health_reports_ingest_state_and_always_returns_200(
+    monkeypatch, exists: list[bool], status: str
+) -> None:
+    monkeypatch.setattr("app.api.main.SessionFactory", lambda: _HealthSession(exists))
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == status
+    assert body["ingest"] == dict(
+        zip(("documents", "embeddings", "price_daily"), exists, strict=True)
+    )
+    assert {"status", "env", "model"} <= body.keys()
+
+
+def test_health_returns_degraded_200_when_ingest_query_fails(monkeypatch) -> None:
+    class BrokenSession:
+        async def __aenter__(self) -> BrokenSession:
+            raise RuntimeError("database unavailable")
+
+        async def __aexit__(self, *_: object) -> None:
+            return None
+
+    monkeypatch.setattr("app.api.main.SessionFactory", BrokenSession)
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "degraded"
+    assert response.json()["ingest"] == {
+        "documents": False,
+        "embeddings": False,
+        "price_daily": False,
+    }
 
 
 def test_all_endpoints_registered() -> None:
