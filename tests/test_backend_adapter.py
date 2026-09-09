@@ -7,6 +7,7 @@ HTTP 는 목으로 세우고, DB 쪽은 실제로 읽는다 — 여기서 고정
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date
 from typing import Any
 
@@ -186,6 +187,47 @@ async def test_모든_요청에_인증_헤더_두_개가_실린다(sessions):
     for _url, _params, headers in client.calls:
         assert headers[settings.internal_token_header] == "s3cret"
         assert headers[settings.trusted_user_header] == "42"
+
+
+@pytest.mark.asyncio
+async def test_동시_요청도_각자의_사용자_헤더를_유지한다(monkeypatch):
+    """공유 어댑터의 한 요청이 다른 요청의 헤더를 덮어쓰면 안 된다."""
+    async def market_data(*_args, **_kwargs):
+        return {}, {}
+
+    source = _source(_FakeClient())
+    first_entered = asyncio.Event()
+    second_entered = asyncio.Event()
+    release_first = asyncio.Event()
+    calls = 0
+
+    async def delayed_to_thread(func, *args):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            first_entered.set()
+            await release_first.wait()
+        elif calls == 2:
+            second_entered.set()
+        return func(*args)
+
+    monkeypatch.setattr("app.core.adapters._market_data", market_data)
+    monkeypatch.setattr("app.core.adapters.asyncio.to_thread", delayed_to_thread)
+
+    first = asyncio.create_task(source.load("first"))
+    await first_entered.wait()
+    second = asyncio.create_task(source.load("second"))
+    await second_entered.wait()
+    release_first.set()
+    await asyncio.gather(first, second)
+
+    sent_user_ids = [
+        headers[settings.trusted_user_header]
+        for _url, _params, headers in source._client.calls
+    ]
+    # 첫 요청의 portfolio 호출을 멈춘 뒤 second 를 끝까지 실행한다. 따라서
+    # 호출 순서는 second 의 portfolio/trades, first 의 portfolio/trades 다.
+    assert sent_user_ids == ["second", "second", "first", "first"]
 
 
 # ── 우리 DB 에서 오는 것 ──────────────────────────────────────────────────

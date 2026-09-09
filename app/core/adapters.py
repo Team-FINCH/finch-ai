@@ -228,16 +228,19 @@ class BackendLedgerSource:
         # 묶인다. 테스트가 루프를 갈아 끼우므로 세션 팩토리를 갈아 끼울 수 있게 둔다.
         self._sessions = sessions
         self._timeout = timeout
-        #: load() 가 채운다. 사용자별 데이터라 모든 요청에 사용자 헤더가 실려야 한다.
-        self._user_id = ""
-
     # ── 백엔드 ───────────────────────────────────────────────────────
-    def _get(self, path: str, params: Mapping[str, object] | None = None) -> dict:
+    def _get(
+        self,
+        path: str,
+        params: Mapping[str, object] | None = None,
+        *,
+        user_id: str,
+    ) -> dict:
         import httpx
 
         headers = {
             settings.internal_token_header: self._token,
-            settings.trusted_user_header: self._user_id,
+            settings.trusted_user_header: user_id,
         }
         client = self._client or httpx.Client(timeout=self._timeout)
         try:
@@ -254,7 +257,7 @@ class BackendLedgerSource:
             if self._client is None:
                 client.close()
 
-    def _trades(self, round_id: object) -> Iterable[Trade]:
+    def _trades(self, round_id: object, *, user_id: str) -> Iterable[Trade]:
         """커서 페이징을 끝까지 따라간다. 기본 100건. 백엔드 명세 §9.2."""
         cursor: str | None = None
         seen = 0
@@ -264,7 +267,7 @@ class BackendLedgerSource:
                 params["roundId"] = round_id
             if cursor:
                 params["cursor"] = cursor
-            page = self._get("/internal/v1/trades", params)
+            page = self._get("/internal/v1/trades", params, user_id=user_id)
 
             for row in page.get("trades", ()):
                 yield Trade(
@@ -287,12 +290,15 @@ class BackendLedgerSource:
 
     # ── 조립 ─────────────────────────────────────────────────────────
     async def load(self, user_id: str) -> Ledger:
-        self._user_id = user_id
         # 동기 HTTP 라 이벤트 루프를 막는다. 스레드로 뺀다 — app.rag.search 와 같다.
-        portfolio = await asyncio.to_thread(self._get, "/internal/v1/portfolio")
+        portfolio = await asyncio.to_thread(
+            lambda: self._get("/internal/v1/portfolio", user_id=user_id)
+        )
         holdings = tuple(portfolio.get("holdings", ()))
         round_id = portfolio.get("roundId")
-        trades = await asyncio.to_thread(lambda: tuple(self._trades(round_id)))
+        trades = await asyncio.to_thread(
+            lambda: tuple(self._trades(round_id, user_id=user_id))
+        )
 
         # 거래한 종목도 시세가 있어야 한다. 전량 매도해 지금은 안 들고 있어도
         # 그날의 평가액을 다시 계산해야 하기 때문이다.
