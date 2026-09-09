@@ -152,12 +152,21 @@ DB 나 의존성이 준비되지 않았으면 무엇을 실행해야 하는지 �
 제공하는 제목·요약·원문 링크만 저장하며 언론사 본문을 별도로 크롤링하지 않습니다.
 
 ```bash
+# 종목 마스터 — DART 고유번호·시장·섹터를 먼저 적재
+python -m ingest.instruments
+python -m ingest.prices
 python -m app.rag.dart --tickers 005930,000660 --days 30
 python -m ingest.news --tickers 005930,000660 --days 7
+python -m app.rag.search --backfill
+```
+
+마지막 임베딩 백필을 빼먹으면 `documents`는 차도 검색 결과는 0건이다.
+
+```bash
+# 사용자별 브리핑 생성
 python -m ingest.briefings
 # 특정 사용자 또는 재생성이 필요할 때
 python -m ingest.briefings --users user_a,user_b --force
-python -m app.rag.search --backfill
 ```
 
 브리핑 배치는 사용자별 실패를 기본 3회까지 지수 백오프로 재시도한다. 종료 시 대상,

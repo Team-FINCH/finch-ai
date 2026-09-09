@@ -119,7 +119,7 @@ def fetch_filing_list(
         if status == "013":  # 조회된 데이터 없음. 오류가 아니다.
             break
         if status != "000":
-            log.debug("공시목록 응답 거절: ticker=%s status=%s", ticker, status)
+            log.warning("공시목록 응답 거절: ticker=%s status=%s", ticker, status)
             break
 
         for item in payload.get("list") or []:

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import zipfile
 
 import httpx
@@ -62,14 +63,34 @@ def test_fetch_filing_list_follows_pagination(monkeypatch: pytest.MonkeyPatch) -
     assert [f.rcept_no for f in filings] == ["20260814001", "20260814002", "20260814003"]
 
 
-def test_fetch_filing_list_stops_on_no_data() -> None:
+def test_fetch_filing_list_stops_on_no_data(caplog: pytest.LogCaptureFixture) -> None:
     """status 013은 '조회된 데이터 없음'이다. 오류로 다루면 멀쩡한 종목이 실패로 남는다."""
+    caplog.set_level(logging.WARNING, logger="app.rag.dart")
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"status": "013", "message": "조회된 데이타가 없습니다."})
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         assert dart.fetch_filing_list(client, "k", "x", "005930", "20260701", "20260819") == []
+    assert not [record for record in caplog.records if record.name == "app.rag.dart"]
+
+
+def test_fetch_filing_list_warns_on_unexpected_status(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger="app.rag.dart")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"status": "020", "message": "한도 초과"})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        assert dart.fetch_filing_list(client, "k", "x", "005930", "20260701", "20260819") == []
+
+    records = [record for record in caplog.records if record.name == "app.rag.dart"]
+    assert len(records) == 1
+    assert records[0].levelno == logging.WARNING
+    assert "ticker=005930" in records[0].getMessage()
+    assert "status=020" in records[0].getMessage()
 
 
 def test_fetch_filing_list_survives_non_json_response() -> None:
