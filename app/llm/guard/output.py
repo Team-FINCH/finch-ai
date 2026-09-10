@@ -264,6 +264,24 @@ def render_placeholders(narrative: str, values: Mapping[str, str]) -> str:
 REQUIRED_FIELDS: tuple[str, ...] = ("narrative", "used_placeholders", "used_citations")
 
 
+#: 모델이 각주를 `^cit_1` · `cit_1]` 처럼 흘려 쓰는 일이 잦다. 네 모양을 모두 잡는다.
+_LOOSE_CITATION_RE = re.compile(r"\[?\^(cit_[A-Za-z0-9_-]+)\]?")
+
+
+def canonical_citations(narrative: str) -> str:
+    """각주 표기를 `[^cit_1]` 한 가지로 모은다.
+
+    괄호를 빠뜨린 `^cit_5` 는 검사에 근거로 보이지 않는다. 그러면 지어낸
+    근거인지 대조할 수 없고, 더 나쁜 것은 `cit_5` 의 숫자 5 가 본문에 남아
+    **원시 수치로 오판**된다는 점이다. 운영 반려 1위가 raw_number 137건이었고
+    이것이 섞여 있었다 (GitLab #62).
+
+    표기만 다르고 가리키는 대상은 같으니 서버가 모아 준다. 모델에게 형식을
+    더 잘 지키라고 요구하는 것보다 확실하고, 약한 모델에서 특히 그렇다.
+    """
+    return _LOOSE_CITATION_RE.sub(lambda m: f"[^{m.group(1)}]", narrative)
+
+
 @dataclass(frozen=True, slots=True)
 class LlmDraft:
     """스키마 검사를 통과한 LLM 원본 출력."""
@@ -275,7 +293,7 @@ class LlmDraft:
     @classmethod
     def from_payload(cls, payload: Mapping[str, Any]) -> LlmDraft:
         # 모델은 narrative 만 보낸다. 자리표시자·근거 id 는 본문에서 뽑는다.
-        return cls(narrative=payload["narrative"])
+        return cls(narrative=canonical_citations(payload["narrative"]))
 
 
 def check_schema(payload: Mapping[str, Any]) -> CheckResult:

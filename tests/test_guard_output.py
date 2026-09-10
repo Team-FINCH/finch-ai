@@ -31,6 +31,7 @@ from app.llm.guard import (
     run_output_guard,
     split_sentences,
 )
+from app.llm.guard.output import canonical_citations
 
 
 def _valid_payload() -> dict[str, object]:
@@ -432,3 +433,32 @@ def test_run_output_guard_block_wins_over_regenerate() -> None:
     )
     report = run_output_guard(payload, context, stop_at_first_failure=False)
     assert report.disposition is Disposition.BLOCK
+
+def test_괄호를_빠뜨린_각주도_각주로_모은다():
+    """모델이 ^cit_5 처럼 흘려 써도 표준 표기로 모은다.
+
+    괄호가 없으면 검사에 근거로 보이지 않는다. 지어낸 근거인지 대조할 수 없고,
+    더 나쁜 것은 cit_5 의 숫자 5 가 본문에 남아 원시 수치로 오판된다는 점이다.
+    운영 반려 1위가 raw_number 였고 이것이 섞여 있었다 (GitLab #62).
+    """
+    assert canonical_citations("맨몸 ^cit_5 입니다") == "맨몸 [^cit_5] 입니다"
+    assert canonical_citations("[^cit_1] 정상") == "[^cit_1] 정상"
+    assert canonical_citations("열기만 [^cit_4 있음") == "열기만 [^cit_4] 있음"
+
+
+def test_괄호_없는_각주가_수치로_오판되지_않는다():
+    narrative = "비중은 {{weight}}입니다^cit_5. 업황을 함께 봅니다. 추가 확인이 필요합니다."
+
+    assert check_raw_number(narrative).violations, "정규화 전에는 5 가 수치로 잡힌다"
+    assert not check_raw_number(canonical_citations(narrative)).violations
+
+
+def test_괄호_없는_각주도_지어낸_근거로_잡힌다():
+    """정규화가 검사를 느슨하게 하지 않는다. 오히려 사각지대를 없앤다."""
+    narrative = canonical_citations("본문입니다^cit_9. 두 번째 문장. 세 번째 문장.")
+
+    result = check_citation_integrity(narrative, ("cit_1",))
+
+    assert result.violations
+    assert result.violations[0].evidence == "cit_9"
+
