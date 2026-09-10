@@ -264,6 +264,20 @@ def render_placeholders(narrative: str, values: Mapping[str, str]) -> str:
 REQUIRED_FIELDS: tuple[str, ...] = ("narrative", "used_placeholders", "used_citations")
 
 
+def _bare_id(item: object) -> str:
+    """모델이 본문 표기를 그대로 옮겨 적어도 id 로 알아본다.
+
+    본문에서는 근거가 `[^cit_1]`, 수치가 `{{key}}` 로 나타나므로 모델이
+    used_citations 에 `^cit_1`, used_placeholders 에 `{{key}}` 를 담는 일이
+    흔하다. 표기만 다르고 가리키는 대상은 같으니 껍데기를 벗겨 비교한다.
+    운영에서 폐기 사유의 다수가 이것이었다 (GitLab #62).
+
+    id 자체에는 괄호도 각주 기호도 없으므로(`cit_[A-Za-z0-9_-]+`,
+    `[A-Za-z0-9_.]+`) 양끝을 걷어내도 멀쩡한 id 를 깎을 일이 없다.
+    """
+    return str(item).strip().strip("[]{}").strip().lstrip("^")
+
+
 @dataclass(frozen=True, slots=True)
 class LlmDraft:
     """스키마 검사를 통과한 LLM 원본 출력."""
@@ -276,8 +290,10 @@ class LlmDraft:
     def from_payload(cls, payload: Mapping[str, Any]) -> LlmDraft:
         return cls(
             narrative=payload["narrative"],
-            used_placeholders=tuple(payload.get("used_placeholders") or ()),
-            used_citations=tuple(payload.get("used_citations") or ()),
+            used_placeholders=tuple(
+                _bare_id(item) for item in payload.get("used_placeholders") or ()
+            ),
+            used_citations=tuple(_bare_id(item) for item in payload.get("used_citations") or ()),
         )
 
 
