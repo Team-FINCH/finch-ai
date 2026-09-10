@@ -832,9 +832,9 @@
     },
     "changes":   { "title": "최근 변화",            "text": "…", "segments": [ ], "cached": false, "cached_at": null },
     "attention": { "title": "시장이 주목하는 요인",  "text": "…", "segments": [ ], "cached": false, "cached_at": null },
-    "risks":     { "title": "확인된 위험 요인",      "text": "…", "segments": [ ], "cached": false, "cached_at": null },
+    "risks":     { "title": "확인해볼 위험",      "text": "…", "segments": [ ], "cached": false, "cached_at": null },
     "my_impact": {
-      "title": "내 포트폴리오 영향",
+      "title": "내 계좌에서는",
       "text": "이 종목은 포트폴리오의 41.7%를 차지하며 평균 매입가 대비 +10.1% 상태입니다.",
       "segments": [
         { "type": "text",   "value": "이 종목은 포트폴리오의 ",
@@ -873,7 +873,7 @@
       "challenging": [ ]
     },
       "next_events": {
-      "title": "다음에 확인할 일정",
+      "title": "앞으로 확인할 일정",
       "text": "…",
       "segments": [ ],
       "cached": false,
@@ -920,8 +920,9 @@
         <p><code>current</code>·<code>changes</code>·<code>attention</code>·<code>risks</code>·<code>next_events</code>는 사용자와 무관하므로 <strong>종목 단위로 캐시</strong>한다(TTL 6시간). 프롬프트가 바뀌면 이전 캐시는 쓰지 않는다. <code>my_impact</code>·<code>thesis_check</code>는 사용자의 최신 원장과 논지를 반영해 요청마다 생성한다. 이 분리가 인기 종목의 같은 분석을 반복 생성하는 비용을 줄인다.</p>
       </div>
 
-      <p><code>attention</code>·<code>risks</code>의 명칭은 규제 대응이다. "긍정 요인 / 부정 요인"은 의견 제시로 읽힐 수 있어
-      <strong>시장이 주목하는 요인 / 공시·실적에서 확인된 위험 요인</strong>이라는 출처 귀속형으로 고정한다.
+      <p><code>attention</code>·<code>risks</code>의 명칭은 규제 대응이다. "긍정 요인 / 부정 요인"은 의견 제시로 읽힐 수 있어 쓰지 않는다.
+      허용 표현은 <code>frontend/docs/design.md</code> 의 표현 규칙이 정한 <strong>시장이 주목하는 요인 · 확인해볼 위험 ·
+      공시·실적에서 확인된 위험 요인</strong> 셋이다. 화면 문구와 맞추기 위해 <code>risks</code> 는 <strong>확인해볼 위험</strong>을 쓴다.
       목표주가와 투자의견은 어떤 섹션에서도 생성하지 않는다.</p>
 
       <h2 id="ep-chat"><span class="num">§4</span>AI 대화</h2>

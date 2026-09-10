@@ -161,14 +161,14 @@ async def test_통과하면_섹션이_나온다():
     outcome = await generate_section(
         "my_impact",
         client=client,
-        title="내 포트폴리오 영향",
+        title="내 계좌에서는",
         engine_values=_values(),
         citations=_citations(),
     )
     assert outcome.section is not None
     assert outcome.attempts == 1
     assert "41.7%" in outcome.section.text
-    assert outcome.section.title == "내 포트폴리오 영향"
+    assert outcome.section.title == "내 계좌에서는"
     # Section이 강제하는 불변식이 실제로 성립하는지 다시 확인한다.
     assert "".join(s.value for s in outcome.section.segments) == outcome.section.text
 

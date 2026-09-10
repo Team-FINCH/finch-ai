@@ -134,7 +134,7 @@ def test_요청한_섹션만_돌려준다(client):
     sections = response.json()["content"]["sections"]
     assert set(sections) == {"current", "risks"}
     assert sections["current"]["title"] == "현재 상황"
-    assert sections["risks"]["title"] == "확인된 위험 요인"
+    assert sections["risks"]["title"] == "확인해볼 위험"
 
 
 def test_공통_섹션_캐시는_LLM을_다시_호출하지_않는다(client, monkeypatch):

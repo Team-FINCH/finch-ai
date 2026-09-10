@@ -69,10 +69,10 @@ SECTION_TITLES: dict[str, str] = {
     "current": "현재 상황",
     "changes": "최근 변화",
     "attention": "시장이 주목하는 요인",
-    "risks": "확인된 위험 요인",
-    "my_impact": "내 포트폴리오 영향",
+    "risks": "확인해볼 위험",
+    "my_impact": "내 계좌에서는",
     "thesis_check": "투자 논지 점검",
-    "next_events": "다음에 확인할 일정",
+    "next_events": "앞으로 확인할 일정",
 }
 
 #: 사용자별 섹션. 나머지는 종목 단위 캐시 대상이다.
