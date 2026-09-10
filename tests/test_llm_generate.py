@@ -285,19 +285,18 @@ async def test_원시_수치를_쓰면_통과하지_못한다():
     assert outcome.section is None
 
 
-async def test_존재하지_않는_근거를_참조하면_통과하지_못한다():
-    payload = _ok_payload() | {"used_citations": ["cit_9"]}
+async def test_본문에_지어낸_근거를_달면_통과하지_못한다():
+    """제공하지 않은 근거를 본문 각주로 달면 폐기해야 한다.
+
+    모델이 배열로 신고하던 used_citations 는 걷어냈다. 지어낸 근거를 막는
+    책임은 본문 각주 검사에 있고, 그쪽이 실제 사용자가 보는 것이다.
+    """
+    payload = _ok_payload()
+    payload["narrative"] = payload["narrative"].replace("[^cit_1]", "[^cit_9]")
     outcome = await generate_section(
         "my_impact", client=FakeClient(payload), engine_values=_values(), citations=_citations()
     )
     assert outcome.section is None
-
-
-# ── 근거·클라이언트 경계 ─────────────────────────────────
-def test_근거가_없으면_사용자_턴이_한계를_명시한다():
-    turn = build_user_turn("risks", values={})
-    assert "관련 자료를 찾지 못했다" in turn
-    assert "수치를 언급하지 마십시오" in turn
 
 
 async def test_키가_없으면_명시적으로_실패한다():

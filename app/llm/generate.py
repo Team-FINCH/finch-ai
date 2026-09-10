@@ -59,15 +59,16 @@ __all__ = [
 
 PROMPT_DIR = Path(__file__).parent / "prompts"
 
-#: 프롬프트 정책 §3. `used_placeholders`를 함께 받아 검증을 단순화한다.
+#: 프롬프트 정책 §3.
+#: 자리표시자와 근거 id 는 본문에 `{{key}}` · `[^cit_1]` 로 이미 들어 있으므로
+#: 서버가 본문에서 뽑는다. 모델이 별도 배열로 다시 신고하게 하면 본문과
+#: 어긋나는 실패가 생기고, 약한 모델에서 특히 잦다 (GitLab #62).
 NARRATIVE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "narrative": {"type": "string"},
-        "used_placeholders": {"type": "array", "items": {"type": "string"}},
-        "used_citations": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["narrative", "used_placeholders", "used_citations"],
+    "required": ["narrative"],
     "additionalProperties": False,
 }
 

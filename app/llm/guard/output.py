@@ -274,11 +274,8 @@ class LlmDraft:
 
     @classmethod
     def from_payload(cls, payload: Mapping[str, Any]) -> LlmDraft:
-        return cls(
-            narrative=payload["narrative"],
-            used_placeholders=tuple(payload.get("used_placeholders") or ()),
-            used_citations=tuple(payload.get("used_citations") or ()),
-        )
+        # 모델은 narrative 만 보낸다. 자리표시자·근거 id 는 본문에서 뽑는다.
+        return cls(narrative=payload["narrative"])
 
 
 def check_schema(payload: Mapping[str, Any]) -> CheckResult:
@@ -713,7 +710,6 @@ def run_output_guard(
         lambda: check_unknown_placeholder(
             draft.narrative,
             context.allowed_keys,
-            used_placeholders=draft.used_placeholders,
         ),
         lambda: check_raw_number(draft.narrative),
         lambda: check_engine_values(
@@ -725,7 +721,6 @@ def run_output_guard(
         lambda: check_citation_integrity(
             rendered,
             context.available_citations,
-            used_citations=draft.used_citations,
         ),
         lambda: check_forbidden_expression(
             rendered,

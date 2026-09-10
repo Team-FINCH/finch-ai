@@ -49,4 +49,5 @@ Fact → Change → Watch 순서입니다. **첫 문장은 반드시 수치로 �
 `narrative`, `used_placeholders`, `used_citations` 세 필드를 가진 JSON입니다.
 - `narrative` — 본문. 수치는 `{{key}}` 자리표시자로만 씁니다.
 - `used_placeholders` — 본문에서 실제로 쓴 자리표시자 key 목록.
+  중괄호를 벗긴 key 만 담습니다. `["price", "weight"]` — `["{{price}}"]` 가 아닙니다.
 - `used_citations` — 빈 배열.
