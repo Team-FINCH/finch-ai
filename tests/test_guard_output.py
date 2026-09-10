@@ -16,7 +16,6 @@ from app.llm.guard import (
     Disposition,
     Feature,
     GuardContext,
-    LlmDraft,
     NullSemanticClassifier,
     SemanticFinding,
     check_citation_integrity,
@@ -433,30 +432,3 @@ def test_run_output_guard_block_wins_over_regenerate() -> None:
     )
     report = run_output_guard(payload, context, stop_at_first_failure=False)
     assert report.disposition is Disposition.BLOCK
-
-def test_본문_표기를_그대로_적은_id도_알아본다():
-    """모델이 used_citations에 ^cit_1을, used_placeholders에 {{key}}를 담는 일이 흔하다.
-
-    표기만 다르고 가리키는 대상은 같은데 폐기하면 섹션이 null로 나간다.
-    운영에서 citation_integrity 반려의 다수가 이것이었다 (GitLab #62).
-    """
-    draft = LlmDraft.from_payload(
-        {
-            "narrative": "본문 [^cit_1] {{price}}",
-            "used_placeholders": ["{{price}}", "ratio"],
-            "used_citations": ["^cit_1", "[^cit_2]", "cit_3", "[cit_4]"],
-        }
-    )
-
-    assert draft.used_placeholders == ("price", "ratio")
-    assert draft.used_citations == ("cit_1", "cit_2", "cit_3", "cit_4")
-
-
-def test_정상_표기는_그대로_둔다():
-    draft = LlmDraft.from_payload(
-        {"narrative": "본문", "used_placeholders": ["price"], "used_citations": ["cit_1"]}
-    )
-
-    assert draft.used_placeholders == ("price",)
-    assert draft.used_citations == ("cit_1",)
-

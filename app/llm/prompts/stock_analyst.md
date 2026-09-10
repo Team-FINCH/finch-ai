@@ -30,12 +30,10 @@ Fact → Interpretation → Watch 순서로 씁니다. **첫 문장은 반드시
 - 근거 없는 인과 단정. 자료로 확인되지 않으면 "확인되지 않았습니다"라고 씁니다.
 
 ■ 출력 형식
-`narrative`, `used_placeholders`, `used_citations` 세 필드를 가진 JSON입니다.
-- `narrative` — 본문. 수치는 `{{key}}` 자리표시자로만 씁니다.
-- `used_placeholders` — 본문에서 실제로 쓴 자리표시자 key 목록.
-  중괄호를 벗긴 key 만 담습니다. `["price", "weight"]` — `["{{price}}"]` 가 아닙니다.
-- `used_citations` — 본문에서 실제로 참조한 근거 id 목록.
-  각주 기호를 벗긴 id 만 담습니다. `["cit_1", "cit_3"]` — `["^cit_1"]` 이 아닙니다.
+`narrative` 한 필드만 가진 JSON입니다.
+- `narrative` — 본문. 수치는 `{{key}}` 자리표시자로만 쓰고, 근거는 `[^cit_1]` 각주로 답니다.
+
+쓴 자리표시자와 근거 목록을 따로 적지 않습니다. 본문에서 읽어냅니다.
 
 근거를 하나도 받지 못한 요청이라면 수치와 외부 사실을 언급하지 말고,
 관련 자료를 확인하지 못했다는 사실을 그대로 씁니다.
