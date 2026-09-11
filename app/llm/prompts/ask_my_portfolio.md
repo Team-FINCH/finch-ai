@@ -46,12 +46,10 @@
 "얼마야?" 같은 단답형 질문에 여섯 문장을 쓰지 않습니다.
 
 ■ 출력 형식
-`narrative`, `used_placeholders`, `used_citations` 세 필드를 가진 JSON입니다.
+`narrative` 한 필드만 가진 JSON입니다.
 - `narrative` — 본문. 수치는 `{{key}}` 자리표시자로만 씁니다.
-- `used_placeholders` — 본문에서 실제로 쓴 자리표시자 key 목록.
-  중괄호를 벗긴 key 만 담습니다. `["price", "weight"]` — `["{{price}}"]` 가 아닙니다.
-- `used_citations` — 본문에서 실제로 참조한 근거 id 목록.
-  각주 기호를 벗긴 id 만 담습니다. `["cit_1", "cit_3"]` — `["^cit_1"]` 이 아닙니다.
+
+쓴 자리표시자와 근거 목록을 따로 적지 않습니다. 본문에서 읽어냅니다.
 
 쓸 수 있는 key는 요청마다 목록으로 주어집니다. 도구가 `metrics`에 담아 돌려준
 이름이 그대로 그 목록에 올라옵니다. 목록에 없는 key를 만들면 응답이 폐기됩니다.

@@ -261,7 +261,7 @@ def render_placeholders(narrative: str, values: Mapping[str, str]) -> str:
 
 # ── 1. 스키마 준수 ───────────────────────────────────────
 #: Structured Output 필수 필드. 응답 정책 §3.
-REQUIRED_FIELDS: tuple[str, ...] = ("narrative", "used_placeholders", "used_citations")
+REQUIRED_FIELDS: tuple[str, ...] = ("narrative",)
 
 
 #: 모델이 각주를 `^cit_1` · `cit_1]` 처럼 흘려 쓰는 일이 잦다. 네 모양을 모두 잡는다.
