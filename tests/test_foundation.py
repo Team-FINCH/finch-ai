@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateTable
 
-from app.api.main import API_PREFIX, app
+from app.api.main import _INGEST_PROBES, API_PREFIX, app
 from app.core.config import settings
 from app.core.enums import MetricSource, SegmentType, Unit
 from app.core.models import Base
@@ -196,6 +196,81 @@ def test_health_returns_degraded_200_when_ingest_query_fails(monkeypatch) -> Non
         "embeddings": False,
         "price_daily": False,
     }
+
+
+#: /metrics 가 내보내는 게이지. 이름이 바뀌면 Grafana 대시보드와 경보가 조용히 빈다.
+INGEST_GAUGES = (
+    "ingest_documents",
+    "ingest_embeddings",
+    "ingest_price_daily",
+    "ingest_embedding_backfill_pending",
+    "ingest_price_backfill_pending",
+)
+
+
+def _gauges(body: str) -> dict[str, int]:
+    """노출 텍스트에서 주석을 뺀 샘플만 뽑는다."""
+    return {
+        name: int(value)
+        for name, value in (
+            line.split() for line in body.splitlines() if not line.startswith("#")
+        )
+    }
+
+
+@pytest.mark.parametrize(
+    "exists",
+    [
+        [True, True, True, True, True],
+        [False, False, False, False, False],
+        # 문서는 들어왔는데 임베딩 백필이 덜 끝난 상태.
+        # embeddings 는 청크 한 건만 임베딩돼도 1 이라 이것만으로는 안 보인다 (GitLab #62).
+        [True, True, True, True, False],
+        # 시세는 들어왔는데 종목별 백필이 덜 끝난 상태. price_daily 만으로는 안 보인다.
+        [True, True, True, False, True],
+    ],
+)
+def test_metrics_exposes_ingest_state_as_zero_or_one_gauges(
+    monkeypatch, exists: list[bool]
+) -> None:
+    monkeypatch.setattr("app.api.main.SessionFactory", lambda: _HealthSession(exists))
+
+    response = client.get("/metrics")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    assert _gauges(response.text) == dict(
+        zip(INGEST_GAUGES, [int(e) for e in exists], strict=True)
+    )
+    for name in INGEST_GAUGES:
+        assert f"# TYPE {name} gauge" in response.text
+    assert response.text.endswith("\n")
+
+
+def test_metrics_returns_zeros_with_200_when_db_is_down(monkeypatch) -> None:
+    """스크레이퍼가 500을 받으면 지표가 통째로 사라져 장애가 침묵으로 보인다."""
+
+    class BrokenSession:
+        async def __aenter__(self) -> BrokenSession:
+            raise RuntimeError("database unavailable")
+
+        async def __aexit__(self, *_: object) -> None:
+            return None
+
+    monkeypatch.setattr("app.api.main.SessionFactory", BrokenSession)
+
+    response = client.get("/metrics")
+
+    assert response.status_code == 200
+    assert _gauges(response.text) == dict.fromkeys(INGEST_GAUGES, 0)
+
+
+def test_ingest_probes_never_count_rows() -> None:
+    """게이지 하나 읽자고 전수를 훑으면 적재량이 늘수록 점검이 느려진다."""
+    for name, (stmt, _) in _INGEST_PROBES.items():
+        sql = str(stmt.compile(dialect=postgresql.dialect())).lower()
+        assert "count(" not in sql, f"{name}: {sql}"
+        assert "limit" in sql, f"{name}: {sql}"
 
 
 def test_all_endpoints_registered() -> None:
