@@ -32,7 +32,8 @@ db_host_port=$(printf '%s' "$DATABASE_URL" | sed -E 's|.*@([^/]+)/.*|\1|')
 db_host=${db_host_port%%:*}
 db_port=${db_host_port##*:}
 [ "$db_port" = "$db_host" ] && db_port=5432
-if ! nc -z "$db_host" "$db_port" 2>/dev/null; then
+if ! python -c 'import socket, sys; socket.create_connection((sys.argv[1], int(sys.argv[2])), timeout=2).close()' \
+  "$db_host" "$db_port" 2>/dev/null; then
   echo "✗ DB 에 연결할 수 없습니다: ${db_host}:${db_port}" >&2
   echo "  먼저 실행하세요:" >&2
   echo "    podman machine start   # 이미 떠 있으면 생략" >&2

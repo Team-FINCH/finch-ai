@@ -16,6 +16,10 @@ ai:test:
     POSTGRES_PASSWORD: ai_invest
     POSTGRES_DB: ai_invest
     DATABASE_URL: postgresql+asyncpg://ai_invest:ai_invest@postgres:5432/ai_invest
+    # GitLab cache.paths 와 같은 위치를 pip 에 직접 지정한다. 기본 /root/.cache/pip 를
+    # 쓰면 job 종료 때 저장할 파일이 없어 매번 의존성을 다시 내려받는다.
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+    PIP_DISABLE_PIP_VERSION_CHECK: "1"
   # ai/ 변경에만 반응해 다른 파트 파이프라인에 영향을 주지 않는다.
   rules:
     - changes:
@@ -28,9 +32,7 @@ ai:test:
       - .cache/pip
   before_script:
     - cd ai
-    - python -m pip install --upgrade pip
     - pip install -r requirements.txt
-    - apt-get update && apt-get install -y --no-install-recommends netcat-openbsd
   # 검사 목록은 scripts/check.sh 한 곳에만 둔다. 로컬과 CI 가 갈라지지 않게.
   script:
     - ./scripts/check.sh
