@@ -15,6 +15,7 @@ from app.core.errors import InsufficientData
 from app.core.schemas import Citation, Segment
 from app.llm.client import LlmResult, NullLlmClient, _to_result
 from app.llm.generate import (
+    MAX_ATTEMPTS,
     NARRATIVE_SCHEMA,
     THESIS_NARRATIVE_SCHEMA,
     build_system,
@@ -233,18 +234,20 @@ async def test_위반하면_사유를_붙여_재생성한다():
     assert "unknown" in client.calls[1]["user"]
 
 
-async def test_두_번_재생성해도_안_되면_포기한다():
-    bad = {
-        "narrative": "비중은 {{unknown}}입니다. 두 번째 문장입니다. 세 번째 문장입니다.",
-        "used_placeholders": ["unknown"],
-        "used_citations": [],
-    }
+async def test_상한까지_재생성해도_안_되면_포기한다():
+    """재생성 상한은 LLM_MAX_ATTEMPTS 로 조절한다 (GitLab #64).
+
+    상한 값을 테스트에 박으면 비용 조정이 테스트 실패로 나타난다. 설정값을
+    그대로 기대치로 쓴다 — 확인할 것은 "상한만큼만 부른다" 이지 "3번 부른다"
+    가 아니다.
+    """
+    bad = {"narrative": "비중은 {{unknown}}입니다. 두 번째 문장입니다. 세 번째 문장입니다."}
     client = FakeClient(bad)
     outcome = await generate_section("my_impact", client=client, engine_values=_values())
     assert outcome.section is None
     assert outcome.blocked
-    assert outcome.attempts == 3
-    assert len(client.calls) == 3
+    assert outcome.attempts == MAX_ATTEMPTS
+    assert len(client.calls) == MAX_ATTEMPTS
 
 
 async def test_차단_판정이면_재생성하지_않는다(monkeypatch):

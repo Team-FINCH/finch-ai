@@ -24,6 +24,7 @@ from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbSession, UsageLimit
 from app.core.adapters import ledger_source
+from app.core.config import settings
 from app.core.enums import EventType, MetricSource, WikiSource
 from app.core.errors import InsufficientData, InvalidRequest
 from app.core.models import AIResponse, Event
@@ -83,7 +84,7 @@ _TICKER_RE = re.compile(r"\d{6}")
 _RAG_TOP_K = 6
 _UPCOMING_DAYS = 90
 _UPCOMING_LIMIT = 5
-_COMMON_CACHE_TTL = timedelta(hours=6)
+_COMMON_CACHE_TTL = timedelta(hours=settings.analysis_cache_ttl_h)
 
 
 class AnalysisRequest(BaseModel):

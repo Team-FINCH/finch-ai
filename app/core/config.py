@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-5.4-mini"
     llm_max_tokens: int = 16_000
     llm_timeout_s: int = 30
+    #: 최초 1회 + 재생성. GMS 크레딧의 대부분이 재생성에서 나가므로
+    #: 배포 없이 조일 수 있게 설정으로 뺀다 (GitLab #64).
+    llm_max_attempts: int = 2
+    #: 종목분석 공용 섹션 캐시. 길수록 같은 종목 재생성이 줄어든다.
+    analysis_cache_ttl_h: int = 24
 
     # 사용자 요청은 분당 횟수와 일일 GMS 토큰 예산을 함께 제한한다. 토큰은 실제
     # GMS 호출 직전에 예약하므로 캐시 응답은 일일 예산을 소비하지 않는다.
