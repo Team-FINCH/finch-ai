@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import pathlib
+
 import pytest
 
 from app.core.enums import MetricSource, Unit, WikiSource
@@ -31,7 +33,7 @@ from app.llm.guard import (
     run_output_guard,
     split_sentences,
 )
-from app.llm.guard.output import canonical_citations
+from app.llm.guard.output import REQUIRED_FIELDS, canonical_citations
 
 
 def _valid_payload() -> dict[str, object]:
@@ -461,4 +463,29 @@ def test_괄호_없는_각주도_지어낸_근거로_잡힌다():
 
     assert result.violations
     assert result.violations[0].evidence == "cit_9"
+
+def test_narrative_만_보낸_응답이_스키마를_통과한다():
+    """모델은 narrative 만 보낸다. REQUIRED_FIELDS 가 그보다 많으면 전 기능이 죽는다.
+
+    MR !192 에서 스키마와 from_payload 는 narrative 전용으로 줄였는데
+    REQUIRED_FIELDS 를 남겨 두어 운영에서 모든 LLM 기능이 폐기됐다 (GitLab #62).
+    """
+    assert REQUIRED_FIELDS == ("narrative",)
+    assert not check_schema({"narrative": "한 문장. 두 문장. 세 문장."}).violations
+
+
+def test_프롬프트가_없어진_필드를_요구하지_않는다():
+    """스키마에서 걷어낸 필드를 프롬프트가 계속 요구하면 모델이 혼란한다.
+
+    additionalProperties=False 이므로 모델이 그 필드를 보내면 응답이 폐기된다.
+    프롬프트 하나만 고치고 나머지를 빠뜨린 것이 위 사고의 절반이었다.
+    """
+    prompts = pathlib.Path(__file__).resolve().parents[1] / "app" / "llm" / "prompts"
+    stale = [
+        f.name
+        for f in prompts.glob("*.md")
+        if "used_placeholders" in f.read_text() or "used_citations" in f.read_text()
+    ]
+
+    assert not stale, f"프롬프트가 없어진 필드를 요구한다: {stale}"
 

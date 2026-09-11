@@ -118,7 +118,7 @@ Fact를 앞에 두는 것은 문체 취향이 아니다. **해석이 먼저 오�
 
 #### Structured Output으로 강제
 
-자유 문장으로 받지 않고 스키마로 받는다. `used_placeholders`를 함께 받아 검증을 단순화한다.
+자유 문장으로 받지 않고 스키마로 받는다. 받는 필드는 `narrative` 하나다. 쓴 자리표시자와 근거 id 는 본문에 `{{key}}` · `[^cit_1]` 로 이미 들어 있으므로 서버가 본문에서 뽑는다. 모델이 별도 배열로 다시 신고하게 하면 본문과 어긋나는 실패가 생긴다.
 
 ```
 output_config={
@@ -127,11 +127,9 @@ output_config={
     "schema": {
       "type": "object",
       "properties": {
-        "narrative":          { "type": "string" },
-        "used_placeholders":  { "type": "array", "items": { "type": "string" } },
-        "used_citations":     { "type": "array", "items": { "type": "string" } }
+        "narrative":          { "type": "string" }
       },
-      "required": ["narrative", "used_placeholders", "used_citations"],
+      "required": ["narrative"],
       "additionalProperties": False
     }
   }
