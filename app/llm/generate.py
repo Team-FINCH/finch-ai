@@ -27,6 +27,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from app.core.config import settings
 from app.core.enums import CitationType, Direction, MetricSource, Unit, WikiSource
 from app.core.schemas import Citation, Section, Segment, now_kst
 from app.llm.client import LlmClient
@@ -97,8 +98,8 @@ THESIS_NARRATIVE_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
-#: 최초 1회 + 재생성 2회. 응답 정책 §7.
-MAX_ATTEMPTS = 3
+#: 최초 1회 + 재생성. 응답 정책 §7. 기본 2회이며 LLM_MAX_ATTEMPTS 로 조절한다.
+MAX_ATTEMPTS = settings.llm_max_attempts
 
 _PLACEHOLDER_RE = re.compile(r"\{\{\s*([A-Za-z0-9_.]+)\s*\}\}")
 
