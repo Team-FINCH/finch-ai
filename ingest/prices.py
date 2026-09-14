@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.db import SessionFactory, engine
 from app.core.models import Instrument, PriceDaily
+from ingest.universe import report_resolution, target_tickers
 
 logger = logging.getLogger("ingest.prices")
 
@@ -98,7 +99,7 @@ def _to_rows(ticker: str, df: pd.DataFrame) -> list[dict]:
 
 
 async def _target_tickers(
-    session: AsyncSession, explicit: list[str] | None, limit: int | None
+    session: AsyncSession, explicit: list[str] | None = None, limit: int | None = None
 ) -> list[str]:
     """적재 대상을 고른다.
 
@@ -122,12 +123,13 @@ async def _target_tickers(
             )
         return [t for t in explicit if t in known]
 
-    stmt = select(Instrument.ticker).where(Instrument.status == "listed")
-    # 시가총액 큰 순으로 받는다. 중간에 끊겨도 비중 큰 종목이 먼저 확보된다.
-    stmt = stmt.order_by(Instrument.market_cap.desc().nullslast())
-    if limit:
-        stmt = stmt.limit(limit)
-    return list((await session.scalars(stmt)).all())
+    targets = target_tickers(limit=limit)
+    stmt = select(Instrument.ticker).where(
+        Instrument.status == "listed", Instrument.ticker.in_(targets)
+    )
+    known = set((await session.scalars(stmt)).all())
+    report_resolution(logger, targets, list(known))
+    return [ticker for ticker in targets if ticker in known]
 
 
 async def _last_date(session: AsyncSession, ticker: str) -> date | None:
@@ -221,8 +223,8 @@ async def _main() -> None:
         default=settings.min_history_days * 2,
         help="오늘 기준 며칠 전부터 받을지 (기본: 최소 요건의 2배)",
     )
-    parser.add_argument("--tickers", help="쉼표 구분 종목코드. 생략 시 마스터 전체")
-    parser.add_argument("--limit", type=int, help="시가총액 상위 N종목만")
+    parser.add_argument("--tickers", help="쉼표 구분 종목코드. 생략 시 서비스 종목")
+    parser.add_argument("--limit", type=int, help="서비스 목록의 앞 N종목만")
     parser.add_argument(
         "--full", action="store_true", help="증분 무시하고 구간 전체 재적재"
     )

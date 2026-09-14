@@ -9,6 +9,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -74,6 +75,25 @@ class Settings(BaseSettings):
     # 30건이면 33K로 Tier 1의 여유 안에 들어온다. 128로 두었더니 한 요청이
     # 14만 토큰이 되어 매번 거부당했다.
     embedding_batch_size: int = 30
+
+    # 서비스 종목. backend application.yaml의 finch.kis.realtime.codes와
+    # 테스트로 대조한다. AI 단독 배포에서도 백엔드 파일 없이 실행해야 한다.
+    service_tickers: tuple[str, ...] = (
+        "005930", "000660", "005380", "009150", "092790", "034020",
+        "024060", "042700", "066570", "035420", "035720", "017670",
+        "108490", "003490", "047040", "042660", "006400", "086520",
+        "006800", "011070", "196170", "009830", "064400", "466100",
+        "307950", "267260", "006360", "062040", "058610", "047810",
+    )
+
+    @field_validator("service_tickers")
+    @classmethod
+    def validate_service_tickers(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if not value or len(value) != len(set(value)):
+            raise ValueError("service_tickers must be nonempty and unique")
+        if any(len(t) != 6 or not t.isascii() or not t.isdigit() for t in value):
+            raise ValueError("service_tickers must contain six-digit stock codes")
+        return value
 
     # ── 외부 데이터 ──────────────────────────────────────
     kis_app_key: str = ""

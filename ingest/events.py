@@ -8,7 +8,7 @@
 저장된 원문 없이도 이벤트가 성립하고, 그래서 수천 종목을 싸게 훑을 수 있다.
 
     python -m ingest.events --days 30
-    python -m ingest.events --days 90 --limit 3000   # 전 종목 훑기(명시적 선택)
+    python -m ingest.events --days 90 --tickers 005930,000660   # 명시 종목 조회
 
 재실행해도 중복이 생기지 않는다 — 다만 events에는 유니크 제약이 없어
 DB가 막아주지 않는다. 아래 `_existing_keys()`가 유일한 방어선이다.
@@ -119,7 +119,7 @@ async def _existing_keys(
 async def ingest(
     *,
     days: int,
-    limit: int,
+    limit: int | None = None,
     api_key: str | None = None,
     tickers: Sequence[str] | None = None,
 ) -> dict[str, int]:
@@ -201,9 +201,8 @@ async def _main() -> None:
     parser.add_argument(
         "--limit",
         type=int,
-        default=100,
-        help="대상 종목 수 (기본 100). DART 일일 한도가 20,000회라 전 종목(약 2,600)"
-        " 훑기는 --limit 3000 으로 명시할 것",
+        default=None,
+        help="서비스 목록의 앞 N종목만 (기본 전체)",
     )
     args = parser.parse_args()
 

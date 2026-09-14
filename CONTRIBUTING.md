@@ -197,11 +197,17 @@ ingest/prices.py        ← 그다음
 백그라운드로 걸어두고 다른 트랙을 진행한다.
 
 ```bash
-python -m ingest.prices --days 120 --limit 300 &
+python -m ingest.prices --days 120 &
 ```
 
-전종목을 처음부터 받지 않는다. 시드 포트폴리오에 들어갈 종목만 먼저 확보하면
-후속 트랙이 며칠 빨리 시작된다.
+news·events·prices·financials는 모두 `Settings.service_tickers`의 서비스 30종목을
+기본 대상으로 사용한다. 백엔드 `application.yaml`의 `finch.kis.realtime.codes`와
+일치하는지는 테스트로 확인한다. `--limit N`은 서비스 목록의 앞 N종목으로 줄이고,
+`--tickers 005930,000660`을 명시하면 서비스 범위와 limit보다 그 목록이 우선한다.
+기본 목록의 마스터 누락·상장 해제 종목, DART 고유번호가 없는 공시·재무 대상은
+건너뛰되 요청 수·해결 수·누락 코드를 경고로 남긴다. 기본 대상이 하나도 해결되지
+않으면 오류로 종료한다. `--limit`은 양수만 허용하고 누락 종목을 다른 종목으로
+채우지 않는다. 환경별 목록은 `SERVICE_TICKERS` JSON 배열로 덮어쓸 수 있다.
 
 ---
 

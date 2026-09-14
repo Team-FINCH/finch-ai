@@ -31,6 +31,7 @@ from app.core.enums import DocumentType, EventType
 from app.core.models import Document, DocumentChunk, Event, Instrument
 from app.rag.chunking import chunk
 from app.rag.lexical import weighted_tsvector
+from ingest.universe import report_resolution, target_tickers
 
 log = logging.getLogger("ingest.news")
 
@@ -210,15 +211,18 @@ def fetch_news(
     return articles
 
 
-async def load_targets(limit: int, tickers: Sequence[str] | None = None) -> list[tuple[str, str]]:
-    """뉴스 검색 대상 (ticker, name). 직접 지정하지 않으면 상장 종목 일부만 고른다."""
+async def load_targets(
+    limit: int | None = None, tickers: Sequence[str] | None = None
+) -> list[tuple[str, str]]:
+    """뉴스·공시 대상 (ticker, name). 기본은 서비스 종목이다."""
+    targets = target_tickers(tickers, limit)
     async with SessionFactory() as session:
-        stmt = select(Instrument.ticker, Instrument.name).where(Instrument.status == "listed")
-        if tickers:
-            stmt = stmt.where(Instrument.ticker.in_(tickers))
-        else:
-            stmt = stmt.order_by(Instrument.ticker).limit(limit)
-        return [(row.ticker, row.name) for row in await session.execute(stmt)]
+        stmt = select(Instrument.ticker, Instrument.name).where(
+            Instrument.status == "listed", Instrument.ticker.in_(targets)
+        )
+        names = {row.ticker: row.name for row in await session.execute(stmt)}
+        report_resolution(log, targets, list(names), explicit=bool(tickers))
+        return [(ticker, names[ticker]) for ticker in targets if ticker in names]
 
 
 async def existing_ids(ids: Sequence[str]) -> set[str]:
@@ -347,7 +351,7 @@ async def save(article: NewsArticle) -> SaveResult:
 
 
 async def run(
-    days: int, limit: int, max_docs: int, tickers: Sequence[str] | None = None
+    days: int, limit: int | None, max_docs: int, tickers: Sequence[str] | None = None
 ) -> tuple[int, int, int]:
     """(적재 기사 수, 청크 수, 실패 종목 수)."""
     client_id = (settings.naver_client_id or "").strip()
@@ -420,7 +424,7 @@ async def run(
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="NAVER API HUB 뉴스 적재기")
     parser.add_argument("--days", type=int, default=7, help="최근 며칠 기사. 기본 7")
-    parser.add_argument("--limit", type=int, default=5, help="대상 종목 수. 기본 5")
+    parser.add_argument("--limit", type=int, default=None, help="서비스 목록의 앞 N종목만 (기본 전체)")
     parser.add_argument("--tickers", help="쉼표 구분 종목코드")
     parser.add_argument("--max-docs", type=int, default=20, help="종목당 최대 기사 수")
     parser.add_argument("--verbose", action="store_true")
