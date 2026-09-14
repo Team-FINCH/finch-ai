@@ -182,9 +182,15 @@ def test_backend_universe_parity():
     if not backend.is_file():
         pytest.skip("Backend config absent in standalone AI checkout")
     config = next(yaml.safe_load_all(backend.read_text()))
-    codes = config["finch"]["kis"]["realtime"]["codes"]
+    # finch.universe.codes is the anchor (&universe-codes) the backend declares the
+    # list at; kis.realtime.codes is the alias (*universe-codes). Compare against
+    # the definition so a reader sees where the list actually lives.
+    codes = config["finch"]["universe"]["codes"]
     assert len(codes) == len(DEFAULT) == 30
     assert set(codes) == set(DEFAULT)
+    # The alias must keep pointing at the same list — realtime quotes and the
+    # service universe are the same set by contract.
+    assert set(config["finch"]["kis"]["realtime"]["codes"]) == set(codes)
 
 
 @pytest.mark.parametrize("module", [news, prices, financials, events])
