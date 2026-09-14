@@ -803,6 +803,14 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 
 Phase 1에는 논지 삭제 API가 없다. `status`는 서버가 새 논지를 기록할 때 이전 논지를 `active`에서 `closed`로 보관하기 위한 내부 이력 상태이며, `PUT`으로 바꾸는 입력값이 아니다. 따라서 화면에는 논지 수정만 제공하고 삭제 동작은 제공하지 않는다.
 
+**POST** `/api/ai/v1/wiki/facts/{fact_id}/confirm`  —  Phase 1
+
+AI 추측에 대한 "맞아요". 요청 본문은 없으며 `fact_id`는 UUID다. 본인 소유이고 삭제되지 않은 `editable=true` · `source=ai_inferred` 항목을 확인할 수 있으며, 이미 확인된 `user_stated` 항목도 같은 성공 응답을 반환한다.
+
+성공 시 `200` 공통 응답 봉투의 `content`에 확인된 항목을 반환한다. 필드는 조회의 `profile[]`과 같다(`id`, `text`, `source`, `confidence`, `as_of`, `evidence`, `editable`). `source`만 `user_stated`로 변경하고 나머지는 보존한다. 커밋 직후의 위키 조회부터 새 출처가 반영된다.
+
+`derived_from_trades`, `editable=false` 항목은 `400 INVALID_REQUEST`로 거부한다. 없는 ID·잘못된 UUID·삭제된 항목·남의 항목도 같은 코드로 거부하며, 이 네 경우는 "해당 항목을 찾을 수 없습니다."라는 동일한 메시지를 반환한다. 중복·동시 확인도 성공하며, 출처 변경은 한 번만 적용된다. 반복 응답은 요청별 메타데이터(`request_id`, `generated_at`)를 제외하면 최초 성공 응답과 같다.
+
 **DELETE** `/api/ai/v1/wiki/facts/{fact_id}`  —  Phase 1
 
 항목 삭제. 쿼리 파라미터 `reason`은 `user_deleted`(기본값) 또는 `guess_rejected`(AI 추측에 대한 "아니에요")만 허용하며, 응답에도 저장된 사유를 포함한다. 즉시 이후 모든 응답에서 제외된다.
@@ -815,7 +823,7 @@ Phase 1에는 논지 삭제 API가 없다. `status`는 서버가 새 논지를 �
 | `derived_from_trades` | 거래 이력에서 도출 | 사실로 인용 가능 |
 | `ai_inferred` | AI가 대화에서 추론 | **단정 금지.** "~하신 것으로 보이는데 맞나요?" 형태만 허용 |
 
-대화에서 AI가 추출하는 Wiki 갱신은 **대화 종료 후 비동기 배치**로만 수행한다. 응답 경로에서 동기적으로 쓰면 지연이 그대로 사용자에게 전가된다. 사용자가 위 `PUT`으로 직접 수정한 값은 즉시 반영한다. 동시 세션 충돌은 사용자당 단일 writer 큐로 직렬화한다.
+대화에서 AI가 추출하는 Wiki 갱신은 **대화 종료 후 비동기 배치**로만 수행한다. 응답 경로에서 동기적으로 쓰면 지연이 그대로 사용자에게 전가된다. 사용자가 위 `PUT`으로 직접 수정하거나 `POST /wiki/facts/{fact_id}/confirm`으로 확인한 값은 즉시 반영한다. 동시 세션 충돌은 사용자당 단일 writer 큐로 직렬화한다.
 
 ## §10 응답 피드백
 

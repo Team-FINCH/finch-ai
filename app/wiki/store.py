@@ -59,6 +59,31 @@ async def add_fact(
     return fact
 
 
+async def confirm_fact(db: AsyncSession, user_id: str, fact_id: str) -> WikiFact:
+    """사용자가 확인한 추측의 출처만 바꾼다. 반복 확인은 멱등적으로 성공한다."""
+    fact = await db.scalar(
+        select(WikiFact)
+        .where(
+            WikiFact.id == _as_uuid(fact_id),
+            WikiFact.user_id == user_id,
+            WikiFact.deleted_at.is_(None),
+        )
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if fact is None:
+        raise InvalidRequest("해당 항목을 찾을 수 없습니다.")
+    if fact.source not in (WikiSource.AI_INFERRED, WikiSource.USER_STATED):
+        raise InvalidRequest("AI 추측 항목만 확인할 수 있습니다.")
+    if not fact.editable:
+        raise InvalidRequest("사용자가 확인할 수 없는 항목입니다.")
+    if fact.source == WikiSource.USER_STATED:
+        return fact
+    fact.source = WikiSource.USER_STATED
+    await db.flush()
+    return fact
+
+
 async def soft_delete_fact(
     db: AsyncSession,
     user_id: str,

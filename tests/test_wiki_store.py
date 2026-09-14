@@ -23,6 +23,7 @@ from app.core.errors import InvalidRequest
 from app.core.models import WikiFact, WikiThesis
 from app.wiki.store import (
     add_fact,
+    confirm_fact,
     fact_payload,
     get_active_thesis,
     list_facts,
@@ -80,11 +81,11 @@ async def test_소프트_삭제된_항목은_읽기에서_빠진다(db: AsyncSes
 
 
 async def test_추측_거절_사유를_함께_기록한다(db: AsyncSession, user_id: str) -> None:
-    fact = await add_fact(db, user_id, "반도체를 선호하시는 것 같습니다", source=WikiSource.AI_INFERRED)
-
-    deleted = await soft_delete_fact(
-        db, user_id, str(fact.id), reason=DeleteReason.GUESS_REJECTED
+    fact = await add_fact(
+        db, user_id, "반도체를 선호하시는 것 같습니다", source=WikiSource.AI_INFERRED
     )
+
+    deleted = await soft_delete_fact(db, user_id, str(fact.id), reason=DeleteReason.GUESS_REJECTED)
 
     assert deleted.deleted_reason == DeleteReason.GUESS_REJECTED
     stored = await db.get(WikiFact, fact.id)
@@ -150,6 +151,38 @@ async def test_없는_id는_형식이_틀려도_같은_에러다(db: AsyncSessio
         await soft_delete_fact(db, user_id, "uuid가-아님")
     with pytest.raises(InvalidRequest):
         await soft_delete_fact(db, user_id, str(uuid.uuid4()))
+
+
+@pytest.mark.parametrize("source", [WikiSource.DERIVED_FROM_TRADES])
+async def test_추측이_아닌_항목은_확인을_거절한다(db, user_id, source) -> None:
+    fact = await add_fact(db, user_id, "확인 대상", source=source)
+    with pytest.raises(InvalidRequest):
+        await confirm_fact(db, user_id, str(fact.id))
+    await db.refresh(fact)
+    assert fact.source == source
+
+
+async def test_확인한_추측은_다시_확인해도_성공한다(db, user_id) -> None:
+    fact = await add_fact(db, user_id, "확인 대상", source=WikiSource.AI_INFERRED)
+    await confirm_fact(db, user_id, str(fact.id))
+    confirmed = await confirm_fact(db, user_id, str(fact.id))
+    assert confirmed.id == fact.id
+    await db.refresh(fact)
+    assert fact.source == WikiSource.USER_STATED
+
+
+async def test_수정_불가_추측은_확인을_거절한다(db, user_id) -> None:
+    fact = await add_fact(db, user_id, "확인 대상", source=WikiSource.AI_INFERRED, editable=False)
+    with pytest.raises(InvalidRequest):
+        await confirm_fact(db, user_id, str(fact.id))
+    await db.refresh(fact)
+    assert fact.source == WikiSource.AI_INFERRED
+
+
+@pytest.mark.parametrize("fact_id", ["not-a-uuid", str(uuid.uuid4())])
+async def test_확인_대상_id가_없으면_같은_오류를_반환한다(db, user_id, fact_id) -> None:
+    with pytest.raises(InvalidRequest, match="해당 항목을 찾을 수 없습니다."):
+        await confirm_fact(db, user_id, fact_id)
 
 
 # ── theses ────────────────────────────────────────────────────────────

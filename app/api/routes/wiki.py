@@ -16,6 +16,7 @@ from app.core.adapters import ledger_source
 from app.core.enums import Confidence, DeleteReason, ThesisHorizon, ThesisStatus, WikiSource
 from app.core.schemas import ContentModel, Envelope
 from app.wiki.store import (
+    confirm_fact,
     fact_payload,
     list_facts,
     list_theses,
@@ -136,6 +137,26 @@ async def _thesis_names(user_id: str, tickers: list[str]) -> dict[str, str]:
     except Exception:
         return {}
     return {ticker: ledger.instrument(ticker).name for ticker in tickers}
+
+
+@router.post(
+    "/facts/{fact_id}/confirm",
+    responses={
+        400: {
+            "description": (
+                "INVALID_REQUEST: 없는 ID·잘못된 UUID·삭제된 항목·다른 사용자 항목, "
+                "ai_inferred/user_stated가 아닌 항목 또는 editable=false인 항목"
+            )
+        }
+    },
+)
+async def confirm_wiki_fact(
+    fact_id: str, user_id: CurrentUser, db: DbSession
+) -> Envelope[WikiFactOut]:
+    """본문 없이 AI 추측을 확인한다. source만 user_stated로 바꾸며 반복 확인도 성공한다."""
+    fact = await confirm_fact(db, user_id, fact_id)
+    await db.commit()
+    return Envelope[WikiFactOut](content=fact_payload(fact))
 
 
 @router.delete("/facts/{fact_id}")
