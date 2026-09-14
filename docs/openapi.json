@@ -712,6 +712,27 @@
             "title": "Deeplink",
             "type": "string"
           },
+          "event_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "publisher": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publisher"
+          },
           "rank": {
             "title": "Rank",
             "type": "integer"
@@ -753,6 +774,8 @@
         "required": [
           "rank",
           "category",
+          "event_type",
+          "publisher",
           "relevance_score",
           "title",
           "text",

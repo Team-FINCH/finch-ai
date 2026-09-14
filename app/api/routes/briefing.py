@@ -19,7 +19,7 @@ from sqlalchemy import or_, select
 
 from app.api.deps import CurrentUser, DbSession, UsageLimit
 from app.core.adapters import Ledger, ledger_source
-from app.core.enums import BriefingStatus, CitationType, MetricSource, RateSensitivity
+from app.core.enums import BriefingStatus, CitationType, EventType, MetricSource, RateSensitivity
 from app.core.errors import InsufficientData
 from app.core.models import AIResponse, Document, Event
 from app.core.response_log import record
@@ -59,6 +59,8 @@ _ENDPOINT = "briefing"
 class BriefingItem(BaseModel):
     rank: int
     category: str
+    event_type: EventType | None
+    publisher: str | None
     relevance_score: float | int
     title: str
     text: str
@@ -176,6 +178,10 @@ async def build_briefing(
         )
     )
 
+    publishers_by_document = {
+        document_id: next(c.publisher for c in citations if c.id == citation_id)
+        for document_id, citation_id in citations_by_document.items()
+    }
     items: list[dict[str, Any]] = []
     for item, outcome in zip(top, outcomes, strict=True):
         if outcome.section is None:
@@ -191,6 +197,7 @@ async def build_briefing(
                 outcome.section.model_dump(mode="json"),
                 len(items) + 1,
                 citations_by_document=citations_by_document,
+                publishers_by_document=publishers_by_document,
             )
         )
 
@@ -300,12 +307,15 @@ def _item_payload(
     rank_: int,
     *,
     citations_by_document: dict[str, str] | None = None,
+    publishers_by_document: dict[str, str | None] | None = None,
 ) -> dict[str, Any]:
     """§8 `items` 한 줄. rank는 생성에 실패한 항목을 뺀 뒤 다시 매긴다."""
     candidate = item.candidate
     return {
         "rank": rank_,
         "category": candidate.category.value,
+        "event_type": candidate.event_type,
+        "publisher": (publishers_by_document or {}).get(candidate.document_id),
         "relevance_score": round(item.relevance, 4),
         "title": candidate.title,
         "text": section["text"],

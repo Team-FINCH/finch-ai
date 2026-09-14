@@ -398,6 +398,8 @@ def test_promoted_news_reaches_briefing_freshness(news_session, monkeypatch, wit
         assert body["citations"][0]["type"] == "news"
         cited = [item for item in body["content"]["items"] if item["citations"]]
         assert cited[0]["category"] == "filing"
+        assert cited[0]["event_type"] == "product"
+        assert cited[0]["publisher"] == document["publisher"]
         assert cited[0]["citations"] == [body["citations"][0]["id"]]
 
 
