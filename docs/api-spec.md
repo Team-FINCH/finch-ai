@@ -701,6 +701,8 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
     {
       "rank": 1,
       "category": "holding_move",
+      "event_type": null,
+      "publisher": null,
       "relevance_score": 0.91,
       "title": "SK하이닉스 강세",
       "text": "포트폴리오에서 18.2%를 차지하는 SK하이닉스가 +5.12% 상승했습니다. …",
@@ -731,6 +733,10 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 | `empty` | 보유 종목 없음 또는 유의미한 이벤트 없음 | 영역 숨김 |
 
 `category`는 `holding_move · earnings · filing · macro_event · portfolio_shift` 중 하나이며 최대 4건을 반환한다.
+
+`items[].event_type`은 원본 EventType인 `earnings · filing · dividend · macro · product` 중 하나다. 정책·거시는 `macro`, 공시는 `filing`, 실적은 `earnings`로 구분한다. 이벤트가 아닌 보유 등락·업종 변화는 `null`이다. 기존 `category` 매핑은 유지한다(배당·신제품의 category는 `filing`).
+
+`items[].publisher`는 연결된 원문 Document의 표시용 출처다(예: 뉴스의 언론사명). 인용의 `publisher`와 같으며 수집 경로인 `source`로 대체하지 않는다. 문서가 없거나 삭제됐거나 publisher가 없으면 `null`이다. 두 키는 항상 포함되며, 이 키가 없는 기존 캐시는 재생성한다.
 
 `date`·`status`·`generated_at`·`items` 네 키는 항상 실려 나온다. 보유 종목이 없거나 내보낼 항목이 없으면 `status: "empty"`에 `items: [ ]`이며 오류가 아니다. 이때 `date`는 `null`일 수 있다(조회 시 `date`를 주지 않았고 기준 거래일도 못 잡은 경우).
 

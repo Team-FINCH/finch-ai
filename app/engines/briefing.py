@@ -107,6 +107,8 @@ class Candidate:
     values: Mapping[str, float] = field(default_factory=dict)
     #: 모델에게 넘길 엔진 판정 한 줄.
     request: str = ""
+    #: 원본 이벤트 종류. 등락·구조 변화는 None이다.
+    event_type: EventType | None = None
 
     @property
     def key(self) -> str:
@@ -292,6 +294,7 @@ def event_candidates(
         candidates.append(
             Candidate(
                 category=_TYPE_CATEGORY[event_type],
+                event_type=event_type,
                 title=event.title,
                 # 매크로는 특정 종목이 아니라 포트폴리오 전체에 걸린다.
                 weight=holding.stock_weight if holding is not None else 1.0,
