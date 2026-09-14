@@ -80,6 +80,7 @@ class DiagnosisFinding(BaseModel):
 
 
 class DiagnosisIndicators(BaseModel):
+    sectorCount: int
     hhi: Number
     top1_weight: Number
     top3_weight: Number
@@ -393,7 +394,7 @@ async def diagnosis(
                 _finding_payload(finding, sections.get(finding.id), result, list(symbols))
                 for finding in ordered
             ],
-            "indicators": _indicators(result),
+            "indicators": {**_indicators(result), "sectorCount": result.sector_count},
         },
         data_as_of=DataAsOf(
             price=_as_datetime(snapshot),

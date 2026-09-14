@@ -157,6 +157,7 @@ class RiskAssessment:
     cash_weight: float
     top_sector: str | None
     top_sector_weight: float
+    sector_count: int
     drawdown: Drawdown
     rate_exposure: RateExposure
     findings: tuple[Finding, ...]
@@ -631,6 +632,7 @@ def assess(
         cash_weight=snapshot.cash_weight,
         top_sector=top_sector,
         top_sector_weight=top_sector_weight,
+        sector_count=len(by_sector),
         drawdown=_drawdown(value_series),
         rate_exposure=rate_exposure,
         findings=_findings(

@@ -148,6 +148,9 @@ def test_진단이_엔진_지표와_생성된_문장을_함께_돌려준다(clie
     content = response.json()["content"]
 
     indicators = content["indicators"]
+    # 8종목 중 반도체 3종목은 한 업종으로 세고 현금은 제외한다.
+    assert indicators["sectorCount"] == 6
+    assert type(indicators["sectorCount"]) is int
     assert 0.0 < indicators["hhi"] <= 1.0
     assert indicators["top1_weight"] <= indicators["top3_weight"]
     assert indicators["rate_sensitivity"] in {"low", "moderate", "high"}
@@ -221,6 +224,7 @@ def test_한_종목이어도_터지지_않는다(client: TestClient) -> None:
     """N=1이면 상관계수가 정의되지 않는다. 엔진이 correlation 항목을 아예 안 낸다."""
     content = _get(client, LONELY).json()["content"]
     assert content["indicators"]["top1_weight"] == pytest.approx(1.0)
+    assert content["indicators"]["sectorCount"] == 1
     assert content["indicators"]["diversification_ratio"] is None
     assert not [f for f in content["findings"] if f["id"] == "correlation"]
     assert content["summary"]["text"]
