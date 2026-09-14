@@ -22,13 +22,13 @@ from email.utils import parsedate_to_datetime
 from urllib.parse import urldefrag, urlsplit, urlunsplit
 
 import httpx
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.config import settings
 from app.core.db import SessionFactory
-from app.core.enums import DocumentType
-from app.core.models import Document, DocumentChunk, Instrument
+from app.core.enums import DocumentType, EventType
+from app.core.models import Document, DocumentChunk, Event, Instrument
 from app.rag.chunking import chunk
 from app.rag.lexical import weighted_tsvector
 
@@ -41,6 +41,35 @@ PAGE_SIZE = 100
 PAGE_LIMIT = 10
 RETRY_MAX = 3
 KST = timezone(timedelta(hours=9))
+# Bound daily news volume relative to the four-item briefing; keep all documents for RAG.
+MAX_EVENTS_PER_TICKER_DAY = 3
+RULES: list[tuple[tuple[str, ...], EventType, float]] = [
+    (("실적", "영업이익", "순이익", "매출"), EventType.EARNINGS, 0.6),
+    (("배당", "자사주"), EventType.DIVIDEND, 0.5),
+    (("수주", "공급계약", "신제품", "출시"), EventType.PRODUCT, 0.5),
+    (("기준금리", "통화정책", "환율"), EventType.MACRO, 0.4),
+]
+DEFAULT = (EventType.FILING, 0.3)
+
+
+def classify(title: str) -> tuple[EventType, float]:
+    """Conservative headline signals; even earnings news ranks below a 0.7 filing."""
+    for keywords, event_type, importance in RULES:
+        if any(keyword in title for keyword in keywords):
+            return event_type, importance
+    return DEFAULT
+
+
+def priority(article: NewsArticle) -> tuple[float, float, str]:
+    """Highest importance, newest publication, then stable URL identity."""
+    return (-classify(article.title)[1], -article.published_at.timestamp(), article.external_id)
+
+
+@dataclass(frozen=True, slots=True)
+class SaveResult:
+    chunks: int
+    promotion: str  # created | duplicate | capped
+
 
 _TAGS = re.compile(r"<[^>]+>")
 
@@ -160,7 +189,9 @@ def fetch_news(
                 payload = {}
             error = payload.get("error") or payload
             code = error.get("errorCode") or error.get("code") or response.status_code
-            raise NaverNewsError(f"뉴스 검색이 거부됐습니다: status={response.status_code} code={code}")
+            raise NaverNewsError(
+                f"뉴스 검색이 거부됐습니다: status={response.status_code} code={code}"
+            )
         try:
             payload = response.json()
         except ValueError as exc:
@@ -179,9 +210,7 @@ def fetch_news(
     return articles
 
 
-async def load_targets(
-    limit: int, tickers: Sequence[str] | None = None
-) -> list[tuple[str, str]]:
+async def load_targets(limit: int, tickers: Sequence[str] | None = None) -> list[tuple[str, str]]:
     """뉴스 검색 대상 (ticker, name). 직접 지정하지 않으면 상장 종목 일부만 고른다."""
     async with SessionFactory() as session:
         stmt = select(Instrument.ticker, Instrument.name).where(Instrument.status == "listed")
@@ -204,8 +233,12 @@ async def existing_ids(ids: Sequence[str]) -> set[str]:
         return set(result.scalars())
 
 
-async def save(article: NewsArticle) -> int:
-    """뉴스 한 건과 검색 조각을 upsert한다."""
+async def save(article: NewsArticle) -> SaveResult:
+    """Upsert the document/chunks and admit its event atomically.
+
+    Call in priority order to fill remaining daily slots with the best headlines.
+    Existing events retain their slots, including across subsequent runs.
+    """
     statement = pg_insert(Document).values(
         doc_type=DocumentType.NEWS,
         source=SOURCE,
@@ -231,10 +264,15 @@ async def save(article: NewsArticle) -> int:
     body = f"{article.title}\n\n{article.summary}"
     pieces = chunk(body)
     async with SessionFactory() as session:
-        document_id = (await session.execute(statement)).scalar_one()
-        await session.execute(
-            delete(DocumentChunk).where(DocumentChunk.document_id == document_id)
+        event_date = article.published_at.astimezone(KST).date()
+        # Events have no unique constraint. Serialize admission for this ticker/day.
+        lock_key = int.from_bytes(
+            hashlib.sha256(f"news:{article.ticker}:{event_date}".encode()).digest()[:8],
+            signed=True,
         )
+        await session.execute(select(func.pg_advisory_xact_lock(lock_key)))
+        document_id = (await session.execute(statement)).scalar_one()
+        await session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
         if pieces:
             await session.execute(
                 pg_insert(DocumentChunk).values(
@@ -249,8 +287,41 @@ async def save(article: NewsArticle) -> int:
                     ]
                 )
             )
+        rows = (
+            await session.execute(
+                select(Event.title, Event.document_id, Document.doc_type)
+                .outerjoin(Document, Event.document_id == Document.id)
+                .where(
+                    Event.ticker == article.ticker,
+                    or_(Event.event_date == event_date, Event.document_id == document_id),
+                )
+            )
+        ).all()
+        if any(title == article.title or linked_id == document_id for title, linked_id, _ in rows):
+            promotion = "duplicate"
+        elif (
+            sum(doc_type == DocumentType.NEWS for _, _, doc_type in rows)
+            >= MAX_EVENTS_PER_TICKER_DAY
+        ):
+            promotion = "capped"
+        else:
+            event_type, importance = classify(article.title)
+            await session.execute(
+                Event.__table__.insert(),
+                [
+                    {
+                        "ticker": article.ticker,
+                        "event_type": event_type.value,
+                        "event_date": event_date,
+                        "title": article.title,
+                        "importance": importance,
+                        "document_id": document_id,
+                    }
+                ],
+            )
+            promotion = "created"
         await session.commit()
-    return len(pieces)
+    return SaveResult(len(pieces), promotion)
 
 
 async def run(
@@ -293,9 +364,31 @@ async def run(
                     len(recent),
                     len(pending),
                 )
-                for article in pending:
-                    chunks += await save(article)
-                    saved += 1
+                counts = {"created": 0, "duplicate": 0, "capped": 0}
+                processed = 0
+                try:
+                    # Known documents also need promotion: earlier ingest versions made no events.
+                    for article in sorted(recent, key=priority):
+                        result = await save(article)
+                        chunks += result.chunks
+                        counts[result.promotion] += 1
+                        processed += 1
+                        if article.external_id not in known:
+                            saved += 1
+                            known.add(article.external_id)
+                finally:
+                    log.info(
+                        "news promotion ticker=%s read=%d created=%d duplicates=%d "
+                        "not_promoted=%d (daily_cap=%d outside_window=%d failed_or_unattempted=%d)",
+                        ticker,
+                        len(articles),
+                        counts["created"],
+                        counts["duplicate"],
+                        counts["capped"] + len(articles) - processed,
+                        counts["capped"],
+                        len(articles) - len(recent),
+                        len(recent) - processed,
+                    )
             except Exception:  # noqa: BLE001 — 한 종목 실패가 전체 수집을 막지 않는다
                 log.exception("뉴스 적재 실패: ticker=%s", ticker)
                 failed += 1
