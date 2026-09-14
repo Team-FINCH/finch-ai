@@ -244,6 +244,8 @@ def test_delta가_after_빼기_before다(client: TestClient) -> None:
         assert value == pytest.approx(content["after"][key] - content["before"][key])
     # 등급 문자열은 뺄 수 없으므로 차분에서 빠진다.
     assert "rate_sensitivity" not in content["delta"]
+    for key in ("before", "after", "delta"):
+        assert "sector_count" not in content[key]
     assert content["before"]["rate_sensitivity"] in {"low", "moderate", "high"}
 
 

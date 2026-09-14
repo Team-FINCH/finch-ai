@@ -80,6 +80,7 @@ class DiagnosisFinding(BaseModel):
 
 
 class DiagnosisIndicators(BaseModel):
+    sector_count: int
     hhi: Number
     top1_weight: Number
     top3_weight: Number
@@ -756,6 +757,7 @@ def _indicators(result: RiskAssessment) -> dict[str, Any]:
         "top1_weight": result.concentration.top1,
         "top3_weight": result.concentration.top3,
         "sector_hhi": result.concentration.sector_hhi,
+        "sector_count": result.concentration.sector_count,
         "annualized_volatility": (
             result.volatility.portfolio if result.volatility is not None else None
         ),

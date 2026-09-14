@@ -1270,6 +1270,10 @@
             "title": "Rate Sensitivity",
             "type": "string"
           },
+          "sector_count": {
+            "title": "Sector Count",
+            "type": "integer"
+          },
           "sector_hhi": {
             "anyOf": [
               {
@@ -1305,6 +1309,7 @@
           }
         },
         "required": [
+          "sector_count",
           "hhi",
           "top1_weight",
           "top3_weight",

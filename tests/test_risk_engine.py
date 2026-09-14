@@ -874,6 +874,36 @@ def test_시드_원장에서_그대로_조립된다() -> None:
     assert result.concentration.top1 > 0.0
 
 
+@pytest.mark.parametrize(
+    ("sectors", "expected_count", "expected_hhi"),
+    [
+        (("반도체", "반도체", "은행", "자동차"), 3, 0.375),
+        ((), 0, 0.0),
+        (("반도체",), 1, 1.0),
+        (("반도체", "미분류", "미분류", "미매핑"), 3, 0.375),
+        (("", ""), 1, 1.0),
+    ],
+    ids=["multi-sector", "empty", "single", "unknown-sectors", "blank-sector"],
+)
+def test_sector_count_matches_hhi_buckets_and_indicators(
+    sectors: tuple[str, ...], expected_count: int, expected_hhi: float
+) -> None:
+    from app.api.routes.portfolio import DiagnosisIndicators, _indicators
+
+    holdings = tuple(
+        _holding(str(i), 1.0 / len(sectors), sector)
+        for i, sector in enumerate(sectors)
+    )
+    result = assess(_snapshot(*holdings), {})
+    assert result.concentration.sector_count == expected_count
+    assert result.sector_count == expected_count
+    assert result.concentration.sector_hhi == pytest.approx(expected_hhi)
+    indicators = DiagnosisIndicators.model_validate(_indicators(result)).model_dump()
+    assert indicators["sector_count"] == expected_count
+    assert type(indicators["sector_count"]) is int
+    assert "sectorCount" not in indicators
+
+
 def test_빈_포트폴리오도_터지지_않는다() -> None:
     """전량 매도 직후에는 보유가 0종목이다. 0으로 나누는 자리가 여럿 있어 한 번 본다."""
     empty = PortfolioSnapshot(

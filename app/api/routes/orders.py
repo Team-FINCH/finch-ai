@@ -302,8 +302,9 @@ def _build(
 
 # ── 차분 ──────────────────────────────────────────────────────────────────────
 def _measures(result: RiskAssessment) -> dict[str, Any]:
-    """§5 `indicators`에 업종 최대 비중을 더한 것. 전·후가 같은 키 집합을 갖는다."""
+    """§5 지표에서 업종 수를 빼고 업종 최대 비중을 더한다(§8 계약)."""
     values = _indicators(result)
+    values.pop("sector_count")
     values["top_sector_weight"] = result.top_sector_weight
     return values
 

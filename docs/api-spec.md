@@ -465,6 +465,7 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
     }
   ],
   "indicators": {
+    "sector_count": 6,
     "hhi": 0.2841,
     "top1_weight": 0.4168,
     "top3_weight": 0.7204,
@@ -492,7 +493,7 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 
 `evidence`의 고정 키는 `tickers · metric · value · threshold · hhi` 다섯이다. 나머지는 조건부로 붙는다 — 상관 지표를 계산했으면 `avg_pairwise_corr`, `id`가 `sector_concentration`이면 `sector`, `macro_exposure`면 `rate_sensitivity`가 더 들어온다.
 
-`indicators`의 열한 키는 항상 실려 나오며, **계산되지 않은 지표는 0이 아니라 `null`**이다. 공통 거래일이 60일에 못 미치면 `annualized_volatility`·`diversification_ratio`가 `null`이 되고 `insufficient_history`에 사유 문자열이 담기며, 이때 `risk_level`·`risk_score`도 `null`이 될 수 있다. 집중도·현금 비중은 그대로 유효하므로 **409로 끊지 않는다.**
+`indicators`의 열두 키는 항상 실려 나오며, **계산되지 않은 지표는 0이 아니라 `null`**이다. `sector_count`는 보유 종목의 서로 다른 업종 수를 나타내는 정수다. 같은 업종은 한 번만 세고 현금은 제외하며, 히스토리가 짧아도 값이 제공된다. `sector_hhi`와 같은 업종 버킷을 세므로 미분류·미매핑 업종도 업종 값별로 포함한다. 빈 보유 목록의 엔진·지표 값은 `0`이며 `null`이 아니다(보유 종목이 없는 진단 요청은 기존대로 409). 공통 거래일이 60일에 못 미치면 `annualized_volatility`·`diversification_ratio`가 `null`이 되고 `insufficient_history`에 사유 문자열이 담기며, 이때 `risk_level`·`risk_score`도 `null`이 될 수 있다. 집중도·현금 비중은 그대로 유효하므로 **409로 끊지 않는다.**
 
 `findings[].id`는 `ticker_concentration · sector_concentration · volatility · correlation · liquidity · macro_exposure` 여섯 중 하나이며, 걸린 항목만 중요도 순으로 배열에 담긴다.
 
@@ -673,7 +674,7 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 | 키 | 실제 출력 |
 | --- | --- |
 | `order_summary` | 체결을 가정한 주문 한 줄씩. `price`를 생략했으면 여기 채워진 값이 실제 사용된 단가다 |
-| `before` · `after` | [§5](#ep-diagnosis) `indicators` 열한 키에 `top_sector_weight`를 더한 **열두 키**. 양쪽 키 구성은 같다 |
+| `before` · `after` | [§5](#ep-diagnosis) `indicators`에서 `sector_count`를 제외한 열한 키에 `top_sector_weight`를 더한 **열두 키**. 양쪽 키 구성은 같다 |
 | `delta` | `after − before`. **숫자인 지표만 담긴다** — `rate_sensitivity`처럼 문자열이거나 한쪽이 `null`인 지표는 키째로 빠진다 |
 | `warnings` | 이 주문 때문에 **새로 걸렸거나 등급이 올라간** 항목만. 나아진 항목은 요약이 말한다. 첫 발생이면 `before`가 `null` |
 | `thesis_conflicts` | 주문에 오른 종목의 `user_stated` 논지 중 어긋난 것만. 충돌이 없으면 빈 배열 |
