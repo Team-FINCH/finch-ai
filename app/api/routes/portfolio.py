@@ -158,7 +158,7 @@ class AttributionContent(BaseModel):
 
 # ── 원장 ──────────────────────────────────────────────────────────────────────
 async def _ledger(user_id: str) -> Ledger | None:
-    """원장 스냅샷. 못 읽으면 None이다.
+    """원장 스냅샷. 못 읽으면 None이고, 읽은 원장은 비어 있어도 그대로 반환한다.
 
     어느 원장을 읽을지는 `ledger_source()` 가 정한다(설정 `LEDGER_SOURCE`). `stocks.py`는 스냅샷
     하나만 필요해서 거기서 끝나지만, Risk Engine은 `prices`와 거래일 전체를 받으므로
@@ -171,7 +171,7 @@ async def _ledger(user_id: str) -> Ledger | None:
         ledger = await source.load(user_id)
     except (KeyError, FileNotFoundError, OSError):
         return None
-    return ledger if ledger.trading_days else None
+    return ledger
 
 
 # ── 엔진 입력(DB) ─────────────────────────────────────────────────────────────
@@ -319,6 +319,8 @@ async def diagnosis(
             "보유 내역을 불러오지 못해 진단할 수 없습니다.",
             detail={"reason": "ledger_unavailable"},
         )
+    if not ledger.trading_days:
+        raise InsufficientData("진단할 수 있는 거래일이 없습니다.")
 
     engine = PortfolioEngine(ledger)
     last = ledger.trading_days[-1]
@@ -421,6 +423,8 @@ async def attribution(
             "보유 내역을 불러오지 못해 분해할 수 없습니다.",
             detail={"reason": "ledger_unavailable"},
         )
+    if not ledger.trading_days:
+        raise InsufficientData("수익률을 낼 수 있는 거래일이 없습니다.")
 
     rows = PortfolioEngine(ledger).daily_returns()
     if not rows:

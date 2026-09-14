@@ -22,6 +22,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.main import create_app
+from app.core.adapters import Ledger
 from app.core.db import get_session
 from app.core.errors import LLMTimeout, RetrievalFailed
 from app.llm.client import LlmResult
@@ -123,6 +124,51 @@ def test_종목분석_LLM_키가_없으면_409다(monkeypatch):
     res = client.post(STOCKS_URL, json={"sections": ["current"]}, headers=AUTH)
     assert res.status_code == 409
     assert res.json()["code"] == "INSUFFICIENT_DATA"
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "payload"),
+    [
+        ("portfolio/diagnosis", {}),
+        ("portfolio/attribution", {"period": "1d"}),
+        ("orders/preview", {"orders": [{"ticker": "005930", "side": "buy", "quantity": 1}]}),
+    ],
+)
+@pytest.mark.parametrize(
+    "source_state", ["empty", "disabled", "missing_user", "missing_file", "io_error"]
+)
+def test_빈_원장과_읽기_실패를_구분한다(monkeypatch, endpoint, payload, source_state):
+    """_ledger를 우회하지 않고 로드 결과부터 세 API의 detail.reason까지 검증한다."""
+
+    class Source:
+        async def load(self, user_id: str) -> Ledger:
+            failures = {
+                "missing_user": KeyError,
+                "missing_file": FileNotFoundError,
+                "io_error": OSError,
+            }
+            if source_state in failures:
+                raise failures[source_state]("unavailable")
+            return Ledger(user_id=user_id, trading_days=(), instruments={}, prices={})
+
+    source = None if source_state == "disabled" else Source()
+    with _app(
+        monkeypatch,
+        app__api__routes__portfolio__ledger_source=lambda: source,
+    ) as client:
+        response = client.post(f"/api/ai/v1/{endpoint}", json=payload, headers=AUTH)
+
+    assert response.status_code == 409
+    body = response.json()
+    assert set(body) == {"code", "message", "detail", "request_id"}
+    assert isinstance(body["message"], str) and body["message"]
+    assert isinstance(body["request_id"], str) and body["request_id"]
+    assert body["code"] == "INSUFFICIENT_DATA"
+    if source_state == "empty":
+        assert body["detail"] == {}
+        assert "거래일" in body["message"]
+    else:
+        assert body["detail"] == {"reason": "ledger_unavailable"}
 
 
 # ── 대화 ─────────────────────────────────────────────────────────────────

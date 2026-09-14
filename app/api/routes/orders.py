@@ -413,6 +413,8 @@ async def preview(
             "보유 내역을 불러오지 못해 점검할 수 없습니다.",
             detail={"reason": "ledger_unavailable"},
         )
+    if not ledger.trading_days:
+        raise InsufficientData("주문을 점검할 수 있는 거래일이 없습니다.")
 
     engine = PortfolioEngine(ledger)
     last = ledger.trading_days[-1]
