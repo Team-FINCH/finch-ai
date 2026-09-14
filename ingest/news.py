@@ -22,7 +22,7 @@ from email.utils import parsedate_to_datetime
 from urllib.parse import urldefrag, urlsplit, urlunsplit
 
 import httpx
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.config import settings
@@ -234,7 +234,9 @@ async def existing_ids(ids: Sequence[str]) -> set[str]:
 
 
 async def save(article: NewsArticle) -> SaveResult:
-    """Upsert the document/chunks and admit its event atomically.
+    """Upsert documents and admit events atomically.
+
+    Unchanged content keeps its chunks and embeddings; promotion runs either way.
 
     Call in priority order to fill remaining daily slots with the best headlines.
     Existing events retain their slots, including across subsequent runs.
@@ -250,19 +252,11 @@ async def save(article: NewsArticle) -> SaveResult:
         publisher=article.publisher,
         published_at=article.published_at,
     )
-    statement = statement.on_conflict_do_update(
+    statement = statement.on_conflict_do_nothing(
         constraint="uq_documents_source_external",
-        set_={
-            "title": statement.excluded.title,
-            "body": statement.excluded.body,
-            "url": statement.excluded.url,
-            "publisher": statement.excluded.publisher,
-            "published_at": statement.excluded.published_at,
-        },
     ).returning(Document.id)
 
-    body = f"{article.title}\n\n{article.summary}"
-    pieces = chunk(body)
+    pieces = []
     async with SessionFactory() as session:
         event_date = article.published_at.astimezone(KST).date()
         # Events have no unique constraint. Serialize admission for this ticker/day.
@@ -271,8 +265,36 @@ async def save(article: NewsArticle) -> SaveResult:
             signed=True,
         )
         await session.execute(select(func.pg_advisory_xact_lock(lock_key)))
-        document_id = (await session.execute(statement)).scalar_one()
-        await session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
+        document_id = (await session.execute(statement)).scalar_one_or_none()
+        rewrite_chunks = document_id is not None
+        if document_id is None:
+            document = (
+                await session.execute(
+                    select(Document.id, Document.title, Document.body)
+                    .where(Document.source == SOURCE, Document.external_id == article.external_id)
+                    .with_for_update()
+                )
+            ).one()
+            document_id = document.id
+            # These are the inputs to both chunk text and its weighted tsvector.
+            rewrite_chunks = (document.title, document.body) != (article.title, article.summary)
+            await session.execute(
+                update(Document)
+                .where(Document.id == document_id)
+                .values(
+                    title=article.title,
+                    body=article.summary,
+                    url=article.url,
+                    publisher=article.publisher,
+                    published_at=article.published_at,
+                )
+            )
+            if rewrite_chunks:
+                await session.execute(
+                    delete(DocumentChunk).where(DocumentChunk.document_id == document_id)
+                )
+        if rewrite_chunks:
+            pieces = chunk(f"{article.title}\n\n{article.summary}")
         if pieces:
             await session.execute(
                 pg_insert(DocumentChunk).values(

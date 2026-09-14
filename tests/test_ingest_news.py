@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from copy import deepcopy
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -167,6 +169,12 @@ class _Result:
     def scalar_one(self):
         return self.value
 
+    def scalar_one_or_none(self):
+        return self.value
+
+    def one(self):
+        return self.value
+
     def all(self):
         return list(self.rows)
 
@@ -176,6 +184,7 @@ class NewsSession:
 
     def __init__(self):
         self.documents = {}
+        self.chunks = {}
         self.events = []
         self.statements = []
         self.commits = 0
@@ -192,9 +201,35 @@ class NewsSession:
         values = statement.compile().params
         if sql.startswith("INSERT INTO documents"):
             key = values["external_id"]
+            if (
+                key in self.documents
+                and "ON CONFLICT ON CONSTRAINT uq_documents_source_external DO NOTHING" in sql
+            ):
+                return _Result()
             document = self.documents.setdefault(key, {"id": uuid.uuid4()})
             document.update({key: value for key, value in values.items() if key != "id"})
             return _Result(document["id"])
+        if sql.startswith("SELECT documents.id"):
+            assert "FOR UPDATE" in sql
+            document = self.documents[values["external_id_1"]]
+            return _Result(
+                SimpleNamespace(**{key: document[key] for key in ("id", "title", "body")})
+            )
+        if sql.startswith("UPDATE documents"):
+            document = next(doc for doc in self.documents.values() if doc["id"] == values["id_1"])
+            document.update({key: value for key, value in values.items() if key != "id_1"})
+        if sql.startswith("DELETE FROM document_chunks"):
+            self.chunks.pop(values["document_id_1"], None)
+        if sql.startswith("INSERT INTO document_chunks"):
+            for index in range(sum(key.startswith("document_id_m") for key in values)):
+                self.chunks.setdefault(values[f"document_id_m{index}"], []).append(
+                    {
+                        "id": uuid.uuid4(),
+                        "chunk_index": values[f"chunk_index_m{index}"],
+                        "text": values[f"text_m{index}"],
+                        "embedding": None,
+                    }
+                )
         if sql.startswith("INSERT INTO events"):
             self.events.extend(parameters)
         if "FROM events" in sql:
@@ -236,7 +271,7 @@ def test_document_chunks_and_linked_event_commit_together(news_session):
     result = asyncio.run(save(article))
     assert result == news_mod.SaveResult(1, "created")
     assert news_session.commits == 1
-    assert len(news_session.statements) == 6
+    assert len(news_session.statements) == 5
     assert "pg_advisory_xact_lock" in news_session.statements[0]
     document = news_session.documents[article.external_id]
     assert news_session.events == [
@@ -250,6 +285,9 @@ def test_document_chunks_and_linked_event_commit_together(news_session):
         }
     ]
     assert document["doc_type"] == "news"
+    assert len(news_session.chunks[document["id"]]) == 1
+    assert news_session.chunks[document["id"]][0]["text"] == f"{article.title}\n\n{article.summary}"
+    assert news_session.chunks[document["id"]][0]["embedding"] is None
 
 
 @pytest.mark.parametrize("hour", [0, 1, 8, 9])
@@ -259,11 +297,59 @@ def test_event_day_is_kst_even_when_input_is_utc(news_session, hour):
     assert news_session.events[0]["event_date"] == published.date()
 
 
-def test_rerun_and_changed_title_do_not_duplicate_document_event(news_session):
+def test_rerun_preserves_chunks_and_embeddings_without_duplicate_event(news_session):
     article = article_for()
     assert asyncio.run(save(article)).promotion == "created"
-    assert asyncio.run(save(article)).promotion == "duplicate"
-    assert asyncio.run(save(replace(article, title="수정 제목"))).promotion == "duplicate"
+    document_id = news_session.documents[article.external_id]["id"]
+    news_session.chunks[document_id][0]["embedding"] = [0.25, -0.5, 0.75]
+    original_chunks = deepcopy(news_session.chunks)
+    assert asyncio.run(save(article)) == news_mod.SaveResult(0, "duplicate")
+    assert news_session.chunks == original_chunks
+    assert len(news_session.events) == 1
+
+
+@pytest.mark.parametrize("field,value", [("title", "수정 제목"), ("summary", "수정 요약")])
+def test_changed_content_replaces_chunks_without_duplicate_event(news_session, field, value):
+    article = article_for()
+    asyncio.run(save(article))
+    document_id = news_session.documents[article.external_id]["id"]
+    news_session.chunks[document_id][0]["embedding"] = [0.25, -0.5, 0.75]
+    original_chunk_id = news_session.chunks[document_id][0]["id"]
+    revised = replace(article, **{field: value})
+
+    assert asyncio.run(save(revised)) == news_mod.SaveResult(1, "duplicate")
+    document = news_session.documents[article.external_id]
+    assert document["id"] == document_id
+    assert (document["title"], document["body"]) == (revised.title, revised.summary)
+    pieces = news_session.chunks[document_id]
+    assert len(pieces) == 1
+    assert pieces[0]["id"] != original_chunk_id
+    assert pieces[0]["text"] == f"{revised.title}\n\n{revised.summary}"
+    assert pieces[0]["embedding"] is None  # Revised text needs a fresh embedding.
+    assert len(news_session.events) == 1
+
+    pieces[0]["embedding"] = [0.75, -0.5, 0.25]
+    revised_chunks = deepcopy(pieces)
+    assert asyncio.run(save(revised)) == news_mod.SaveResult(0, "duplicate")
+    assert news_session.chunks[document_id] == revised_chunks
+
+
+def test_metadata_changes_preserve_chunks_and_embeddings(news_session):
+    article = article_for()
+    asyncio.run(save(article))
+    document = news_session.documents[article.external_id]
+    news_session.chunks[document["id"]][0]["embedding"] = [0.25, -0.5, 0.75]
+    original_chunks = deepcopy(news_session.chunks)
+    revised = replace(
+        article,
+        publisher="updated publisher",
+        published_at=article.published_at + timedelta(days=1),
+    )
+
+    assert asyncio.run(save(revised)) == news_mod.SaveResult(0, "duplicate")
+    assert document["publisher"] == revised.publisher
+    assert document["published_at"] == revised.published_at
+    assert news_session.chunks == original_chunks
     assert len(news_session.events) == 1
 
 
@@ -323,7 +409,15 @@ def test_400_articles_ranked_capped_and_rerun_accounted_for(news_session, monkey
     # An already-ingested document must still acquire its missing event.
     existing = articles[-1]
     existing_id = uuid.uuid4()
-    news_session.documents[existing.external_id] = {"id": existing_id}
+    news_session.documents[existing.external_id] = {
+        "id": existing_id,
+        "title": existing.title,
+        "body": existing.summary,
+    }
+    news_session.chunks[existing_id] = [
+        {"id": uuid.uuid4(), "chunk_index": 0, "text": "기존 청크", "embedding": [0.25, -0.5, 0.75]}
+    ]
+    existing_chunks = deepcopy(news_session.chunks[existing_id])
 
     async def targets(*args):
         return [("005930", "삼성전자")]
@@ -337,14 +431,21 @@ def test_400_articles_ranked_capped_and_rerun_accounted_for(news_session, monkey
     monkeypatch.setattr(news_mod.settings, "naver_client_id", "test")
     monkeypatch.setattr(news_mod.settings, "naver_client_secret", "test")
     with caplog.at_level("INFO", logger="ingest.news"):
-        assert asyncio.run(news_mod.run(7, 1, 400)) == (399, 400, 0)
+        assert asyncio.run(news_mod.run(7, 1, 400)) == (399, 399, 0)
     assert [event["importance"] for event in news_session.events] == [0.6, 0.5, 0.5]
     assert news_session.events[0]["document_id"] == existing_id
     assert "read=400 created=3 duplicates=0 not_promoted=397" in caplog.text
     assert "daily_cap=397 outside_window=0 failed_or_unattempted=0" in caplog.text
+    assert news_session.chunks[existing_id] == existing_chunks
+    assert len(news_session.chunks) == 400
+    for chunks in news_session.chunks.values():
+        for piece in chunks:
+            piece["embedding"] = [0.25, -0.5, 0.75]
+    original_chunks = deepcopy(news_session.chunks)
     caplog.clear()
     with caplog.at_level("INFO", logger="ingest.news"):
-        assert asyncio.run(news_mod.run(7, 1, 400)) == (0, 400, 0)
+        assert asyncio.run(news_mod.run(7, 1, 400)) == (0, 0, 0)
+    assert news_session.chunks == original_chunks
     assert len(news_session.events) == 3
     assert "read=400 created=0 duplicates=3 not_promoted=397" in caplog.text
 
