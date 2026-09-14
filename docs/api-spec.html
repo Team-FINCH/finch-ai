@@ -1469,6 +1469,19 @@
 
       <div class="ep">
         <div class="ep-head">
+          <span class="verb post">POST</span>
+          <span class="path">/api/ai/v1/wiki/facts/<span class="var">{fact_id}</span>/confirm</span>
+          <span class="tag p1">Phase 1</span>
+        </div>
+        <div class="ep-body">
+          <p class="ep-note">AI 추측에 대한 "맞아요". 요청 본문은 없으며 <code>fact_id</code>는 UUID다. 본인 소유이고 삭제되지 않은 <code>editable=true</code> · <code>source=ai_inferred</code> 항목을 확인할 수 있으며, 이미 확인된 <code>user_stated</code> 항목도 같은 성공 응답을 반환한다.</p>
+          <p class="ep-note">성공 시 <code>200</code> 공통 응답 봉투의 <code>content</code>에 확인된 항목을 반환한다. 필드는 조회의 <code>profile[]</code>과 같다(<code>id</code>, <code>text</code>, <code>source</code>, <code>confidence</code>, <code>as_of</code>, <code>evidence</code>, <code>editable</code>). <code>source</code>만 <code>user_stated</code>로 변경하고 나머지는 보존한다. 커밋 직후의 위키 조회부터 새 출처가 반영된다.</p>
+          <p class="ep-note"><code>derived_from_trades</code>, <code>editable=false</code> 항목은 <code>400 INVALID_REQUEST</code>로 거부한다. 없는 ID·잘못된 UUID·삭제된 항목·남의 항목도 같은 코드로 거부하며, 이 네 경우는 "해당 항목을 찾을 수 없습니다."라는 동일한 메시지를 반환한다. 중복·동시 확인도 성공하며, 출처 변경은 한 번만 적용된다. 반복 응답은 요청별 메타데이터(<code>request_id</code>, <code>generated_at</code>)를 제외하면 최초 성공 응답과 같다.</p>
+        </div>
+      </div>
+
+      <div class="ep">
+        <div class="ep-head">
           <span class="verb delete">DELETE</span>
           <span class="path">/api/ai/v1/wiki/facts/<span class="var">{fact_id}</span></span>
           <span class="tag p1">Phase 1</span>
@@ -1486,7 +1499,7 @@
           </tbody>
         </table>
       </div>
-      <p>대화에서 AI가 추출하는 Wiki 갱신은 <strong>대화 종료 후 비동기 배치</strong>로만 수행한다. 응답 경로에서 동기적으로 쓰면 지연이 그대로 사용자에게 전가된다. 사용자가 위 <code>PUT</code>으로 직접 수정한 값은 즉시 반영한다. 동시 세션 충돌은 사용자당 단일 writer 큐로 직렬화한다.</p>
+      <p>대화에서 AI가 추출하는 Wiki 갱신은 <strong>대화 종료 후 비동기 배치</strong>로만 수행한다. 응답 경로에서 동기적으로 쓰면 지연이 그대로 사용자에게 전가된다. 사용자가 위 <code>PUT</code>으로 직접 수정하거나 <code>POST /wiki/facts/{fact_id}/confirm</code>으로 확인한 값은 즉시 반영한다. 동시 세션 충돌은 사용자당 단일 writer 큐로 직렬화한다.</p>
 
       <h2 id="ep-feedback"><span class="num">§10</span>응답 피드백</h2>
       <div class="ep">

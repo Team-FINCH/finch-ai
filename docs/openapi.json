@@ -1793,6 +1793,57 @@
         "title": "Envelope[WikiContent]",
         "type": "object"
       },
+      "Envelope_WikiFactOut_": {
+        "properties": {
+          "cached": {
+            "default": false,
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "content": {
+            "$ref": "#/components/schemas/WikiFactOut"
+          },
+          "data_as_of": {
+            "$ref": "#/components/schemas/DataAsOf"
+          },
+          "disclaimer": {
+            "title": "Disclaimer",
+            "type": "string"
+          },
+          "freshness_warnings": {
+            "items": {
+              "$ref": "#/components/schemas/FreshnessWarning"
+            },
+            "title": "Freshness Warnings",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "Envelope[WikiFactOut]",
+        "type": "object"
+      },
       "Envelope_WikiThesisOut_": {
         "properties": {
           "cached": {
@@ -3424,6 +3475,52 @@
           }
         },
         "summary": "Delete Fact",
+        "tags": [
+          "wiki"
+        ]
+      }
+    },
+    "/api/ai/v1/wiki/facts/{fact_id}/confirm": {
+      "post": {
+        "description": "본문 없이 AI 추측을 확인한다. source만 user_stated로 바꾸며 반복 확인도 성공한다.",
+        "operationId": "confirm_wiki_fact_api_ai_v1_wiki_facts__fact_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fact_id",
+            "required": true,
+            "schema": {
+              "title": "Fact Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_WikiFactOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "INVALID_REQUEST: 없는 ID·잘못된 UUID·삭제된 항목·다른 사용자 항목, ai_inferred/user_stated가 아닌 항목 또는 editable=false인 항목"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Wiki Fact",
         "tags": [
           "wiki"
         ]
