@@ -3,7 +3,7 @@
 §3.5 성장 판정이 PBR = 시가총액 / 자본총계인데, 시가총액은 `instruments`에 이미
 있고 자본총계만 없었다. 그 하나를 `financial_annual`에 채운다.
 
-    python -m ingest.financials                  # 기본 회계연도 전 종목
+    python -m ingest.financials                  # 기본 회계연도 서비스 종목
     python -m ingest.financials --year 2024
     python -m ingest.financials --limit 20       # 연결 확인용 맛보기
 
@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.db import SessionFactory, engine
 from app.core.models import FinancialAnnual, Instrument
+from ingest.universe import report_resolution, target_tickers
 
 logger = logging.getLogger("ingest.financials")
 
@@ -156,20 +157,19 @@ async def fetch(
 
 
 # ── 적재 ─────────────────────────────────────────────────────────────────────
-async def _targets(session: AsyncSession, limit: int | None) -> list[tuple[str, str]]:
-    """`(ticker, corp_code)` 목록. corp_code가 없는 종목은 DART에 물어볼 수 없다.
-
-    시가총액이 큰 순으로 돈다. 중간에 끊겨도 §3.5 백분위에서 비중이 큰 쪽이
-    먼저 채워지고, `--limit` 맛보기도 아는 종목부터 나온다.
-    """
-    stmt = (
-        select(Instrument.ticker, Instrument.corp_code)
-        .where(Instrument.corp_code.isnot(None))
-        .order_by(Instrument.market_cap.desc().nullslast())
+async def _targets(
+    session: AsyncSession, limit: int | None = None, tickers: list[str] | None = None
+) -> list[tuple[str, str]]:
+    """서비스 대상 (ticker, corp_code). corp_code가 없으면 DART 조회 불가."""
+    targets = target_tickers(tickers, limit)
+    stmt = select(Instrument.ticker, Instrument.corp_code).where(
+        Instrument.corp_code.isnot(None), Instrument.ticker.in_(targets)
     )
-    if limit:
-        stmt = stmt.limit(limit)
-    return [(t, c) for t, c in (await session.execute(stmt)).all()]
+    if not tickers:
+        stmt = stmt.where(Instrument.status == "listed")
+    codes = dict((await session.execute(stmt)).all())
+    report_resolution(logger, targets, list(codes), explicit=bool(tickers))
+    return [(ticker, codes[ticker]) for ticker in targets if ticker in codes]
 
 
 async def _upsert(session: AsyncSession, rows: list[dict]) -> int:
@@ -192,17 +192,19 @@ async def _upsert(session: AsyncSession, rows: list[dict]) -> int:
     return written
 
 
-async def ingest(*, year: int, limit: int | None = None) -> dict[str, int]:
-    """사업보고서 자본총계를 전 종목 적재하고 요약을 돌려준다.
+async def ingest(
+    *, year: int, limit: int | None = None, tickers: list[str] | None = None
+) -> dict[str, int]:
+    """사업보고서 자본총계를 서비스 종목에 적재하고 요약을 돌려준다.
 
     한 종목이 실패해도 멈추지 않는다. 미제출·비상장전환 등으로 응답이 없는 종목이
-    정상적으로 존재하고, 그중 하나 때문에 나머지 2천여 건을 다시 받는 것은 한도
+    정상적으로 존재하고, 그중 하나 때문에 나머지 종목을 다시 받는 것은 한도
     낭비다. 실패는 세어서 마지막에 보고한다.
     """
     stats = {"targets": 0, "rows": 0, "no_data": 0, "no_equity": 0, "failed": 0}
 
     async with SessionFactory() as session:
-        targets = await _targets(session, limit)
+        targets = await _targets(session, limit, tickers)
         stats["targets"] = len(targets)
         if not targets:
             logger.warning(
@@ -256,7 +258,8 @@ async def _main() -> None:
     parser.add_argument(
         "--year", type=int, default=None, help="회계연도 (기본: 직전 사업연도)"
     )
-    parser.add_argument("--limit", type=int, default=None, help="상위 N종목만 (연결 확인용)")
+    parser.add_argument("--limit", type=int, default=None, help="서비스 목록의 앞 N종목만 (연결 확인용)")
+    parser.add_argument("--tickers", help="쉼표 구분 종목코드. 주어지면 limit 무시")
     parser.add_argument("--verbose", action="store_true", help="DEBUG 로그")
     args = parser.parse_args()
 
@@ -273,7 +276,8 @@ async def _main() -> None:
 
     year = args.year or default_year(date.today())
     try:
-        stats = await ingest(year=year, limit=args.limit)
+        tickers = [t.strip() for t in args.tickers.split(",") if t.strip()] if args.tickers else None
+        stats = await ingest(year=year, limit=args.limit, tickers=tickers)
         logger.info(
             "완료 — 대상 %d종목 / %d행 적재 · 미제출 %d · 자본총계 없음 %d · 실패 %d",
             stats["targets"],

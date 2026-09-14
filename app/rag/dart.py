@@ -32,6 +32,7 @@ from app.core.enums import DocumentType
 from app.core.models import Document, DocumentChunk, Instrument
 from app.rag.chunking import chunk
 from app.rag.lexical import weighted_tsvector
+from ingest.universe import report_resolution, target_tickers
 
 log = logging.getLogger("app.rag.dart")
 
@@ -208,22 +209,19 @@ def fetch_document(client: httpx.Client, api_key: str, rcept_no: str) -> str | N
 
 
 async def load_targets(
-    limit: int, tickers: Sequence[str] | None = None
+    limit: int | None = None, tickers: Sequence[str] | None = None
 ) -> list[tuple[str, str]]:
-    """corp_code가 있는 종목 (ticker, corp_code).
-
-    tickers 가 주어지면 그 목록으로 좁히고 limit 을 무시한다 — 시드 포트폴리오처럼
-    대상을 직접 고를 때 쓴다. 없으면 티커 순 상위 limit 개다.
-    """
+    """Return (ticker, corp_code) in config order; explicit tickers bypass limit."""
+    targets = target_tickers(tickers, limit)
     async with SessionFactory() as session:
         stmt = select(Instrument.ticker, Instrument.corp_code).where(
-            Instrument.corp_code.is_not(None)
+            Instrument.corp_code.is_not(None), Instrument.ticker.in_(targets)
         )
-        if tickers:
-            stmt = stmt.where(Instrument.ticker.in_(tickers))
-        else:
-            stmt = stmt.order_by(Instrument.ticker).limit(limit)
-        return [(row.ticker, row.corp_code) for row in await session.execute(stmt)]
+        if not tickers:
+            stmt = stmt.where(Instrument.status == "listed")
+        codes = {row.ticker: row.corp_code for row in await session.execute(stmt)}
+        report_resolution(log, targets, list(codes), explicit=bool(tickers))
+        return [(ticker, codes[ticker]) for ticker in targets if ticker in codes]
 
 
 async def existing_rcept_nos(rcept_nos: Sequence[str]) -> set[str]:
@@ -295,7 +293,7 @@ async def save(filing: Filing, body: str) -> int:
 
 
 async def run(
-    days: int, limit: int, max_docs: int, tickers: Sequence[str] | None = None
+    days: int, limit: int | None, max_docs: int, tickers: Sequence[str] | None = None
 ) -> tuple[int, int, int]:
     """(적재 공시 수, 청크 수, 실패 종목 수). 종목 단위로 실패를 격리한다."""
     api_key = (settings.dart_api_key or "").strip()
@@ -348,7 +346,7 @@ async def run(
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="DART 공시 적재기")
     parser.add_argument("--days", type=int, default=30, help="조회 기간(일). 기본 30")
-    parser.add_argument("--limit", type=int, default=5, help="대상 종목 수. 기본 5")
+    parser.add_argument("--limit", type=int, default=None, help="서비스 목록의 앞 N종목만 (기본 전체)")
     parser.add_argument("--tickers", help="쉼표 구분 종목코드. 주어지면 limit 을 무시하고 그 종목만")
     parser.add_argument("--max-docs", type=int, default=20, help="종목당 원문 수. 기본 20")
     parser.add_argument("--verbose", action="store_true", help="DEBUG 로그")
