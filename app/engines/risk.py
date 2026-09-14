@@ -632,7 +632,7 @@ def assess(
         cash_weight=snapshot.cash_weight,
         top_sector=top_sector,
         top_sector_weight=top_sector_weight,
-        sector_count=len(by_sector),
+        sector_count=concentration.sector_count,
         drawdown=_drawdown(value_series),
         rate_exposure=rate_exposure,
         findings=_findings(

@@ -60,6 +60,7 @@ class Concentration:
     top1: float
     top3: float
     sector_hhi: float
+    sector_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +87,7 @@ class PortfolioSnapshot:
             top1=weights[0] if weights else 0.0,
             top3=sum(weights[:3]),
             sector_hhi=sum(w * w for w in by_sector.values()),
+            sector_count=len(by_sector),
         )
 
 

@@ -80,7 +80,7 @@ class DiagnosisFinding(BaseModel):
 
 
 class DiagnosisIndicators(BaseModel):
-    sectorCount: int
+    sector_count: int
     hhi: Number
     top1_weight: Number
     top3_weight: Number
@@ -394,7 +394,7 @@ async def diagnosis(
                 _finding_payload(finding, sections.get(finding.id), result, list(symbols))
                 for finding in ordered
             ],
-            "indicators": {**_indicators(result), "sectorCount": result.sector_count},
+            "indicators": _indicators(result),
         },
         data_as_of=DataAsOf(
             price=_as_datetime(snapshot),
@@ -753,6 +753,7 @@ def _indicators(result: RiskAssessment) -> dict[str, Any]:
         "top1_weight": result.concentration.top1,
         "top3_weight": result.concentration.top3,
         "sector_hhi": result.concentration.sector_hhi,
+        "sector_count": result.concentration.sector_count,
         "annualized_volatility": (
             result.volatility.portfolio if result.volatility is not None else None
         ),
