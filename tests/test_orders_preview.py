@@ -22,7 +22,7 @@ from app.api.main import create_app
 from app.core.adapters import Instrument, Ledger
 from app.core.db import get_session
 from app.core.models import AIFeedback, AIResponse
-from app.llm.client import LlmResult, NullLlmClient
+from app.llm.client import LlmResult
 
 URL = "/api/ai/v1/orders/preview"
 #: 8종목·현금 4.2%. 최대 종목은 005930(19.2%), 반도체 업종 합이 46.1%다.
@@ -272,17 +272,11 @@ def test_price를_생략하면_최근_종가로_본다(client: TestClient) -> No
     assert row["amount"] == 10 * CLOSE_000660
 
 
-def test_모델이_숫자를_직접_쓰지_않는다(client: TestClient) -> None:
+def test_결정론적_요약은_전후_비교_결과를_반영한다(client: TestClient) -> None:
     content = _post(client, HOLDER, CONCENTRATE).json()["content"]
-    sections = [content["summary"], *content["warnings"]]
-    for section in sections:
-        assert section["text"] == "".join(s["value"] for s in section["segments"])
-        assert "{{" not in section["text"]
-        for segment in section["segments"]:
-            if segment["type"] == "text":
-                assert not re.search(r"\d", segment["value"]), segment
-            else:
-                assert segment["source"] == "risk_engine"
+    assert content["summary"]["text"]
+    assert "주문 후" in content["summary"]["text"]
+    assert content["delta"]["hhi"] > 0
 
 
 # ── 경고 ──────────────────────────────────────────────────────────────────────
@@ -403,7 +397,7 @@ def test_위키가_비면_충돌은_빈_목록이다(client: TestClient) -> None
     assert content["thesis_conflicts"] == []
 
 
-def test_사용자가_적어_둔_논지와_어긋나면_충돌이다(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_주문_비교는_위키_논지를_참조하지_않는다(monkeypatch: pytest.MonkeyPatch) -> None:
     session = StubSession(
         theses=[StubThesis("000660", "HBM 증설 사이클이 끝날 때까지 들고 갈 생각입니다")],
         facts=[StubFact("분산 투자를 중시하며 단일 업종 40% 이상을 피하고 싶습니다")],
@@ -413,14 +407,7 @@ def test_사용자가_적어_둔_논지와_어긋나면_충돌이다(monkeypatch
             "content"
         ]
 
-    assert len(content["thesis_conflicts"]) == 1
-    conflict = content["thesis_conflicts"][0]
-    assert conflict["ticker"] == "000660"
-    assert conflict["source"] == "user_stated"
-    assert conflict["fact"].startswith("HBM")
-    assert conflict["conflict"]
-    # 사용자 성향은 요약의 배경으로 넘어간다.
-    assert "분산 투자를 중시" in " ".join(call["user"] for call in client.llm.calls)
+    assert content["thesis_conflicts"] == []
 
 
 def test_어긋나지_않으면_충돌로_올리지_않는다(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -459,17 +446,13 @@ def test_원장이_없으면_409(client: TestClient) -> None:
     assert response.json()["code"] == "INSUFFICIENT_DATA"
 
 
-def test_LLM_키가_없으면_409(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.api.routes.orders.get_llm_client", lambda: NullLlmClient())
+def test_GMS_키가_없어도_전후_비교는_성공한다(monkeypatch: pytest.MonkeyPatch) -> None:
     app = create_app()
     app.dependency_overrides[get_session] = lambda: StubSession()
     with TestClient(app) as client:
         response = _post(client, HOLDER, [_buy(price=214000)])
-    assert response.status_code == 409
-    body = response.json()
-    # 사유는 detail 로만 나간다. message 는 사용자에게 그대로 보이는 문구다(백엔드 §1.3).
-    assert body["detail"]["reason"] == "llm_key_missing"
-    assert "LLM" not in body["message"]
+    assert response.status_code == 200
+    assert response.json()["content"]["summary"] is not None
 
 
 def test_주문이_비면_400(client: TestClient) -> None:
@@ -477,7 +460,7 @@ def test_주문이_비면_400(client: TestClient) -> None:
     assert _post(client, HOLDER, []).status_code == 400
 
 
-def test_문장_생성이_실패해도_수치는_나온다(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_모델_생성_없이도_수치와_요약이_나온다(monkeypatch: pytest.MonkeyPatch) -> None:
     class Blocked:
         async def generate(self, **_: Any) -> LlmResult:
             # 수치를 직접 쓴 응답 — 검사에서 차단된다.
@@ -492,7 +475,7 @@ def test_문장_생성이_실패해도_수치는_나온다(monkeypatch: pytest.M
     with _make_client(monkeypatch, StubSession(), llm=Blocked()) as client:
         content = _post(client, HOLDER, CONCENTRATE).json()["content"]
 
-    assert content["summary"] is None
+    assert content["summary"] is not None
     assert content["warnings"], "문장이 없어도 경고 목록은 남는다"
     assert all(w["text"] is None for w in content["warnings"])
     assert all(isinstance(w["threshold"], float) for w in content["warnings"])
