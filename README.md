@@ -47,8 +47,8 @@ AI 기능의 구현은 AI 파트가 전부 소유합니다. 다른 파트에 계
 
 | 값 | 동작 | 언제 |
 |---|---|---|
-| `seed` (기본) | `tests/fixtures/seed_portfolio.json` | 지금. 백엔드가 열리기 전 병렬 진행용 |
-| `backend` | 보유·거래는 백엔드 `/internal/v1`, **시계열·섹터는 우리 DB** | 백엔드가 `/internal/v1` 을 구현한 뒤 |
+| `backend` (기본) | 보유·거래는 백엔드 `/internal/v1`, 시계열·섹터는 우리 DB | 실사용 기본값 |
+| `seed` | `tests/fixtures/seed_portfolio.json` | 테스트 전용 |
 | `none` | 원장 없음 | 원장 없이 종목 분석만 돌릴 때 |
 
 `none` 이면 개인화 섹션(`my_impact` · `thesis_check`)이 조용히 비활성되고, 포트폴리오

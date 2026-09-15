@@ -257,6 +257,13 @@ class BackendLedgerSource:
             if self._client is None:
                 client.close()
 
+    async def load_portfolio(self, user_id: str) -> dict:
+        """포트폴리오 목록 질문용 원본 조회.
+
+        보유 목록은 시장 시계열이 없어도 표시할 수 있어 Ledger 조립과 분리한다.
+        """
+        return await asyncio.to_thread(lambda: self._get("/internal/v1/portfolio", user_id=user_id))
+
     def _trades(self, round_id: object, *, user_id: str) -> Iterable[Trade]:
         """커서 페이징을 끝까지 따라간다. 기본 100건. 백엔드 명세 §9.2."""
         cursor: str | None = None
@@ -304,6 +311,18 @@ class BackendLedgerSource:
         # 그날의 평가액을 다시 계산해야 하기 때문이다.
         tickers = tuple({h["stockCode"] for h in holdings} | {t.symbol for t in trades})
         prices, sectors = await _market_data(tickers, self._sessions)
+
+        # 백엔드 currentPrice는 AI DB에 시계열이 없는 신규 보유 종목도 평가할 수
+        # 있는 유일한 현재가다. 먼저 전체 시계열의 최신일에 반영한 뒤 공통 거래일을
+        # 계산해야 신규 종목 하나 때문에 스냅샷 전체가 비지 않는다.
+        latest_price_day = max((day for series in prices.values() for day in series), default=None)
+        if latest_price_day is not None:
+            for row in holdings:
+                ticker = row.get("stockCode")
+                current = row.get("currentPrice")
+                if ticker and current is not None:
+                    prices.setdefault(ticker, {})[latest_price_day] = float(current)
+
         trading_days = _common_days(prices)
 
         instruments = {
