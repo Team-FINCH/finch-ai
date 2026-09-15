@@ -14,15 +14,21 @@ from collections.abc import Iterator
 
 import pytest
 
+from app.core.adapters import ledger_source
 from app.core.config import settings
 from app.llm.client import get_llm_client
 
 
 @pytest.fixture(autouse=True)
 def _no_live_api(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    # API 테스트는 고정 seed 원장을 사용한다. 운영 기본값은 backend이므로
+    # 테스트가 운영 DB 상태에 따라 달라지지 않도록 명시적으로 격리한다.
+    monkeypatch.setattr(settings, "ledger_source", "seed")
+    ledger_source.cache_clear()
     monkeypatch.setattr(settings, "gms_key", "")
     monkeypatch.setattr(settings, "naver_client_id", "")
     monkeypatch.setattr(settings, "naver_client_secret", "")
     get_llm_client.cache_clear()
+    ledger_source.cache_clear()
     yield
     get_llm_client.cache_clear()
