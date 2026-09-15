@@ -97,21 +97,25 @@ _INGEST_PROBES = {
 _HEALTH_PROBES = ("documents", "embeddings", "price_daily")
 
 
-async def _probe_ingest(names: tuple[str, ...]) -> dict[str, bool]:
+async def _probe_ingest(
+    names: tuple[str, ...],
+) -> tuple[dict[str, bool], list[str]]:
     """적재 상태를 한 세션에서 확인한다.
 
     DB 가 죽어도 예외를 밖으로 내보내지 않는다. 점검 엔드포인트가 500이면
     로드밸런서도 스크레이퍼도 진단 본문을 못 받는다. 그때는 확인 못 한 항목이 False 다.
     """
     state = dict.fromkeys(names, False)
+    pending = list(names)
     try:
         async with SessionFactory() as session:
             for name in names:
                 stmt, _ = _INGEST_PROBES[name]
                 state[name] = (await session.execute(stmt)).first() is not None
+                pending.remove(name)
     except Exception:
         logger.warning("ingest-state query failed")
-    return state
+    return state, pending
 
 
 def create_app() -> FastAPI:
@@ -159,12 +163,14 @@ def create_app() -> FastAPI:
     @app.get("/health", tags=["ops"], response_model=HealthResponse)
     async def health() -> HealthResponse:
         """RAG 문서·임베딩과 시세 적재 상태를 HTTP 200으로 보고한다."""
-        ingest = IngestState(**await _probe_ingest(_HEALTH_PROBES))
+        state, errors = await _probe_ingest(_HEALTH_PROBES)
+        ingest = IngestState(**state)
         return HealthResponse(
             status="ok" if all(ingest.model_dump().values()) else "degraded",
             env=settings.app_env,
             model=settings.llm_model,
             ingest=ingest,
+            ingest_probe_errors=errors,
         )
 
     # docs/openapi.json 에는 넣지 않는다. 그 파일은 프론트가 Postman 으로 읽는 계약이고
@@ -176,7 +182,7 @@ def create_app() -> FastAPI:
         DB 가 죽으면 backfill_pending 까지 0이라 겉보기에는 정상이지만, 나머지 셋이
         동시에 0으로 떨어지므로 경보는 그쪽에서 잡힌다.
         """
-        state = await _probe_ingest(tuple(_INGEST_PROBES))
+        state, _ = await _probe_ingest(tuple(_INGEST_PROBES))
         lines: list[str] = []
         for name, ok in state.items():
             metric = f"ingest_{name}"

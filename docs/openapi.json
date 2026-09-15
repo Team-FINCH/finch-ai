@@ -2066,6 +2066,14 @@
           "ingest": {
             "$ref": "#/components/schemas/IngestState"
           },
+          "ingest_probe_errors": {
+            "description": "DB 조회 실패로 확인하지 못한 적재 항목. 빈 테이블은 포함하지 않는다.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Ingest Probe Errors",
+            "type": "array"
+          },
           "model": {
             "title": "Model",
             "type": "string"

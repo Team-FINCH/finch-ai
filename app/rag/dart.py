@@ -17,6 +17,7 @@ import logging
 import re
 import time
 import zipfile
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -57,6 +58,27 @@ class DartError(RuntimeError):
     """DART 응답을 해석할 수 없을 때."""
 
 
+class DartStatusError(DartError):
+    """A target was rejected; retain its status for batch-level diagnosis."""
+
+    def __init__(self, status: str) -> None:
+        self.status = status
+        super().__init__(f"DART status={status}")
+
+
+class SystemicDartError(DartError):
+    """Every attempted target received the same rejection."""
+
+
+def check_systemic_failure(failures: Counter[str], attempted: int) -> None:
+    if attempted and len(failures) == 1 and sum(failures.values()) == attempted:
+        status = next(iter(failures))
+        raise SystemicDartError(
+            f"DART systemic failure: {attempted}/{attempted} targets rejected "
+            f"with status={status}; check API credentials or quota"
+        )
+
+
 @dataclass(slots=True)
 class Filing:
     """공시목록 한 건."""
@@ -93,7 +115,7 @@ def fetch_filing_list(
 ) -> list[Filing]:
     """한 종목의 공시목록. 페이징을 끝까지 따라간다.
 
-    실패하면 빈 목록을 돌려주고 그 종목만 건너뛴다.
+    API 거절은 DartStatusError로 전달해 호출자가 전 종목 실패를 판별한다.
     """
     filings: list[Filing] = []
     for page_no in range(1, PAGE_LIMIT + 1):
@@ -121,7 +143,7 @@ def fetch_filing_list(
             break
         if status != "000":
             log.warning("공시목록 응답 거절: ticker=%s status=%s", ticker, status)
-            break
+            raise DartStatusError(str(status))
 
         for item in payload.get("list") or []:
             rcept_no = (item.get("rcept_no") or "").strip()
@@ -295,7 +317,10 @@ async def save(filing: Filing, body: str) -> int:
 async def run(
     days: int, limit: int | None, max_docs: int, tickers: Sequence[str] | None = None
 ) -> tuple[int, int, int]:
-    """(적재 공시 수, 청크 수, 실패 종목 수). 종목 단위로 실패를 격리한다."""
+    """(적재 공시 수, 청크 수, 적재 실패 종목 수).
+
+    개별 API 거절은 경고로 격리하고, 전 종목의 동일 거절은 예외로 보고한다.
+    """
     api_key = (settings.dart_api_key or "").strip()
     if not api_key:
         log.error("DART_API_KEY가 없다. .env를 확인하라")
@@ -303,6 +328,7 @@ async def run(
 
     targets = await load_targets(limit, tickers)
     if not targets:
+        # 대상 0건은 조용한 날이 아니라 instruments 가 비었다는 뜻이다. cron 이 알아야 한다.
         log.error("corp_code가 있는 종목이 없다. 먼저 `python -m ingest.instruments`를 돌려라")
         return 0, 0, 1
 
@@ -311,6 +337,7 @@ async def run(
     end_de = today.strftime("%Y%m%d")
     log.info("대상 %d종목 · 기간 %s~%s · 종목당 최대 %d건", len(targets), bgn_de, end_de, max_docs)
 
+    rejections: Counter[str] = Counter()
     saved = chunks = failed = 0
     with httpx.Client() as client:
         for i, (ticker, corp_code) in enumerate(targets, start=1):
@@ -334,12 +361,18 @@ async def run(
                         continue
                     chunks += await save(filing, body)
                     saved += 1
+            except DartStatusError as exc:
+                rejections[exc.status] += 1
             except Exception:
                 # 한 종목이 죽어도 배치를 멈추지 않는다. 재실행하면 실패분만 다시 받는다.
                 log.exception("종목 적재 실패: ticker=%s", ticker)
                 failed += 1
 
-    log.info("공시 %d건 · 청크 %d개 적재 · 실패 %d종목", saved, chunks, failed)
+    check_systemic_failure(rejections, len(targets))
+    log.info(
+        "공시 %d건 · 청크 %d개 적재 · 실패 %d종목 · API 거절 %d종목",
+        saved, chunks, failed, sum(rejections.values()),
+    )
     return saved, chunks, failed
 
 
@@ -358,14 +391,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     # httpx는 요청 URL을 통째로 찍는다. crtfc_key가 로그에 남으면 안 된다.
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    # 증분이라 신규가 0건인 재실행은 정상이다. 실패 종목이 있을 때만 비정상 종료해
-    # 재실행 대상이 남았음을 알린다.
+    # 증분의 0건은 정상이다. 시스템 전체 API 거절이나 적재 예외는 비정상 종료한다.
     tickers = (
         [t.strip() for t in args.tickers.split(",") if t.strip()]
         if args.tickers
         else None
     )
-    _, _, failed = asyncio.run(run(args.days, args.limit, args.max_docs, tickers))
+    try:
+        _, _, failed = asyncio.run(run(args.days, args.limit, args.max_docs, tickers))
+    except SystemicDartError as exc:
+        log.error("%s", exc)
+        return 1
     return 1 if failed else 0
 
 

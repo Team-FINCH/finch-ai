@@ -84,7 +84,8 @@ def test_fetch_filing_list_warns_on_unexpected_status(
         return httpx.Response(200, json={"status": "020", "message": "한도 초과"})
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        assert dart.fetch_filing_list(client, "k", "x", "005930", "20260701", "20260819") == []
+        with pytest.raises(dart.DartStatusError, match="status=020"):
+            dart.fetch_filing_list(client, "k", "x", "005930", "20260701", "20260819")
 
     records = [record for record in caplog.records if record.name == "app.rag.dart"]
     assert len(records) == 1
@@ -185,3 +186,24 @@ def test_chunk_rejects_overlap_not_smaller_than_size() -> None:
 def test_null_embedder_returns_nulls() -> None:
     """제공자 키가 없다. 0 벡터를 채우면 유사도 검색이 조용히 틀린다."""
     assert NullEmbedder().embed(["a", "b"]) == [None, None]
+
+
+async def test_rejected_target_does_not_prevent_saving_other_filings(monkeypatch):
+    from unittest.mock import AsyncMock, Mock
+
+    monkeypatch.setattr(dart.settings, "dart_api_key", "stub-key")
+    monkeypatch.setattr(dart, "load_targets", AsyncMock(return_value=[
+        ("005930", "a"), ("000660", "b"),
+    ]))
+    filing = dart.Filing("receipt", "000660", "name", "report", "20260814")
+    monkeypatch.setattr(dart, "fetch_filing_list", Mock(side_effect=[
+        dart.DartStatusError("rejected"), [filing],
+    ]))
+    monkeypatch.setattr(dart, "existing_rcept_nos", AsyncMock(return_value=set()))
+    monkeypatch.setattr(dart, "fetch_document", lambda *args: "filing body")
+    save = AsyncMock(return_value=2)
+    monkeypatch.setattr(dart, "save", save)
+    monkeypatch.setattr(dart, "REQUEST_DELAY_S", 0)
+
+    assert await dart.run(30, None, 20) == (1, 2, 0)
+    save.assert_awaited_once_with(filing, "filing body")

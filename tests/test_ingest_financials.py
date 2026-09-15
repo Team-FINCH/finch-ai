@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from datetime import date
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -156,7 +157,7 @@ async def test_fetch_reports_no_data_status_without_retrying(monkeypatch) -> Non
 
 
 async def test_fetch_gives_up_after_retry_max(monkeypatch) -> None:
-    """한도가 계속 막혀 있으면 빈 결과로 넘긴다 — 그 종목만 미제출로 세고 계속 돈다."""
+    """한도가 계속 막혀 있으면 빈 결과로 넘긴다 — 호출자가 실패로 세고 배치 실패 여부를 판정한다."""
     monkeypatch.setattr("ingest.financials.asyncio.sleep", _no_sleep)
 
     async with _client(
@@ -169,3 +170,69 @@ async def test_fetch_gives_up_after_retry_max(monkeypatch) -> None:
 
 async def _no_sleep(_seconds: float) -> None:
     """재시도 대기를 건너뛴다. 실제로 자면 테스트가 분 단위가 된다."""
+
+
+@pytest.fixture
+def batch(monkeypatch):
+    from ingest import financials
+
+    session = AsyncMock()
+    factory = MagicMock()
+    factory.return_value.__aenter__ = AsyncMock(return_value=session)
+    factory.return_value.__aexit__ = AsyncMock(return_value=None)
+    monkeypatch.setattr(financials, "SessionFactory", factory)
+    monkeypatch.setattr(financials, "_targets", AsyncMock(return_value=[
+        ("005930", "00126380"), ("000660", "00164779"),
+    ]))
+    upsert = AsyncMock(side_effect=lambda _, rows: len(rows))
+    monkeypatch.setattr(financials, "_upsert", upsert)
+    monkeypatch.setattr(financials.asyncio, "sleep", _no_sleep)
+    return financials, session, upsert
+
+
+@pytest.mark.parametrize("status", ["010", "011", "012", "020", "100", "500"])
+async def test_uniform_api_failure_exits_cli_nonzero(batch, monkeypatch, status):
+    financials, session, upsert = batch
+    monkeypatch.setattr(financials, "fetch", AsyncMock(return_value=([], status)))
+    monkeypatch.setattr(financials.settings, "dart_api_key", "test-key")
+    monkeypatch.setattr("sys.argv", ["financials", "--year", "2025"])
+    dispose = AsyncMock()
+    monkeypatch.setattr(financials, "engine", MagicMock(dispose=dispose))
+
+    with pytest.raises(SystemExit) as exc:
+        await financials._main()
+
+    assert exc.value.code != 0
+    assert f"status={status}" in str(exc.value)
+    assert "test-key" not in str(exc.value)
+    upsert.assert_not_awaited()
+    session.commit.assert_not_awaited()
+    dispose.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("responses", "expected"),
+    [
+        ([([], "013"), ([], "013")], (0, 2, 0)),
+        ([([], "013"), ([_row("CFS", "7")], "000")], (1, 1, 0)),
+        ([([], "010"), ([_row("CFS", "7")], "000")], (1, 0, 1)),
+        ([([], "010"), ([], "013")], (0, 1, 1)),
+        ([([], "010"), ([], "011")], (0, 0, 2)),
+        ([([], "000"), ([], "000")], (0, 2, 0)),
+    ],
+)
+async def test_batch_counts_errors_separately_and_preserves_partial_progress(
+    batch, monkeypatch, responses, expected
+):
+    financials, session, _ = batch
+    monkeypatch.setattr(financials, "fetch", AsyncMock(side_effect=responses))
+    stats = await financials.ingest(year=2025)
+    assert (stats["rows"], stats["no_data"], stats["failed"]) == expected
+    session.commit.assert_awaited_once()
+
+
+async def test_no_targets_is_not_uniform_failure(batch, monkeypatch):
+    financials, _, upsert = batch
+    monkeypatch.setattr(financials, "_targets", AsyncMock(return_value=[]))
+    assert (await financials.ingest(year=2025))["targets"] == 0
+    upsert.assert_not_awaited()
