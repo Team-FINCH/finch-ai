@@ -978,6 +978,26 @@
         투자 용어 질의(featureSpec &sect;10.2 "용어 설명")도 이 엔드포인트가 담당하고, 도구가 필요 없는 질문은 Tool 없이 답하므로
         <code>tools_used</code>가 빈 배열이 된다.
       </p>
+      <p>성공한 질문과 최종 답변은 <code>conversation_id</code> 아래에 저장한다. 생성 실패나 가드레일 차단 요청은 이력에 남기지 않는다.</p>
+
+      <h3>§4.1 대화 메시지 조회</h3>
+      <div class="ep">
+        <div class="ep-head">
+          <span class="verb get">GET</span>
+          <span class="path">/api/ai/v1/chat/conversations/{conversation_id}/messages</span>
+        </div>
+      </div>
+      <p>
+        현재 사용자의 메시지를 입력 순서대로 조회한다. 프론트는 마지막 <code>conversation_id</code>를 저장했다가
+        채팅 화면 복귀 시 이 경로로 복원한다. 존재하지 않거나 다른 사용자의 ID는 빈 <code>messages</code>를 반환한다.
+      </p>
+      <pre><code>{
+  "conversation_id": "conv_01JQZ7X4M9",
+  "messages": [
+    {"role": "user", "content": "내 삼성전자 비중은?", "created_at": "2026-09-15T14:00:00+09:00"},
+    {"role": "assistant", "content": "삼성전자는 포트폴리오의 …", "created_at": "2026-09-15T14:00:01+09:00"}
+  ]
+}</code></pre>
 
       <h4>에이전트 Tool 목록</h4>
       <p>여섯 기능이 공유하는 도구다. 각 기능의 파이프라인을 그대로 Tool 시그니처로 노출했다.</p>
@@ -1562,6 +1582,7 @@
             <tr><td><code>events</code></td><td>실적·공시·거시 일정과 중요도 점수</td></tr>
             <tr><td><code>wiki</code></td><td>사용자 투자 논지·성향</td></tr>
             <tr><td><code>ai_responses</code></td><td>응답 로그 · 피드백 · 평가 데이터셋</td></tr>
+            <tr><td><code>chat_messages</code></td><td>사용자별 대화 질문·최종 답변 이력</td></tr>
           </tbody>
         </table>
       </div>

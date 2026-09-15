@@ -34,6 +34,7 @@ EXPECTED_TABLES = {
     "wiki_theses",
     "trade_watermarks",
     "ai_responses",
+    "chat_messages",
     "ai_feedback",
     "ai_request_windows",
     "ai_token_daily",

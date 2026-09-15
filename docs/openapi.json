@@ -835,6 +835,57 @@
         "title": "ChatContext",
         "type": "object"
       },
+      "ChatHistoryContent": {
+        "additionalProperties": false,
+        "properties": {
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ChatMessageContent"
+            },
+            "title": "Messages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "messages"
+        ],
+        "title": "ChatHistoryContent",
+        "type": "object"
+      },
+      "ChatMessageContent": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "content",
+          "created_at"
+        ],
+        "title": "ChatMessageContent",
+        "type": "object"
+      },
       "ChatRequest": {
         "properties": {
           "context": {
@@ -1559,6 +1610,57 @@
           "content"
         ],
         "title": "Envelope[ChatContent]",
+        "type": "object"
+      },
+      "Envelope_ChatHistoryContent_": {
+        "properties": {
+          "cached": {
+            "default": false,
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "content": {
+            "$ref": "#/components/schemas/ChatHistoryContent"
+          },
+          "data_as_of": {
+            "$ref": "#/components/schemas/DataAsOf"
+          },
+          "disclaimer": {
+            "title": "Disclaimer",
+            "type": "string"
+          },
+          "freshness_warnings": {
+            "items": {
+              "$ref": "#/components/schemas/FreshnessWarning"
+            },
+            "title": "Freshness Warnings",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "Envelope[ChatHistoryContent]",
         "type": "object"
       },
       "Envelope_DeletedFactContent_": {
@@ -3212,6 +3314,49 @@
           }
         },
         "summary": "Chat",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/ai/v1/chat/conversations/{conversation_id}/messages": {
+      "get": {
+        "description": "현재 사용자가 소유한 한 대화의 메시지를 입력 순서대로 돌려준다.",
+        "operationId": "conversation_messages_api_ai_v1_chat_conversations__conversation_id__messages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ChatHistoryContent_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Conversation Messages",
         "tags": [
           "chat"
         ]

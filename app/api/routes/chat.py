@@ -10,13 +10,16 @@ import logging
 import re
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter
 from pydantic import BaseModel
+from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbSession, UsageLimit
 from app.core.enums import Screen
 from app.core.errors import GuardrailBlocked, InsufficientData, InvalidRequest
+from app.core.models import ChatMessage
 from app.core.response_log import record
 from app.core.schemas import ContentModel, DataAsOf, Envelope, Section
 from app.llm.agent import answer
@@ -51,6 +54,17 @@ class ChatContent(ContentModel):
     conversation_id: str
     answer: Section
     tools_used: list[str]
+
+
+class ChatMessageContent(ContentModel):
+    role: Literal["user", "assistant"]
+    content: str
+    created_at: datetime
+
+
+class ChatHistoryContent(ContentModel):
+    conversation_id: str
+    messages: list[ChatMessageContent]
 
 
 @router.post("")
@@ -92,9 +106,10 @@ async def chat(
         log.warning("답변 차단 · %s", "; ".join(outcome.reasons))
         raise GuardrailBlocked("답변을 생성하지 못했습니다. 질문을 조금 더 구체적으로 적어 주세요.")
 
+    conversation_id = body.conversation_id or f"conv_{uuid.uuid4().hex[:16]}"
     envelope = Envelope[ChatContent](
         content=ChatContent(
-            conversation_id=body.conversation_id or f"conv_{uuid.uuid4().hex[:16]}",
+            conversation_id=conversation_id,
             answer=outcome.section,
             tools_used=list(outcome.tools_used),
         ),
@@ -111,5 +126,52 @@ async def chat(
             ),
         ),
     )
+    db.add(
+        ChatMessage(
+            conversation_id=conversation_id,
+            user_id=user_id,
+            role="user",
+            content=question,
+        )
+    )
+    db.add(
+        ChatMessage(
+            conversation_id=conversation_id,
+            user_id=user_id,
+            role="assistant",
+            content=outcome.section.text,
+        )
+    )
+    await db.commit()
     await record(db, envelope, user_id=user_id, endpoint="chat")
     return envelope
+
+
+@router.get("/conversations/{conversation_id}/messages")
+async def conversation_messages(
+    conversation_id: str, user_id: CurrentUser, db: DbSession
+) -> Envelope[ChatHistoryContent]:
+    """현재 사용자가 소유한 한 대화의 메시지를 입력 순서대로 돌려준다."""
+    rows = (
+        await db.scalars(
+            select(ChatMessage)
+            .where(
+                ChatMessage.user_id == user_id,
+                ChatMessage.conversation_id == conversation_id,
+            )
+            .order_by(ChatMessage.id)
+        )
+    ).all()
+    return Envelope[ChatHistoryContent](
+        content=ChatHistoryContent(
+            conversation_id=conversation_id,
+            messages=[
+                ChatMessageContent(
+                    role=row.role,
+                    content=row.content,
+                    created_at=row.created_at,
+                )
+                for row in rows
+            ],
+        )
+    )

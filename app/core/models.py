@@ -336,6 +336,28 @@ class AIResponse(Base):
     __table_args__ = (Index("ix_ai_responses_created", "created_at"),)
 
 
+class ChatMessage(Base):
+    """사용자별 채팅 이력.
+
+    응답 로그는 평가·피드백용이라 사용자 질문을 담지 않는다. 화면 복원에 필요한
+    질문과 최종 답변만 대화 ID 아래에 별도로 보관한다.
+    """
+
+    __tablename__ = "chat_messages"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    user_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    role: Mapped[str] = mapped_column(String(10), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TS, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("role in ('user', 'assistant')", name="ck_chat_messages_role"),
+        Index("ix_chat_messages_conversation", "user_id", "conversation_id", "id"),
+    )
+
+
 class AIRequestWindow(Base):
     """모든 Pod가 공유하는 사용자·엔드포인트별 요청 창.
 
