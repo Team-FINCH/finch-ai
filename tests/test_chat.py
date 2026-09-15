@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from app.api.main import create_app
 from app.core.db import get_session
 from app.core.enums import Screen
-from app.core.models import AIFeedback, AIResponse
+from app.core.models import AIFeedback, AIResponse, ChatMessage
 from app.llm.agent import _SCREEN_HINT, MAX_TOOL_CALLS, MAX_TOOL_TURNS
 from app.llm.client import LlmResult, NullLlmClient, ToolTurn, ToolUse
 
@@ -88,6 +88,27 @@ class FeedbackSession:
             return row.user_id if row else None
         return next((row for row in self.added if isinstance(row, AIFeedback)), None)
 
+    async def scalars(self, statement: Any) -> Any:
+        class Result:
+            def __init__(self, rows: list[ChatMessage]) -> None:
+                self.rows = rows
+
+            def all(self) -> list[ChatMessage]:
+                return self.rows
+
+        params = statement.compile().params
+        rows = [
+            row
+            for row in self.added
+            if isinstance(row, ChatMessage)
+            and row.user_id == params.get("user_id_1")
+            and row.conversation_id == params.get("conversation_id_1")
+        ]
+        for index, row in enumerate(rows, start=1):
+            row.id = index
+            row.created_at = datetime(2026, 9, 15, 14, 0, index)
+        return Result(rows)
+
 
 def build(fake: FakeClient, monkeypatch, session: Any | None = None) -> TestClient:
     monkeypatch.setattr("app.api.routes.chat.get_llm_client", lambda: fake)
@@ -127,6 +148,49 @@ def test_부른_도구를_응답에_남긴다(portfolio_client):
     body = _post(portfolio_client, {"message": "내 비중 얼마야?"}).json()
     assert body["content"]["tools_used"] == ["get_portfolio"]
     assert body["data_as_of"]["portfolio"] is not None
+
+
+def test_질문과_답변을_대화_id로_저장한다(portfolio_client):
+    response = _post(
+        portfolio_client,
+        {"message": "내 비중 얼마야?", "conversation_id": "conv_saved"},
+    )
+    assert response.status_code == 200
+    messages = [row for row in portfolio_client.db.added if isinstance(row, ChatMessage)]
+    assert [(row.role, row.conversation_id) for row in messages] == [
+        ("user", "conv_saved"),
+        ("assistant", "conv_saved"),
+    ]
+    assert messages[0].content == "내 비중 얼마야?"
+    assert messages[1].content == response.json()["content"]["answer"]["text"]
+
+
+def test_대화_메시지를_시간순으로_조회한다(portfolio_client):
+    _post(
+        portfolio_client,
+        {"message": "내 비중 얼마야?", "conversation_id": "conv_saved"},
+    )
+    response = portfolio_client.get(
+        f"{URL}/conversations/conv_saved/messages",
+        headers={"X-User-Id": HOLDER},
+    )
+    assert response.status_code == 200
+    content = response.json()["content"]
+    assert content["conversation_id"] == "conv_saved"
+    assert [message["role"] for message in content["messages"]] == ["user", "assistant"]
+
+
+def test_다른_사용자의_대화는_조회되지_않는다(portfolio_client):
+    _post(
+        portfolio_client,
+        {"message": "내 비중 얼마야?", "conversation_id": "conv_private"},
+    )
+    response = portfolio_client.get(
+        f"{URL}/conversations/conv_private/messages",
+        headers={"X-User-Id": "another_user"},
+    )
+    assert response.status_code == 200
+    assert response.json()["content"]["messages"] == []
 
 
 def test_응답을_저장해_피드백을_받는다(portfolio_client):
