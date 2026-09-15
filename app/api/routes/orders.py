@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Mapping, Sequence
 from datetime import date
@@ -41,9 +40,6 @@ from app.core.response_log import record
 from app.core.schemas import DataAsOf, Envelope, Section, Segment
 from app.engines.portfolio import Holding, PortfolioEngine, PortfolioSnapshot
 from app.engines.risk import Finding, RiskAssessment, assess
-from app.llm.client import NullLlmClient, get_llm_client
-from app.llm.generate import SectionOutcome, generate_section, krw_segment, ratio_segment
-from app.llm.guard import Feature
 from app.wiki.store import list_facts, list_theses
 
 log = logging.getLogger("app.api.orders")
@@ -52,7 +48,6 @@ router = APIRouter(prefix="/orders", tags=["orders"])
 Number = float | int
 
 _SOURCE = MetricSource.RISK_ENGINE
-_SUMMARY_KEY = "summary"
 _SUMMARY_TITLE = "주문 요약"
 
 #: 모델이 "어긋나는 점 없음"을 알리는 고정 문구. 프롬프트가 이 문자열을 그대로 지정하고
@@ -340,41 +335,30 @@ def _raised(before: RiskAssessment, after: RiskAssessment) -> list[Finding]:
     ]
 
 
-def _finding_values(finding: Finding, before: RiskAssessment) -> dict[str, Segment]:
-    """경고 하나가 쓸 수 있는 자리표시자 — 그 항목이 잡은 지표의 전·후와 임계값.
+def _deterministic_summary(
+    order_summary: Sequence[Mapping[str, Any]],
+    feasible: bool,
+    cash: float,
+    raised: Sequence[Finding],
+) -> str:
+    orders = ", ".join(
+        f"{row['ticker']} {row['side']} {row['quantity']}주" for row in order_summary
+    )
+    parts = [f"주문 {orders}을 가정해 포트폴리오 위험 지표를 비교했습니다."]
+    if not feasible:
+        parts.append(f"현금이 {round(-cash):,}원 부족합니다.")
+    elif raised:
+        titles = ", ".join(_FINDING_TITLES.get(f.id, f.id) for f in raised)
+        parts.append(f"주문 후 {titles} 위험이 새로 발생하거나 높아집니다.")
+    else:
+        parts.append("주문 후 새로 높아진 위험 항목은 없습니다.")
+    return " ".join(parts)
 
-    금리민감도 점수는 비율이 아니라 가중 합이라 `ratio_segment`로 내보내면 비중으로
-    읽힌다(진단 쪽과 같은 이유). 그 항목은 자리표시자 없이 문장만 쓴다.
-    """
-    if finding.id == "macro_exposure":
-        return {}
-    digits = _METRIC_DIGITS.get(finding.metric, 1)
-    previous = next((f.value for f in before.findings if f.id == finding.id), None)
-    values = {
-        "after": ratio_segment(finding.value, _SOURCE, digits=digits),
-        "threshold": ratio_segment(finding.threshold, _SOURCE, digits=digits),
-    }
-    if previous is not None:
-        values["before"] = ratio_segment(previous, _SOURCE, digits=digits)
-    return values
 
-
-def _summary_values(
-    before: Mapping[str, Any], after: Mapping[str, Any], orders_value: float
-) -> dict[str, Segment]:
-    """요약이 쓸 수 있는 자리표시자. 계산되지 않은 지표는 목록에서 빠져 모델이 못 쓴다."""
-    values: dict[str, Segment] = {"orders_value": krw_segment(orders_value, _SOURCE)}
-    for key in _SUMMARY_KEYS:
-        digits = _METRIC_DIGITS.get(key, 1)
-        if isinstance(before.get(key), int | float):
-            values[f"{key}_before"] = ratio_segment(before[key], _SOURCE, digits=digits)
-        if isinstance(after.get(key), int | float):
-            values[f"{key}_after"] = ratio_segment(after[key], _SOURCE, digits=digits)
-        if isinstance(before.get(key), int | float) and isinstance(after.get(key), int | float):
-            values[f"{key}_delta"] = ratio_segment(
-                after[key] - before[key], _SOURCE, signed=True, digits=digits
-            )
-    return values
+def _deterministic_warning(finding: Finding, before: RiskAssessment) -> dict[str, Any]:
+    title = _FINDING_TITLES.get(finding.id, finding.id)
+    text = f"{title} 위험이 기준치를 넘었습니다. 엔진 계산 결과를 확인해 주세요."
+    return {"text": text, "segments": []}
 
 
 # ── 위키 ──────────────────────────────────────────────────────────────────────
@@ -446,72 +430,16 @@ async def preview(
         market_cap_ranks=ranks,
     )
 
-    client = get_llm_client()
-    if isinstance(client, NullLlmClient):
-        raise InsufficientData(
-            "지금은 점검 문장을 만들 수 없습니다.", detail={"reason": "llm_key_missing"}
-        )
-
-    theses, facts = await _stated_context(db, user_id, {line.ticker for line in body.orders})
     before_measures, after_measures = _measures(before), _measures(after)
     raised = _raised(before, after)
-
-    outcomes: list[SectionOutcome] = list(
-        await asyncio.gather(
-            generate_section(
-                _SUMMARY_KEY,
-                title=_SUMMARY_TITLE,
-                feature=Feature.BEFORE_YOU_TRADE,
-                prompt="before_you_trade",
-                client=client,
-                engine_values=_summary_values(before_measures, after_measures, orders_value),
-                wiki=facts,
-                wiki_source=WikiSource.USER_STATED if facts else None,
-                request=_summary_request(order_summary, raised),
-            ),
-            *(
-                generate_section(
-                    f"warning:{finding.id}",
-                    title=_FINDING_TITLES.get(finding.id, finding.id),
-                    feature=Feature.BEFORE_YOU_TRADE,
-                    prompt="before_you_trade",
-                    client=client,
-                    engine_values=_finding_values(finding, before),
-                    request=(
-                        f"warning:{finding.id} 항목을 작성하십시오. "
-                        f"엔진 판정 심각도: {finding.severity.value}. "
-                        f"이 주문으로 {finding.metric} 지표가 임계를 넘었습니다."
-                    ),
-                )
-                for finding in raised
-            ),
-            *(
-                generate_section(
-                    f"thesis:{thesis.id}",
-                    feature=Feature.BEFORE_YOU_TRADE,
-                    prompt="before_you_trade",
-                    client=client,
-                    wiki=f"- {thesis.text}",
-                    wiki_source=WikiSource.USER_STATED,
-                    request=_thesis_request(thesis, body.orders),
-                )
-                for thesis in theses
-            ),
-        )
-    )
-
-    sections: dict[str, Any] = {}
-    for outcome in outcomes:
-        if outcome.section is None:
-            log.warning("점검 항목 %s 생성 실패 · %s", outcome.key, "; ".join(outcome.reasons))
-            continue
-        sections[outcome.key] = outcome.section.model_dump(mode="json")
+    feasible = after_snapshot.cash >= 0.0
+    summary_text = _deterministic_summary(order_summary, feasible, after_snapshot.cash, raised)
 
     envelope = Envelope[PreviewContent](
         content={
             "order_summary": order_summary,
             "orders_value": round(orders_value),
-            "feasible": after_snapshot.cash >= 0.0,
+            "feasible": feasible,
             "shortfall": round(-after_snapshot.cash) if after_snapshot.cash < 0.0 else None,
             "before": before_measures,
             "after": after_measures,
@@ -525,25 +453,18 @@ async def preview(
                     "before": next((f.value for f in before.findings if f.id == finding.id), None),
                     "after": finding.value,
                     "threshold": finding.threshold,
-                    **_section_fields(sections.get(f"warning:{finding.id}")),
+                    **_deterministic_warning(finding, before),
                 }
                 for finding in raised
             ],
-            "thesis_conflicts": [
-                {
-                    "id": str(thesis.id),
-                    "ticker": thesis.ticker,
-                    "fact": thesis.text,
-                    "source": thesis.source,
-                    "recorded_at": thesis.recorded_at.isoformat(),
-                    "conflict": section["text"],
-                    "segments": section["segments"],
-                }
-                for thesis in theses
-                if (section := sections.get(f"thesis:{thesis.id}")) is not None
-                and not section["text"].startswith(_NO_CONFLICT)
-            ],
-            "summary": sections.get(_SUMMARY_KEY),
+            "thesis_conflicts": [],
+            "summary": {
+                "title": _SUMMARY_TITLE,
+                "text": summary_text,
+                "segments": [],
+                "cached": False,
+                "cached_at": None,
+            },
         },
         data_as_of=DataAsOf(
             price=_as_datetime(before_snapshot),
@@ -552,33 +473,3 @@ async def preview(
     )
     await record(db, envelope, user_id=user_id, endpoint="orders.preview")
     return envelope
-
-
-# ── 요청 문구 ─────────────────────────────────────────────────────────────────
-def _summary_request(order_summary: Sequence[Mapping[str, Any]], raised: Sequence[Finding]) -> str:
-    """요약이 참고할 엔진 판정. 경고 목록은 여기서만 알려주고 다시 고르지 않게 한다."""
-    lines = ", ".join(f"{row['ticker']} {row['side']} {row['quantity']}주" for row in order_summary)
-    titles = ", ".join(_FINDING_TITLES.get(f.id, f.id) for f in raised) or "없음"
-    return (
-        f"{_SUMMARY_KEY} 항목을 작성하십시오. 점검 대상 주문: {lines}. "
-        f"이 주문으로 새로 걸리거나 심해진 항목: {titles}."
-    )
-
-
-def _thesis_request(thesis: Any, orders: Sequence[OrderLine]) -> str:
-    lines = ", ".join(
-        f"{line.side.value} {line.quantity}주" for line in orders if line.ticker == thesis.ticker
-    )
-    return (
-        f"사용자가 {thesis.ticker}에 대해 적어 둔 논지와 이 주문({lines})이 어긋나는 "
-        "지점을 [사용자 투자 논지]의 문장만 근거로 지적하십시오. "
-        f"어긋나지 않으면 '{_NO_CONFLICT}'으로 시작하는 지정 문구만 쓰십시오."
-    )
-
-
-def _section_fields(section: Mapping[str, Any] | None) -> dict[str, Any]:
-    """문장 생성이 실패해도 지표는 내보낸다 — 화면이 비지 않는다."""
-    return {
-        "text": section["text"] if section else None,
-        "segments": section["segments"] if section else None,
-    }

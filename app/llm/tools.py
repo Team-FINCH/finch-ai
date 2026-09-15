@@ -47,7 +47,7 @@ from app.api.routes.portfolio import (
     _market_cap_ranks,
     _period_start,
 )
-from app.core.adapters import Ledger, ledger_source
+from app.core.adapters import BackendLedgerSource, Ledger, ledger_source
 from app.core.enums import DocumentType, MetricSource, OrderSide, Period, Screen, WikiSource
 from app.core.errors import AppError
 from app.core.schemas import Segment
@@ -287,6 +287,29 @@ def _put(ctx: ToolContext, key: str, segment: Segment) -> tuple[str, str]:
 
 # ── 도구 본체 ────────────────────────────────────────────────────────────────
 async def _get_portfolio(ctx: ToolContext, _: dict[str, Any]) -> dict[str, Any]:
+    source = ledger_source()
+    if isinstance(source, BackendLedgerSource):
+        try:
+            raw = await source.load_portfolio(ctx.user_id)
+        except (KeyError, FileNotFoundError, OSError):
+            return {"unavailable": "이 사용자의 원장을 읽을 수 없습니다."}
+        holdings = [
+            {
+                "ticker": row.get("stockCode"),
+                "name": row.get("stockName") or row.get("stockCode"),
+                "quantity": row.get("quantity"),
+                "avg_cost": row.get("avgBuyPrice"),
+                "current_price": row.get("currentPrice"),
+            }
+            for row in raw.get("holdings", ())
+        ]
+        return {
+            "as_of": raw.get("asOf"),
+            "cash_balance": raw.get("cashBalance"),
+            "holdings": holdings,
+            "metrics": {},
+            "note": "시장 시계열이 없어 비중·손익·위험 지표는 계산하지 않았습니다.",
+        }
     snapshot = await _snapshot(ctx.user_id)
     if snapshot is None:
         return {"unavailable": "이 사용자의 원장을 읽을 수 없습니다."}

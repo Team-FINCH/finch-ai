@@ -27,7 +27,7 @@ from app.core.adapters import ledger_source
 from app.core.config import settings
 from app.core.enums import EventType, MetricSource, WikiSource
 from app.core.errors import InsufficientData, InvalidRequest
-from app.core.models import AIResponse, Event
+from app.core.models import AIResponse, Event, Instrument
 from app.core.response_log import record
 from app.core.schemas import Citation, ContentModel, DataAsOf, Envelope, Segment, now_kst
 from app.engines.portfolio import Holding, PortfolioEngine, PortfolioSnapshot
@@ -464,7 +464,7 @@ async def create_analysis(
         content={
             "ticker": ticker,
             "name": (
-                _display_name(snapshot, ticker) if snapshot else cached.name if cached else ticker
+                await _display_name(db, snapshot, ticker, cached.name if cached else None)
             ),
             "sections": sections,
         },
@@ -485,9 +485,14 @@ async def create_analysis(
     return envelope
 
 
-def _display_name(snapshot: PortfolioSnapshot | None, ticker: str) -> str:
+async def _display_name(
+    db: DbSession, snapshot: PortfolioSnapshot | None, ticker: str, fallback: str | None
+) -> str:
     holding = _find(snapshot, ticker)
-    return holding.name if holding else ticker
+    if holding:
+        return holding.name
+    name = await db.scalar(select(Instrument.name).where(Instrument.ticker == ticker))
+    return name or fallback or ticker
 
 
 def _as_datetime(snapshot: PortfolioSnapshot | None) -> datetime | None:
