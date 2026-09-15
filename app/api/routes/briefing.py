@@ -275,6 +275,10 @@ async def _cached_briefing(
             previous = Envelope[BriefingContent].model_validate(payload)
         except (TypeError, ValueError):
             continue
+        # citation relevance는 API 계약상 0~1 숫자다. 이 필드를 채우기 전 생성된
+        # 캐시를 그대로 돌려주면 프론트의 응답 검증이 브리핑 전체를 폐기한다.
+        if any(citation.relevance is None for citation in previous.citations):
+            continue
         return Envelope[BriefingContent](
             content=previous.content,
             citations=previous.citations,
@@ -337,6 +341,7 @@ async def _briefing_citations(
     """상위 브리핑 이벤트가 직접 연결한 문서를 한 번에 근거로 바꾼다."""
     ordered_ids: list[uuid.UUID] = []
     seen: set[uuid.UUID] = set()
+    relevance_by_document: dict[uuid.UUID, float] = {}
     for item in items:
         raw = item.candidate.document_id
         if not raw:
@@ -349,6 +354,12 @@ async def _briefing_citations(
         if document_id not in seen:
             seen.add(document_id)
             ordered_ids.append(document_id)
+        # 같은 문서가 여러 브리핑 항목의 근거라면 가장 관련도 높은 연결을 대표값으로
+        # 쓴다. 엔진 값은 정상적으로 0~1이지만 응답 계약 경계에서 한 번 더 제한한다.
+        relevance_by_document[document_id] = max(
+            relevance_by_document.get(document_id, 0.0),
+            round(min(max(float(item.relevance), 0.0), 1.0), 4),
+        )
 
     if not ordered_ids:
         return {}, []
@@ -386,6 +397,7 @@ async def _briefing_citations(
                 url=row[5],
                 published_at=row[6],
                 snippet=(row[7] or "")[:180] or None,
+                relevance=relevance_by_document[document_id],
             )
         )
     return mapping, citations

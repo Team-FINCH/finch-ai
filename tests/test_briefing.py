@@ -61,9 +61,7 @@ class FakeClient:
         keys = _PLACEHOLDER_RE.findall(turn.split("[사용 가능한 수치 자리표시자]")[-1])
         first = keys[0] if keys else None
         fact = (
-            f"확인된 지표는 {{{{{first}}}}}입니다. "
-            if first
-            else "수치로 확인된 지표가 없습니다. "
+            f"확인된 지표는 {{{{{first}}}}}입니다. " if first else "수치로 확인된 지표가 없습니다. "
         )
         return LlmResult(
             payload={
@@ -414,9 +412,7 @@ def test_이벤트_문서를_항목과_봉투의_같은_인용으로_연결한�
         )
     ]
 
-    with _make_client(
-        monkeypatch, StubSession(events=events, documents=documents)
-    ) as test_client:
+    with _make_client(monkeypatch, StubSession(events=events, documents=documents)) as test_client:
         body = _get(test_client, HOLDER).json()
 
     cited = [item for item in body["content"]["items"] if item["citations"]]
@@ -424,6 +420,7 @@ def test_이벤트_문서를_항목과_봉투의_같은_인용으로_연결한�
     assert all(item["citations"] == ["cit_1"] for item in cited)
     assert all(item["event_type"] == "macro" for item in cited)
     assert all(item["publisher"] == "한국은행" for item in cited)
+    expected_relevance = max(item["relevance_score"] for item in cited)
     assert body["citations"] == [
         {
             "id": "cit_1",
@@ -434,7 +431,7 @@ def test_이벤트_문서를_항목과_봉투의_같은_인용으로_연결한�
             "url": "https://example.test/rate",
             "published_at": "2025-09-12T10:00:00",
             "snippet": "기준금리 결정과 경제 전망을 발표했다.",
-            "relevance": None,
+            "relevance": expected_relevance,
         }
     ]
     assert body["data_as_of"]["macro"] == "2025-09-12T10:00:00+09:00"
@@ -443,9 +440,7 @@ def test_이벤트_문서를_항목과_봉투의_같은_인용으로_연결한�
 def test_연결한_문서가_없어도_브리핑은_계속_생성한다(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    events = [
-        (uuid.uuid4(), "macro", None, "기준금리 발표", DAY, uuid.uuid4(), 1.0)
-    ]
+    events = [(uuid.uuid4(), "macro", None, "기준금리 발표", DAY, uuid.uuid4(), 1.0)]
     with _make_client(monkeypatch, StubSession(events=events)) as test_client:
         body = _get(test_client, HOLDER).json()
 
@@ -453,16 +448,17 @@ def test_연결한_문서가_없어도_브리핑은_계속_생성한다(
     assert body["citations"] == []
     assert all(item["citations"] == [] for item in body["content"]["items"])
     assert all(item["publisher"] is None for item in body["content"]["items"])
-    assert next(i for i in body["content"]["items"] if i["title"] == "기준금리 발표")["event_type"] == "macro"
+    assert (
+        next(i for i in body["content"]["items"] if i["title"] == "기준금리 발표")["event_type"]
+        == "macro"
+    )
 
 
 def test_캐시된_브리핑도_원래_인용을_보존한다(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     document_id = uuid.uuid4()
-    events = [
-        (uuid.uuid4(), "macro", None, "기준금리 발표", DAY, document_id, 1.0)
-    ]
+    events = [(uuid.uuid4(), "macro", None, "기준금리 발표", DAY, document_id, 1.0)]
     documents = [
         (
             document_id,
@@ -475,9 +471,7 @@ def test_캐시된_브리핑도_원래_인용을_보존한다(
             None,
         )
     ]
-    with _make_client(
-        monkeypatch, StubSession(events=events, documents=documents)
-    ) as first_client:
+    with _make_client(monkeypatch, StubSession(events=events, documents=documents)) as first_client:
         first = _get(first_client, HOLDER).json()
 
     with _make_client(monkeypatch, StubSession(payloads=[first])) as cached_client:
@@ -486,6 +480,38 @@ def test_캐시된_브리핑도_원래_인용을_보존한다(
     assert cached["cached"] is True
     assert cached["citations"] == first["citations"]
     assert cached["content"]["items"] == first["content"]["items"]
+
+
+def test_관련도가_없는_옛_브리핑_캐시는_재생성한다(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document_id = uuid.uuid4()
+    events = [(uuid.uuid4(), "macro", None, "기준금리 발표", DAY, document_id, 1.0)]
+    documents = [
+        (
+            document_id,
+            "macro",
+            "한국은행 기준금리 결정",
+            "ECOS",
+            "한국은행",
+            "https://example.test/rate",
+            datetime(2025, 9, 12, 10, 0),
+            "기준금리 결정과 경제 전망을 발표했다.",
+        )
+    ]
+    with _make_client(monkeypatch, StubSession(events=events, documents=documents)) as first_client:
+        old = _get(first_client, HOLDER).json()
+    old["citations"][0]["relevance"] = None
+
+    with _make_client(
+        monkeypatch,
+        StubSession(events=events, documents=documents, payloads=[old]),
+    ) as fresh_client:
+        fresh = _get(fresh_client, HOLDER).json()
+
+    assert fresh["cached"] is False
+    assert fresh_client.llm.calls
+    assert fresh["citations"][0]["relevance"] is not None
 
 
 def test_항목은_최대_4건이고_rank가_1부터_이어진다(client: TestClient) -> None:
@@ -592,9 +618,7 @@ def test_비어도_로그는_남긴다(client: TestClient) -> None:
 
 
 def test_LLM_키가_없으면_409다(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "app.api.routes.briefing.get_llm_client", lambda: NullLlmClient()
-    )
+    monkeypatch.setattr("app.api.routes.briefing.get_llm_client", lambda: NullLlmClient())
     app = create_app()
     app.dependency_overrides[get_session] = lambda: StubSession()
     with TestClient(app) as client:
@@ -616,16 +640,34 @@ def test_새_필드가_없는_캐시는_재생성한다(monkeypatch, missing):
     assert all(missing in item for item in fresh["content"]["items"])
 
 
-@pytest.mark.parametrize("event_type,category", [
-    ("macro", "macro_event"), ("filing", "filing"), ("earnings", "earnings"),
-    ("dividend", "filing"), ("product", "filing"),
-])
+@pytest.mark.parametrize(
+    "event_type,category",
+    [
+        ("macro", "macro_event"),
+        ("filing", "filing"),
+        ("earnings", "earnings"),
+        ("dividend", "filing"),
+        ("product", "filing"),
+    ],
+)
 @pytest.mark.parametrize("publisher", ["테스트언론", None])
-def test_뉴스_종류와_출처를_보존하고_category를_유지한다(monkeypatch, event_type, category, publisher):
+def test_뉴스_종류와_출처를_보존하고_category를_유지한다(
+    monkeypatch, event_type, category, publisher
+):
     document_id = uuid.uuid4()
     events = [(uuid.uuid4(), event_type, None, "뉴스 이벤트", DAY, document_id, 1.0)]
-    documents = [(document_id, "news", "뉴스 원문", "naver", publisher,
-                  "https://example.test/news", datetime(2025, 9, 12), "뉴스 본문")]
+    documents = [
+        (
+            document_id,
+            "news",
+            "뉴스 원문",
+            "naver",
+            publisher,
+            "https://example.test/news",
+            datetime(2025, 9, 12),
+            "뉴스 본문",
+        )
+    ]
     with _make_client(monkeypatch, StubSession(events=events, documents=documents)) as client:
         response = _get(client, HOLDER)
     assert response.status_code == 200
