@@ -35,6 +35,7 @@ _TICKER_RE = re.compile(r"\d{6}")
 
 #: 질문 길이 상한. 이보다 긴 것은 대화가 아니라 문서 붙여넣기다.
 _MAX_MESSAGE = 2_000
+_HISTORY_LIMIT = 12
 
 
 class ChatContext(BaseModel):
@@ -65,6 +66,26 @@ class ChatMessageContent(ContentModel):
 class ChatHistoryContent(ContentModel):
     conversation_id: str
     messages: list[ChatMessageContent]
+
+
+async def _conversation_history(
+    db: DbSession, user_id: str, conversation_id: str | None
+) -> tuple[tuple[str, str], ...]:
+    """현재 사용자의 최근 대화를 오래된 순서로 돌려준다."""
+    if conversation_id is None:
+        return ()
+    rows = (
+        await db.scalars(
+            select(ChatMessage)
+            .where(
+                ChatMessage.user_id == user_id,
+                ChatMessage.conversation_id == conversation_id,
+            )
+            .order_by(ChatMessage.id.desc())
+            .limit(_HISTORY_LIMIT)
+        )
+    ).all()
+    return tuple((row.role, row.content) for row in reversed(rows))
 
 
 @router.post("")
@@ -99,7 +120,8 @@ async def chat(
         screen=body.context.screen,
         ticker=body.context.ticker,
     )
-    outcome = await answer(question, client=client, ctx=ctx)
+    history = await _conversation_history(db, user_id, body.conversation_id)
+    outcome = await answer(question, client=client, ctx=ctx, history=history)
 
     if outcome.section is None:
         # §7 — 검사에 걸린 답변은 내보내지 않는다. 사유는 로그에만 남긴다.

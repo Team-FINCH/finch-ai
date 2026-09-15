@@ -43,7 +43,8 @@ class FakeClient:
 
     async def converse(self, **kwargs: Any) -> ToolTurn:
         self.turns.append(kwargs)
-        if len(kwargs["messages"]) == 1:
+        current = kwargs["messages"][-1]["content"]
+        if isinstance(current, str) and "[기준 시각]" in current:
             self.step = 0  # 새 대화의 첫 턴이다. 같은 계획을 다시 재생한다.
         if self.step >= len(self.plan):
             return ToolTurn(stop_reason="end_turn", content=[{"type": "text", "text": "끝"}])
@@ -107,6 +108,8 @@ class FeedbackSession:
         for index, row in enumerate(rows, start=1):
             row.id = index
             row.created_at = datetime(2026, 9, 15, 14, 0, index)
+        if "DESC" in str(statement):
+            rows.reverse()
         return Result(rows)
 
 
@@ -191,6 +194,53 @@ def test_다른_사용자의_대화는_조회되지_않는다(portfolio_client):
     )
     assert response.status_code == 200
     assert response.json()["content"]["messages"] == []
+
+
+def test_같은_대화의_이전_메시지를_다음_GMS_입력에_넣는다(portfolio_client):
+    first = _post(
+        portfolio_client,
+        {"message": "삼성전자 비중은?", "conversation_id": "conv_context"},
+    )
+    assert first.status_code == 200
+
+    second = _post(
+        portfolio_client,
+        {"message": "그건 왜 높은 거야?", "conversation_id": "conv_context"},
+    )
+    assert second.status_code == 200
+
+    first_turn = next(
+        turn
+        for turn in reversed(portfolio_client.llm.turns)
+        if any(
+            isinstance(message["content"], str)
+            and "그건 왜 높은 거야?" in message["content"]
+            for message in turn["messages"]
+        )
+    )
+    assert [message["role"] for message in first_turn["messages"][:2]] == [
+        "user",
+        "assistant",
+    ]
+    assert first_turn["messages"][0]["content"] == "삼성전자 비중은?"
+    assert "삼성전자" in first_turn["messages"][1]["content"]
+    assert "[이전 대화" in portfolio_client.llm.calls[-1]["user"]
+
+
+def test_다른_사용자의_메시지는_GMS_문맥에_들어가지_않는다(portfolio_client):
+    _post(
+        portfolio_client,
+        {"message": "삼성전자 비중은?", "conversation_id": "conv_private"},
+    )
+    portfolio_client.llm.narrative = "현재 확인할 수 있는 포트폴리오 정보가 없습니다."
+    portfolio_client.llm.placeholders = []
+    response = _post(
+        portfolio_client,
+        {"message": "그건 왜?", "conversation_id": "conv_private"},
+        user="another_user",
+    )
+    assert response.status_code == 200
+    assert "삼성전자 비중은?" not in portfolio_client.llm.calls[-1]["user"]
 
 
 def test_응답을_저장해_피드백을_받는다(portfolio_client):
