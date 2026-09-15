@@ -476,7 +476,7 @@ def test_모델_생성_없이도_수치와_요약이_나온다(monkeypatch: pyte
         content = _post(client, HOLDER, CONCENTRATE).json()["content"]
 
     assert content["summary"] is not None
-    assert content["warnings"], "문장이 없어도 경고 목록은 남는다"
-    assert all(w["text"] is None for w in content["warnings"])
+    assert content["warnings"], "엔진이 감지한 경고 목록은 남는다"
+    assert all(w["text"] for w in content["warnings"])
     assert all(isinstance(w["threshold"], float) for w in content["warnings"])
     assert content["delta"]["hhi"] > 0.0
