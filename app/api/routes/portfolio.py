@@ -11,6 +11,8 @@ title 필드를 갖고 있지 않기도 하고, 모델이 쓴 제목에는 판�
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 from collections import defaultdict
 from collections.abc import Sequence
@@ -23,11 +25,18 @@ from sqlalchemy import func, or_, select
 
 from app.api.deps import CurrentUser, DbSession, UsageLimit
 from app.core.adapters import Ledger, ledger_source
+from app.core.config import settings
 from app.core.enums import MetricSource, Period
 from app.core.errors import InsufficientData, InvalidRequest
-from app.core.models import Event, IndexDaily, Instrument, PriceDaily
+from app.core.models import (
+    Event,
+    IndexDaily,
+    Instrument,
+    PortfolioDiagnosisCache,
+    PriceDaily,
+)
 from app.core.response_log import last_risk_level, record
-from app.core.schemas import DataAsOf, Envelope, Section, Segment
+from app.core.schemas import DataAsOf, Envelope, Section, Segment, now_kst
 from app.engines.attribution import (
     AttributionResult,
     BenchmarkDay,
@@ -40,6 +49,7 @@ from app.engines.risk import Finding, RiskAssessment, assess
 from app.llm.client import NullLlmClient, get_llm_client
 from app.llm.generate import SectionOutcome, generate_section, ratio_segment
 from app.llm.guard import Feature
+from app.llm.versioning import prompt_version_for
 
 log = logging.getLogger("app.api.portfolio")
 
@@ -51,6 +61,7 @@ _BENCHMARK_CODE = "KOSPI"
 
 _SUMMARY_KEY = "summary"
 _SUMMARY_TITLE = "종합 진단"
+_DIAGNOSIS_ENGINE_VERSION = "risk-v1"
 
 #: 제목은 규제 대응이다. finding id는 엔진이 정하므로 여기 없는 id가 오면 id를 그대로
 #: 쓴다 — 새 finding이 추가될 때 제목이 없다고 500이 나면 안 된다.
@@ -300,6 +311,60 @@ def _summary_request(result: RiskAssessment) -> str:
     return " ".join(parts)
 
 
+def _diagnosis_fingerprint(snapshot: PortfolioSnapshot, prompt_version: str) -> str:
+    """진단 결과를 바꿀 수 있는 포트폴리오·시세·코드 버전을 안정적으로 해시한다."""
+    source = {
+        "engine": _DIAGNOSIS_ENGINE_VERSION,
+        "prompt": prompt_version,
+        "model": settings.llm_model,
+        "trade_date": snapshot.trade_date.isoformat(),
+        "cash": format(snapshot.cash, ".8f"),
+        "holdings": [
+            {
+                "symbol": holding.symbol,
+                "quantity": format(holding.quantity, ".8f"),
+                "avg_cost": format(holding.avg_cost, ".8f"),
+                "price": format(holding.price, ".8f"),
+            }
+            for holding in sorted(snapshot.holdings, key=lambda item: item.symbol)
+        ],
+    }
+    encoded = json.dumps(source, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode()).hexdigest()
+
+
+def _fallback_summary() -> dict[str, Any]:
+    """GMS 문장이 차단돼도 진단 화면 전체가 비지 않게 하는 서버 설명."""
+    return Section(
+        title=_SUMMARY_TITLE,
+        text=(
+            "현재 포트폴리오의 위험 지표를 계산했습니다. "
+            "아래 항목에서 집중도와 변동성 등 주요 위험을 확인해 주세요."
+        ),
+    ).model_dump(mode="json")
+
+
+def _fallback_finding(finding: Finding) -> dict[str, Any]:
+    title = _FINDING_TITLES.get(finding.id, finding.id)
+    return Section(
+        title=title,
+        text=f"{title} 항목이 엔진 기준을 넘었습니다. 현재 포트폴리오 구성을 확인해 주세요.",
+    ).model_dump(mode="json")
+
+
+def _cached_content(row: PortfolioDiagnosisCache) -> DiagnosisContent | None:
+    try:
+        content = DiagnosisContent.model_validate(row.payload)
+    except Exception:
+        log.warning("저장된 포트폴리오 진단 형식이 올바르지 않다 · user_id=%s", row.user_id)
+        return None
+    if content.summary is not None:
+        content.summary = content.summary.model_copy(
+            update={"cached": True, "cached_at": row.generated_at}
+        )
+    return content
+
+
 # ── 라우터 ────────────────────────────────────────────────────────────────────
 @router.post("/diagnosis")
 async def diagnosis(
@@ -328,6 +393,23 @@ async def diagnosis(
     snapshot = engine.snapshot(last)
     if not snapshot.holdings:
         raise InsufficientData("보유 종목이 없어 진단할 대상이 없습니다.")
+
+    prompt_version = prompt_version_for("portfolio.diagnosis") or "prompt_unknown"
+    fingerprint = _diagnosis_fingerprint(snapshot, prompt_version)
+    cache = await db.scalar(
+        select(PortfolioDiagnosisCache).where(PortfolioDiagnosisCache.user_id == user_id)
+    )
+    if cache is not None and cache.fingerprint == fingerprint:
+        content = _cached_content(cache)
+        if content is not None:
+            envelope = Envelope[DiagnosisContent](
+                content=content,
+                data_as_of=DataAsOf.model_validate(cache.data_as_of),
+                model=cache.model,
+                cached=True,
+            )
+            await record(db, envelope, user_id=user_id, endpoint="portfolio.diagnosis")
+            return envelope
 
     symbols = tuple(h.symbol for h in snapshot.holdings)
     result = assess(
@@ -386,6 +468,10 @@ async def diagnosis(
             continue
         sections[outcome.key] = outcome.section.model_dump(mode="json")
 
+    sections.setdefault(_SUMMARY_KEY, _fallback_summary())
+    for finding in ordered:
+        sections.setdefault(finding.id, _fallback_finding(finding))
+
     envelope = Envelope[DiagnosisContent](
         content={
             "risk_level": result.risk_level.value if result.risk_level is not None else None,
@@ -403,6 +489,21 @@ async def diagnosis(
             portfolio=_as_datetime(snapshot),
         ),
     )
+    cache_values = {
+        "fingerprint": fingerprint,
+        "prompt_version": prompt_version,
+        "model": envelope.model,
+        "payload": envelope.content.model_dump(mode="json"),
+        "data_as_of": envelope.data_as_of.model_dump(mode="json"),
+        "generated_at": envelope.generated_at,
+        "updated_at": now_kst(),
+    }
+    if cache is None:
+        db.add(PortfolioDiagnosisCache(user_id=user_id, **cache_values))
+    else:
+        for key, value in cache_values.items():
+            setattr(cache, key, value)
+    await db.commit()
     # 다음 진단의 히스테리시스 기준이 되고, 피드백이 참조할 행이 된다.
     await record(db, envelope, user_id=user_id, endpoint="portfolio.diagnosis")
     return envelope

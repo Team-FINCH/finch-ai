@@ -504,12 +504,14 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 | `risk_level` | `low · moderate · high` · `null` | 규칙 엔진 판정. LLM이 정하지 않는다. 판정을 보류하면 `null` |
 | `risk_score` | 0–100 정수 · `null` | 구성 지표 가중합. 산식은 별도 문서. 판정 보류 시 `null` |
 | `insufficient_history` | string · `null` | 변동성·상관을 계산하지 못한 이유. 정상일 때 `null` |
-| `summary` | Section · `null` | [§12](#types) Section 다섯 키. 문장 생성이 막히면 `null`이고 지표는 그대로 나간다 |
+| `summary` | Section | [§12](#types) Section 다섯 키. GMS 문장 생성이 막히면 서버 기본 설명을 제공한다 |
 | `findings[].severity` | `info · medium · high` | 정렬 순서가 곧 중요도 순위 |
-| `findings[].text` · `segments` | string · array · `null` | Section 전체가 아니라 이 두 키만 펼쳐 담는다. 생성이 막히면 둘 다 `null` |
+| `findings[].text` · `segments` | string · array | Section 전체가 아니라 이 두 키만 펼쳐 담는다. GMS 문장 생성이 막히면 서버 기본 설명을 제공한다 |
 | `evidence` | object | LLM 입력으로 쓰인 원시 지표. 디버깅·평가용으로 응답에 포함 |
 
 `evidence`의 고정 키는 `tickers · metric · value · threshold · hhi` 다섯이다. 나머지는 조건부로 붙는다 — 상관 지표를 계산했으면 `avg_pairwise_corr`, `id`가 `sector_concentration`이면 `sector`, `macro_exposure`면 `rate_sensitivity`가 더 들어온다.
+
+진단 결과는 사용자별로 저장한다. 현재 종목·수량·평균단가·현금·최근 종가·시세 기준일과 엔진·프롬프트·모델 버전으로 만든 지문이 같으면 GMS를 다시 호출하지 않고 저장 결과를 반환한다. 하나라도 바뀌면 다음 진단 요청에서 자동으로 새 결과를 생성해 교체한다. 캐시 적중 시 최상위 `cached`가 `true`이고 `summary.cached_at`에 원본 생성 시각이 들어간다.
 
 `indicators`의 열두 키는 항상 실려 나오며, **계산되지 않은 지표는 0이 아니라 `null`**이다. `sector_count`는 보유 종목의 서로 다른 업종 수를 나타내는 정수다. 같은 업종은 한 번만 세고 현금은 제외하며, 히스토리가 짧아도 값이 제공된다. `sector_hhi`와 같은 업종 버킷을 세므로 미분류·미매핑 업종도 업종 값별로 포함한다. 빈 보유 목록의 엔진·지표 값은 `0`이며 `null`이 아니다(보유 종목이 없는 진단 요청은 기존대로 409). 공통 거래일이 60일에 못 미치면 `annualized_volatility`·`diversification_ratio`가 `null`이 되고 `insufficient_history`에 사유 문자열이 담기며, 이때 `risk_level`·`risk_score`도 `null`이 될 수 있다. 집중도·현금 비중은 그대로 유효하므로 **409로 끊지 않는다.**
 
@@ -899,6 +901,7 @@ AI 품질 지표 수집. 모든 AI 응답 영역에 노출한다.
 | `wiki` | 사용자 투자 논지·성향 |
 | `ai_responses` | 응답 로그 · 피드백 · 평가 데이터셋 |
 | `chat_messages` | 사용자별 대화 질문·최종 답변 이력 |
+| `portfolio_diagnosis_cache` | 포트폴리오 지문별 최신 진단 결과 |
 
 > **경계선**
 > 백엔드가 **파생 지표를 계산해 주겠다고 해도 받지 않는다.** 비중·수익률·집중도를 양쪽이 각각 계산하면 화면마다 값이 어긋나고 정확도의 책임 소재가 사라진다. AI 응답에 등장하는 모든 수치는 AI 파트 엔진에서만 나온다. 원장 조회 응답에 `weight`·`pnl_pct` 같은 파생 필드가 있어도 **무시하고 다시 계산한다.**

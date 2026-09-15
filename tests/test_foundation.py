@@ -35,6 +35,7 @@ EXPECTED_TABLES = {
     "trade_watermarks",
     "ai_responses",
     "chat_messages",
+    "portfolio_diagnosis_cache",
     "ai_feedback",
     "ai_request_windows",
     "ai_token_daily",

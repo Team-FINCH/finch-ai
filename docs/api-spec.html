@@ -1096,9 +1096,9 @@
             <tr><td><code>risk_level</code></td><td><code>low · moderate · high</code> · <code>null</code></td><td>규칙 엔진 판정. LLM이 정하지 않는다. 판정을 보류하면 <code>null</code></td></tr>
             <tr><td><code>risk_score</code></td><td>0–100 정수 · <code>null</code></td><td>구성 지표 가중합. 산식은 별도 문서. 판정 보류 시 <code>null</code></td></tr>
             <tr><td><code>insufficient_history</code></td><td>string · <code>null</code></td><td>변동성·상관을 계산하지 못한 이유. 정상일 때 <code>null</code></td></tr>
-            <tr><td><code>summary</code></td><td>Section · <code>null</code></td><td><a href="#types">§12</a> Section 다섯 키. 문장 생성이 막히면 <code>null</code>이고 지표는 그대로 나간다</td></tr>
+            <tr><td><code>summary</code></td><td>Section</td><td><a href="#types">§12</a> Section 다섯 키. GMS 문장 생성이 막히면 서버 기본 설명을 제공한다</td></tr>
             <tr><td><code>findings[].severity</code></td><td><code>info · medium · high</code></td><td>정렬 순서가 곧 중요도 순위</td></tr>
-            <tr><td><code>findings[].text</code> · <code>segments</code></td><td>string · array · <code>null</code></td><td>Section 전체가 아니라 이 두 키만 펼쳐 담는다. 생성이 막히면 둘 다 <code>null</code></td></tr>
+            <tr><td><code>findings[].text</code> · <code>segments</code></td><td>string · array</td><td>Section 전체가 아니라 이 두 키만 펼쳐 담는다. GMS 문장 생성이 막히면 서버 기본 설명을 제공한다</td></tr>
             <tr><td><code>evidence</code></td><td>object</td><td>LLM 입력으로 쓰인 원시 지표. 디버깅·평가용으로 응답에 포함</td></tr>
           </tbody>
         </table>
@@ -1107,6 +1107,12 @@
         <code>evidence</code>의 고정 키는 <code>tickers · metric · value · threshold · hhi</code> 다섯이다. 나머지는 조건부로 붙는다 —
         상관 지표를 계산했으면 <code>avg_pairwise_corr</code>, <code>id</code>가 <code>sector_concentration</code>이면 <code>sector</code>,
         <code>macro_exposure</code>면 <code>rate_sensitivity</code>가 더 들어온다.
+      </p>
+      <p>
+        진단 결과는 사용자별로 저장한다. 현재 종목·수량·평균단가·현금·최근 종가·시세 기준일과
+        엔진·프롬프트·모델 버전으로 만든 지문이 같으면 GMS를 다시 호출하지 않고 저장 결과를 반환한다.
+        하나라도 바뀌면 다음 진단 요청에서 자동으로 새 결과를 생성해 교체한다. 캐시 적중 시 최상위
+        <code>cached</code>가 <code>true</code>이고 <code>summary.cached_at</code>에 원본 생성 시각이 들어간다.
       </p>
       <p>
         <code>indicators</code>의 열두 키는 항상 실려 나오며, <strong>계산되지 않은 지표는 0이 아니라 <code>null</code></strong>이다.
@@ -1583,6 +1589,7 @@
             <tr><td><code>wiki</code></td><td>사용자 투자 논지·성향</td></tr>
             <tr><td><code>ai_responses</code></td><td>응답 로그 · 피드백 · 평가 데이터셋</td></tr>
             <tr><td><code>chat_messages</code></td><td>사용자별 대화 질문·최종 답변 이력</td></tr>
+            <tr><td><code>portfolio_diagnosis_cache</code></td><td>포트폴리오 지문별 최신 진단 결과</td></tr>
           </tbody>
         </table>
       </div>
