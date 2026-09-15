@@ -419,10 +419,7 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 }
 ```
 
-이 객체도 [§2.2 공통 응답 봉투](#22-공통-응답-봉투)의 `content`에 들어간다. 조회 결과는
-저장된 대화만 반환하므로 봉투의 `data_as_of` 다섯 값은 모두 `null`, `citations`와
-`freshness_warnings`는 빈 배열이다. 백엔드 중계 뒤에는 봉투와 이 본문을 포함한 모든
-키가 camelCase로 변환된다.
+이 객체도 [§2.2 공통 응답 봉투](#envelope)의 `content`에 들어간다. 조회 결과는 저장된 대화만 반환하므로 봉투의 `data_as_of` 다섯 값은 모두 `null`, `citations`와 `freshness_warnings`는 빈 배열이다. 백엔드 중계 뒤에는 봉투와 이 본문을 포함한 모든 키가 camelCase로 변환된다.
 
 #### 에이전트 Tool 목록
 
