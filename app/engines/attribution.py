@@ -296,7 +296,10 @@ def _brinson(
         wp = port_weight.get(sector, 0.0)
         wb = bench_weight.get(sector, 0.0)
         rp = port_return.get(sector, 0.0)
-        rb = bench_return.get(sector, benchmark_total) if wb > _EPS else benchmark_total
+        # 벤치마크에 편입됐지만 당일 시세가 없는 섹터는 BenchmarkDay.total_return과
+        # 같은 규칙인 0%로 본다. 여기만 시장 전체 수익률로 대체하면 두 계산의
+        # r_b가 달라져 Brinson 항등식이 깨진다.
+        rb = bench_return.get(sector, 0.0) if wb > _EPS else benchmark_total
         effects[sector] = (
             (wp - wb) * (rb - benchmark_total),
             wb * (rp - rb),
