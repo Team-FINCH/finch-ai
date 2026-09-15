@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # GMS OpenAI 호환 Chat Completions API를 사용한다.
     gms_key: str = ""
     gms_base_url: str = "https://api.openai.com/v1"
-    llm_model: str = "gpt-5.4-mini"
+    llm_model: str = "gpt-5-nano"
     llm_max_tokens: int = 16_000
     llm_timeout_s: int = 30
     #: 최초 1회 + 재생성. GMS 크레딧의 대부분이 재생성에서 나가므로
