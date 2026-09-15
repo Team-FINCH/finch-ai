@@ -112,6 +112,16 @@ def test_envelope_defaults() -> None:
     assert payload["freshness_warnings"] == []
 
 
+def test_data_as_of_attaches_kst_offset_to_naive_datetime() -> None:
+    payload = DataAsOf(
+        price=datetime(2026, 9, 15, 15, 30),
+        portfolio=datetime(2026, 9, 15, 15, 30),
+    ).model_dump(mode="json")
+
+    assert payload["price"] == "2026-09-15T15:30:00+09:00"
+    assert payload["portfolio"] == "2026-09-15T15:30:00+09:00"
+
+
 def test_envelope_marks_only_stale_data_sources() -> None:
     generated = datetime(2026, 8, 28, 12, 0, tzinfo=timezone(timedelta(hours=9)))
     payload = Envelope[dict](

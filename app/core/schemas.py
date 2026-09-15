@@ -10,10 +10,10 @@ API 명세 §2.2 · §2.3 · §12를 코드로 옮긴 것이다.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.config import settings
 from app.core.enums import (
@@ -30,8 +30,6 @@ KST_OFFSET_HOURS = 9
 
 def now_kst() -> datetime:
     """모든 시각은 KST 오프셋을 명시해 직렬화한다."""
-    from datetime import timedelta
-
     return datetime.now(timezone(timedelta(hours=KST_OFFSET_HOURS)))
 
 
@@ -195,6 +193,14 @@ class DataAsOf(BaseModel):
     filings: datetime | None = None
     news: datetime | None = None
     macro: datetime | None = None
+
+    @field_validator("price", "portfolio", "filings", "news", "macro", mode="after")
+    @classmethod
+    def attach_kst_to_naive_datetime(cls, value: datetime | None) -> datetime | None:
+        """내부의 날짜 기반 기준 시각도 API에서는 KST 오프셋을 명시한다."""
+        if value is None or value.tzinfo is not None:
+            return value
+        return value.replace(tzinfo=timezone(timedelta(hours=KST_OFFSET_HOURS)))
 
 
 class FreshnessWarning(BaseModel):
