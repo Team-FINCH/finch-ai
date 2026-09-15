@@ -522,6 +522,18 @@ async def _calc_risk_metrics(ctx: ToolContext, _: dict[str, Any]) -> dict[str, A
     if ledger is None:
         return {"unavailable": "이 사용자의 원장을 읽을 수 없습니다."}
 
+    # 백엔드 원장은 읽었지만 AI DB에 해당 종목의 시세가 하나도 없으면
+    # `_common_days()`가 빈 교집합을 반환한다. 이 상태에서 마지막 거래일을
+    # 인덱싱하면 IndexError가 나고, dispatch의 일반 오류 문구 때문에 사용자는
+    # 포트폴리오 자체를 읽지 못한 것으로 오해한다.
+    if not ledger.trading_days:
+        return {
+            "unavailable": (
+                "포트폴리오 원장은 읽었지만 분석할 시세 이력이 없습니다. "
+                "현재 보유 종목의 시세를 적재한 뒤 위험 지표를 계산할 수 있습니다."
+            )
+        }
+
     engine = PortfolioEngine(ledger)
     snapshot = engine.snapshot(ledger.trading_days[-1])
     if not snapshot.holdings:
