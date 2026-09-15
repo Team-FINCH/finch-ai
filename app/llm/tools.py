@@ -35,7 +35,6 @@ from app.api.routes.orders import (
     _delta,
     _measures,
     _raised,
-    _summary_values,
 )
 from app.api.routes.portfolio import (
     _attribution_segments,
@@ -72,6 +71,7 @@ _TOP_K = 5
 
 #: 가격 이력의 기본 조회 구간. 원장 시드가 10거래일이라 그보다 넉넉히 잡는다.
 _DEFAULT_DAYS = 20
+_SUMMARY_KEYS = ("hhi", "top1_weight", "top_sector_weight", "annualized_volatility", "cash_ratio")
 
 
 # ── 도구 정의 ────────────────────────────────────────────────────────────────
@@ -500,6 +500,28 @@ def _register(ctx: ToolContext, prefix: str, segments: Mapping[str, Segment]) ->
     문장에 뒤 값이 렌더된다. 접두사가 그 충돌을 막는다.
     """
     return dict(_put(ctx, f"{prefix}_{name}", segment) for name, segment in segments.items())
+
+
+def _summary_values(
+    before: Mapping[str, Any], after: Mapping[str, Any], orders_value: float
+) -> Mapping[str, Segment]:
+    """주문 전·후 요약에 필요한 수치만 도구용 Segment로 만든다.
+
+    주문 라우터의 내부 헬퍼를 잘못 import하면 AI 모듈 전체가 import 단계에서
+    죽는다. 이 값 변환은 도구 응답에만 필요한 표현 계층이므로 여기서 소유한다.
+    """
+    source = MetricSource.RISK_ENGINE
+    values: dict[str, Segment] = {
+        "orders_value": krw_segment(orders_value, source),
+    }
+    for key in _SUMMARY_KEYS:
+        value = after.get(key)
+        if isinstance(value, int | float) and not isinstance(value, bool):
+            values[f"after_{key}"] = ratio_segment(value, source)
+        value = before.get(key)
+        if isinstance(value, int | float) and not isinstance(value, bool):
+            values[f"before_{key}"] = ratio_segment(value, source)
+    return values
 
 
 async def _risk_inputs(
