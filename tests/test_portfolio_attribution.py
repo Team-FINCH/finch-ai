@@ -124,6 +124,26 @@ def test_벤치마크에_없는_섹터를_들고_있어도_항등식이_남는�
     assert orphan.selection > 0  # 벤치마크에 없는 걸 골라 이겼다
 
 
+def test_벤치마크_편입_섹터의_당일_시세가_없어도_항등식이_남는다() -> None:
+    """총수익률과 Brinson 분해가 누락 섹터 수익률을 모두 0%로 취급한다."""
+    day = DAYS[:1]
+    result = attribute(
+        trading_days=day,
+        portfolio_weights=[{"005930": 0.6, "035420": 0.4}],
+        portfolio_returns=[{"005930": 0.01, "035420": -0.005}],
+        benchmark=[
+            BenchmarkDay(
+                day[0],
+                {"반도체": 0.7, "인터넷": 0.3},
+                {"반도체": 0.004},
+            )
+        ],
+        sectors={"005930": "반도체", "035420": "인터넷"},
+    )
+
+    assert _identity_gap(result) < 1e-12
+
+
 def test_구간_중간에_산_종목이_목록에_남는다() -> None:
     """t-1 비중이 없다고 빼면 기여도 합이 기간 수익률과 어긋난다."""
     days = DAYS[:6]
