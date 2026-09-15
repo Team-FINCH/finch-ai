@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -162,6 +163,17 @@ async def answer(
     else:
         log.warning("도구 턴 상한 %d회 도달 · 모은 자료로 답한다", MAX_TOOL_TURNS)
 
+    # 모델이 수익률 분해만 선택해도 "왜"라는 질문에는 사건 근거가 필요하다.
+    # 분해 결과에서 영향이 큰 종목을 골라 뉴스 검색을 보강한다. 검색 결과가 없으면
+    # 기존 규약대로 확인하지 못했다고 답하되, 숫자를 원인처럼 단정하지 않는다.
+    if _needs_causal_news(question, ctx):
+        for ticker, name in ctx.attribution_news_targets:
+            await dispatch(
+                "search_news",
+                {"query": f"{name} 최근 주가 등락 원인 실적 산업 뉴스", "ticker": ticker},
+                ctx,
+            )
+
     citations = citations_from_hits(ctx.hits)
     history_text = _history_block(history)
     request_parts = ["사용자의 질문에 완결된 답을 제시하십시오."]
@@ -193,4 +205,17 @@ async def answer(
         citations=tuple(citations),
         blocked=outcome.blocked,
         turns=turns,
+    )
+
+
+_CAUSAL_QUESTION = re.compile(r"왜|원인|이유|때문|무슨\s*일")
+
+
+def _needs_causal_news(question: str, ctx: ToolContext) -> bool:
+    """수익률 분해를 실제로 쓴 인과 질문만 뉴스 자동 보강 대상으로 삼는다."""
+    return (
+        "calc_attribution" in ctx.used
+        and "search_news" not in ctx.used
+        and bool(ctx.attribution_news_targets)
+        and _CAUSAL_QUESTION.search(question) is not None
     )

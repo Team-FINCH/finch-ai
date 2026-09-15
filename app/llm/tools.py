@@ -255,6 +255,8 @@ class ToolContext:
     wiki_source: WikiSource | None = None
     used: list[str] = field(default_factory=list)
     portfolio_as_of: datetime | None = None
+    # 수익률 원인 질문에서 수치 분해 뒤 뉴스 근거를 자동 보강할 종목.
+    attribution_news_targets: list[tuple[str, str]] = field(default_factory=list)
 
     #: 세션은 동시 사용이 안전하지 않다. DB를 만지는 도구만 줄 세운다.
     db_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
@@ -598,7 +600,9 @@ async def _simulate_order(ctx: ToolContext, args: dict[str, Any]) -> dict[str, A
     try:
         orders = [OrderLine.model_validate(line) for line in raw]
     except ValidationError:
-        return {"unavailable": "주문 형식이 올바르지 않습니다. 종목코드·매매구분·수량을 확인하십시오."}
+        return {
+            "unavailable": "주문 형식이 올바르지 않습니다. 종목코드·매매구분·수량을 확인하십시오."
+        }
 
     ledger = await _ledger(ctx.user_id)
     if ledger is None:
@@ -686,6 +690,13 @@ async def _calc_attribution(ctx: ToolContext, args: dict[str, Any]) -> dict[str,
         names=names,
         events=events,
     )
+
+    ctx.attribution_news_targets = [
+        (row.ticker, row.name)
+        for row in sorted(result.contributors, key=lambda row: abs(row.contribution), reverse=True)[
+            :3
+        ]
+    ]
 
     ctx.portfolio_as_of = _as_datetime(days[-1])
     return {

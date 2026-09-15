@@ -17,12 +17,30 @@ from app.api.main import create_app
 from app.core.db import get_session
 from app.core.enums import Screen
 from app.core.models import AIFeedback, AIResponse, ChatMessage
-from app.llm.agent import _SCREEN_HINT, MAX_TOOL_CALLS, MAX_TOOL_TURNS
+from app.llm.agent import (
+    _SCREEN_HINT,
+    MAX_TOOL_CALLS,
+    MAX_TOOL_TURNS,
+    _needs_causal_news,
+)
 from app.llm.client import LlmResult, NullLlmClient, ToolTurn, ToolUse
+from app.llm.tools import ToolContext
 
 URL = "/api/ai/v1/chat"
 #: 시드 픽스처에서 005930을 보유한 사용자. 토큰 문자열이 곧 user_id다.
 HOLDER = "golden_1_single"
+
+
+def test_수익률_원인_질문은_뉴스를_자동_보강한다() -> None:
+    ctx = ToolContext(user_id=HOLDER)
+    ctx.used.append("calc_attribution")
+    ctx.attribution_news_targets.append(("005930", "삼성전자"))
+
+    assert _needs_causal_news("최근 수익률이 왜 떨어졌어?", ctx) is True
+    assert _needs_causal_news("시장 대비 수익률은 어땠어?", ctx) is False
+
+    ctx.used.append("search_news")
+    assert _needs_causal_news("왜 떨어졌어?", ctx) is False
 
 
 def _use(name: str, **args: Any) -> ToolUse:
@@ -53,8 +71,7 @@ class FakeClient:
         return ToolTurn(
             stop_reason="tool_use",
             content=[
-                {"type": "tool_use", "id": u.id, "name": u.name, "input": u.input}
-                for u in uses
+                {"type": "tool_use", "id": u.id, "name": u.name, "input": u.input} for u in uses
             ],
             tool_uses=uses,
         )
@@ -213,8 +230,7 @@ def test_같은_대화의_이전_메시지를_다음_GMS_입력에_넣는다(por
         turn
         for turn in reversed(portfolio_client.llm.turns)
         if any(
-            isinstance(message["content"], str)
-            and "그건 왜 높은 거야?" in message["content"]
+            isinstance(message["content"], str) and "그건 왜 높은 거야?" in message["content"]
             for message in turn["messages"]
         )
     )
