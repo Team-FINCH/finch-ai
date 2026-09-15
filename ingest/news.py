@@ -3,7 +3,11 @@
 검색 API가 제공하는 제목·요약·원문 링크만 저장한다. 언론사 페이지의 본문을
 추가로 크롤링하지 않는다.
 
-    python -m ingest.news --tickers 005930,000660 --days 7
+    python -m ingest.news --days 2
+
+종목을 명시하지 않으면 Settings.service_tickers의 확정 30종목을 사용한다. 저장한
+documents/document_chunks는 채팅 RAG가, 같은 문서에서 승격한 events는 데일리
+브리핑이 함께 사용한다.
 """
 
 from __future__ import annotations
