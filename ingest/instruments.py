@@ -329,11 +329,9 @@ async def run() -> int:
             )
             return 0
         log.info("corpCode 상장 후보 %d건 — 기업개황으로 시장·업종을 채운다", len(mapping))
-        rows = [
-            row
-            for row in collect_instruments(client, settings.dart_api_key, mapping)
-            if row.ticker in settings.service_tickers
-        ]
+        # 종목 마스터는 전 종목을 보존한다. 서비스 대상 30종 제한은 가격 이력
+        # 적재 단계에서 적용해야 DART 코드·업종 메타데이터를 잃지 않는다.
+        rows = collect_instruments(client, settings.dart_api_key, mapping)
         log.info("서비스 종목 범위로 제한: %d종", len(rows))
 
     if not rows:

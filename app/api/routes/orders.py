@@ -40,6 +40,7 @@ from app.core.response_log import record
 from app.core.schemas import DataAsOf, Envelope, Section, Segment
 from app.engines.portfolio import Holding, PortfolioEngine, PortfolioSnapshot
 from app.engines.risk import Finding, RiskAssessment, assess
+from app.llm.client import get_llm_client  # noqa: F401  # backwards-compatible test patch point
 from app.wiki.store import list_facts, list_theses
 
 log = logging.getLogger("app.api.orders")
