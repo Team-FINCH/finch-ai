@@ -235,18 +235,6 @@ cd ../wt-ingest/ai && ./scripts/bootstrap.sh
 | DB | 띄우지 않고 확인만. 컨테이너는 **호스트에 하나**만 둔다 — worktree마다 띄우면 5432가 충돌한다 |
 | 마이그레이션 | DB가 떠 있으면 `alembic upgrade head` |
 
-### Orca를 쓰는 경우
-
-Orca의 repo 설정에서 setup 훅 스크립트를 아래로 지정한다.
-CLI로는 바꿀 수 없고 앱 UI에서 설정해야 한다.
-
-```
-./scripts/bootstrap.sh
-```
-
-기본값이 `pnpm install`로 남아 있으면 이 저장소에서는 매번 실패한다.
-훅을 고치지 못하는 상황이라면 워커의 첫 지시에 부트스트랩 실행을 넣는다.
-
 ### 정리
 
 ```bash
