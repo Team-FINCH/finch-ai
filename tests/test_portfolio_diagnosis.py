@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from app.api.main import create_app
 from app.core.adapters import Instrument, Ledger
 from app.core.db import get_session
+from app.core.models import PortfolioDiagnosisCache
 from app.llm.client import LlmResult, NullLlmClient
 
 URL = "/api/ai/v1/portfolio/diagnosis"
@@ -106,6 +107,11 @@ class StubSession:
     async def scalar(self, statement: Any) -> Any:
         sql = str(statement)
         self.seen.append(sql)
+        if "portfolio_diagnosis_cache" in sql:
+            return next(
+                (row for row in self.added if isinstance(row, PortfolioDiagnosisCache)),
+                None,
+            )
         if "ai_responses" in sql:
             return self.last_payload
         return None
@@ -158,6 +164,28 @@ def test_진단이_엔진_지표와_생성된_문장을_함께_돌려준다(clie
 
     assert content["summary"]["text"]
     assert content["findings"], "8종목·현금 4%면 항목이 하나는 잡혀야 한다"
+
+
+def test_같은_포트폴리오는_저장된_진단을_재사용한다(client: TestClient) -> None:
+    first = _get(client, HOLDER)
+    calls_after_first = len(client.llm.calls)  # type: ignore[attr-defined]
+    second = _get(client, HOLDER)
+
+    assert first.status_code == second.status_code == 200
+    assert first.json()["cached"] is False
+    assert second.json()["cached"] is True
+    assert len(client.llm.calls) == calls_after_first  # type: ignore[attr-defined]
+    assert second.json()["content"]["summary"]["cached"] is True
+
+
+def test_진단_결과를_사용자별_최신_캐시에_저장한다(client: TestClient) -> None:
+    response = _get(client, HOLDER)
+    cache = next(
+        row for row in client.db.added if isinstance(row, PortfolioDiagnosisCache)  # type: ignore[attr-defined]
+    )
+    assert cache.user_id == HOLDER
+    assert cache.fingerprint
+    assert cache.payload == response.json()["content"]
 
 
 def test_findings_순서가_심각도_순서다(client: TestClient) -> None:
@@ -273,7 +301,7 @@ def test_LLM_키가_없으면_409(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_문장_생성이_실패해도_지표는_나온다(monkeypatch: pytest.MonkeyPatch) -> None:
-    """검사에 걸린 항목은 text가 null이고, 지표·근거는 그대로 나간다."""
+    """검사에 걸려도 서버 기본 문구와 지표·근거는 그대로 나간다."""
 
     class Blocked:
         async def generate(self, **_: Any) -> LlmResult:
@@ -293,9 +321,9 @@ def test_문장_생성이_실패해도_지표는_나온다(monkeypatch: pytest.M
         response = _get(client, HOLDER)
     assert response.status_code == 200
     content = response.json()["content"]
-    assert content["summary"] is None
-    assert content["findings"], "문장이 없어도 항목 목록은 남는다"
-    assert all(f["text"] is None for f in content["findings"])
+    assert content["summary"]["text"]
+    assert content["findings"], "GMS 문장이 없어도 항목 목록은 남는다"
+    assert all(f["text"] for f in content["findings"])
     assert all(f["evidence"]["metric"] for f in content["findings"])
     assert content["indicators"]["hhi"] > 0.0
 

@@ -358,6 +358,27 @@ class ChatMessage(Base):
     )
 
 
+class PortfolioDiagnosisCache(Base):
+    """사용자별 최신 포트폴리오 진단.
+
+    fingerprint가 현재 원장·시세·프롬프트와 같을 때만 재사용한다. 사용자당 최신
+    한 건만 두어 포트폴리오 변화가 생기면 다음 조회에서 자연스럽게 교체한다.
+    """
+
+    __tablename__ = "portfolio_diagnosis_cache"
+
+    user_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    model: Mapped[str] = mapped_column(String(40), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    data_as_of: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(TS, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        TS, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class AIRequestWindow(Base):
     """모든 Pod가 공유하는 사용자·엔드포인트별 요청 창.
 
@@ -431,6 +452,8 @@ __all__ = [
     "WikiThesis",
     "TradeWatermark",
     "AIResponse",
+    "ChatMessage",
+    "PortfolioDiagnosisCache",
     "AIRequestWindow",
     "AITokenDaily",
     "AITokenReservation",
