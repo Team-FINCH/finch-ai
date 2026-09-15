@@ -332,7 +332,7 @@ async def run() -> int:
         rows = [
             row
             for row in collect_instruments(client, settings.dart_api_key, mapping)
-            if row.ticker in settings.service_universe_codes
+            if row.ticker in settings.service_tickers
         ]
         log.info("서비스 종목 범위로 제한: %d종", len(rows))
 
