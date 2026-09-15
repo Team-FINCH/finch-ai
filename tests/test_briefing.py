@@ -437,7 +437,7 @@ def test_이벤트_문서를_항목과_봉투의_같은_인용으로_연결한�
             "relevance": None,
         }
     ]
-    assert body["data_as_of"]["macro"] == "2025-09-12T10:00:00"
+    assert body["data_as_of"]["macro"] == "2025-09-12T10:00:00+09:00"
 
 
 def test_연결한_문서가_없어도_브리핑은_계속_생성한다(
