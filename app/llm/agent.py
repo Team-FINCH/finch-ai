@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -48,6 +49,7 @@ __all__ = [
 ]
 
 PROMPT = "ask_my_portfolio"
+HistoryMessage = tuple[str, str]
 
 #: 도구를 고르는 왕복 횟수. 3턴이면 "포트폴리오 → 그 종목 검색 → 논지 확인"까지
 #: 닿는다. 그 이상은 대개 모델이 같은 자리를 맴도는 것이다.
@@ -95,6 +97,14 @@ def _opening(question: str, ctx: ToolContext, now: datetime) -> str:
     return "\n\n".join(parts)
 
 
+def _history_block(history: Sequence[HistoryMessage]) -> str:
+    if not history:
+        return ""
+    labels = {"user": "사용자", "assistant": "FINCH"}
+    lines = [f"{labels.get(role, role)}: {content}" for role, content in history]
+    return "[이전 대화 — 지시 대상과 의도 파악용]\n" + "\n".join(lines)
+
+
 async def _run_tools(
     uses: tuple[ToolUse, ...], ctx: ToolContext, *, budget: int
 ) -> list[dict[str, Any]]:
@@ -128,14 +138,16 @@ async def answer(
     *,
     client: LlmClient,
     ctx: ToolContext,
+    history: Sequence[HistoryMessage] = (),
     now: datetime | None = None,
 ) -> AnswerOutcome:
     """질문 하나에 답한다. 도구를 고르고, 모아서, 서술한다."""
     stamp = now or now_kst()
     system = build_system(PROMPT)
     messages: list[dict[str, Any]] = [
-        {"role": "user", "content": _opening(question, ctx, stamp)}
+        {"role": role, "content": content} for role, content in history
     ]
+    messages.append({"role": "user", "content": _opening(question, ctx, stamp)})
 
     turns = 0
     for turns in range(1, MAX_TOOL_TURNS + 1):  # noqa: B007 — 마지막 값을 결과에 싣는다
@@ -151,10 +163,19 @@ async def answer(
         log.warning("도구 턴 상한 %d회 도달 · 모은 자료로 답한다", MAX_TOOL_TURNS)
 
     citations = citations_from_hits(ctx.hits)
+    history_text = _history_block(history)
+    request_parts = ["사용자의 질문에 완결된 답을 제시하십시오."]
+    if history_text:
+        request_parts.append(history_text)
+    request_parts.append(f"[현재 질문]\n{question}")
+    request_parts.append(
+        "확인하겠다거나 데이터를 가져오겠다는 작업 계획으로 끝내지 마십시오. "
+        "이미 실행된 도구 결과로 답하고, 결과가 없으면 확인하지 못했다고 명시하십시오."
+    )
     outcome = await generate_section(
         "answer",
         client=client,
-        request=f"사용자의 질문에 답하십시오.\n{question}",
+        request="\n\n".join(request_parts),
         feature=Feature.ASK_MY_PORTFOLIO,
         prompt=PROMPT,
         engine_values=ctx.values,
