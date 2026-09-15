@@ -329,7 +329,12 @@ async def run() -> int:
             )
             return 0
         log.info("corpCode 상장 후보 %d건 — 기업개황으로 시장·업종을 채운다", len(mapping))
-        rows = collect_instruments(client, settings.dart_api_key, mapping)
+        rows = [
+            row
+            for row in collect_instruments(client, settings.dart_api_key, mapping)
+            if row.ticker in settings.service_universe_codes
+        ]
+        log.info("서비스 종목 범위로 제한: %d종", len(rows))
 
     if not rows:
         log.error("현재 상장 종목이 하나도 없다. DART 응답을 확인할 것.")

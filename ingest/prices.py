@@ -121,9 +121,16 @@ async def _target_tickers(
                 "마스터에 없어 건너뜀: %s — 먼저 python -m ingest.instruments 를 실행할 것",
                 ", ".join(unknown),
             )
-        return [t for t in explicit if t in known]
+        return [
+            t for t in explicit
+            if t in known and t in settings.service_universe_codes
+        ]
 
-    targets = target_tickers(limit=limit)
+    targets = [
+        ticker
+        for ticker in target_tickers(limit=limit)
+        if ticker in settings.service_universe_codes
+    ]
     stmt = select(Instrument.ticker).where(
         Instrument.status == "listed", Instrument.ticker.in_(targets)
     )
