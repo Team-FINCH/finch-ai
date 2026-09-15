@@ -156,6 +156,7 @@ class _HealthSession:
     ("exists", "status"),
     [
         ([True, True, True], "ok"),
+        ([False, False, False], "degraded"),
         ([False, True, True], "degraded"),
         ([True, False, True], "degraded"),
         ([True, True, False], "degraded"),
@@ -171,6 +172,7 @@ def test_health_reports_ingest_state_and_always_returns_200(
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == status
+    assert body["ingest_probe_errors"] == []
     assert body["ingest"] == dict(
         zip(("documents", "embeddings", "price_daily"), exists, strict=True)
     )
@@ -191,6 +193,9 @@ def test_health_returns_degraded_200_when_ingest_query_fails(monkeypatch) -> Non
 
     assert response.status_code == 200
     assert response.json()["status"] == "degraded"
+    assert response.json()["ingest_probe_errors"] == [
+        "documents", "embeddings", "price_daily",
+    ]
     assert response.json()["ingest"] == {
         "documents": False,
         "embeddings": False,
@@ -377,3 +382,24 @@ def test_briefing_returns_envelope_when_empty() -> None:
     body = res.json()
     assert body["content"]["status"] == "empty"
     assert body["disclaimer"]
+
+
+@pytest.mark.parametrize("completed", [0, 1, 2])
+def test_health_reports_unchecked_probes_after_query_failure(monkeypatch, completed):
+    class FailingSession(_HealthSession):
+        async def execute(self, stmt):
+            if len(calls) == completed:
+                raise RuntimeError("private database connection details")
+            calls.append(stmt)
+            return _HealthResult(True)
+
+    calls = []
+    monkeypatch.setattr("app.api.main.SessionFactory", lambda: FailingSession([]))
+    response = client.get("/health")
+    body = response.json()
+    names = ["documents", "embeddings", "price_daily"]
+    assert response.status_code == 200
+    assert body["status"] == "degraded"
+    assert body["ingest_probe_errors"] == names[completed:]
+    assert body["ingest"] == {name: i < completed for i, name in enumerate(names)}
+    assert "private database" not in response.text

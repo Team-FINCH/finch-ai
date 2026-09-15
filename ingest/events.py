@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+from collections import Counter
 from collections.abc import Sequence
 from datetime import date, timedelta
 
@@ -30,7 +31,15 @@ from app.core.config import settings
 from app.core.db import SessionFactory, engine
 from app.core.enums import EventType
 from app.core.models import Event
-from app.rag.dart import REQUEST_DELAY_S, Filing, fetch_filing_list, load_targets
+from app.rag.dart import (
+    REQUEST_DELAY_S,
+    DartStatusError,
+    Filing,
+    SystemicDartError,
+    check_systemic_failure,
+    fetch_filing_list,
+    load_targets,
+)
 
 logger = logging.getLogger("ingest.events")
 
@@ -152,12 +161,17 @@ async def ingest(
 
     # 수집은 동기 httpx다. DB 세션을 붙든 채 돌면 커넥션을 수십 분 잡아먹는다 —
     # app.rag.dart.run과 같은 이유로 세션 밖에서 끝낸다.
+    rejections: Counter[str] = Counter()
     rows: list[dict] = []
     bgn_de, end_de = start.strftime("%Y%m%d"), today.strftime("%Y%m%d")
     with httpx.Client() as client:
         for i, (ticker, corp_code) in enumerate(targets, 1):
             try:
                 filings = fetch_filing_list(client, key, corp_code, ticker, bgn_de, end_de)
+            except DartStatusError as exc:
+                rejections[exc.status] += 1
+                stats["failed"] += 1
+                continue
             except Exception:
                 # 한 종목이 죽어도 배치를 멈추지 않는다. 재실행하면 실패분만 다시 받는다.
                 logger.exception("공시목록 실패: %s", ticker)
@@ -178,6 +192,7 @@ async def ingest(
                 logger.info("진행 %d/%d · 공시 %d건", i, len(targets), stats["filings"])
             await asyncio.sleep(REQUEST_DELAY_S)
 
+    check_systemic_failure(rejections, len(targets))
     async with SessionFactory() as session:
         known = await _existing_keys(session, start, today)
         fresh = []
@@ -226,6 +241,11 @@ async def _main() -> None:
             s["unusable"],
             s["failed"],
         )
+        if not s["targets"] and s["failed"]:
+            raise SystemExit(1)
+    except SystemicDartError as exc:
+        logger.error("%s", exc)
+        raise SystemExit(1) from None
     finally:
         await engine.dispose()
 

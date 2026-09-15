@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+from collections import Counter
 from datetime import date
 
 import httpx
@@ -54,7 +55,12 @@ RETRY_CAP_S = 60.0
 # 사용한도 초과. HTTP는 200인 채 status만 바뀌어 오므로 status_code로는 안 잡힌다.
 STATUS_THROTTLED = "020"
 STATUS_OK = "000"
+STATUS_NO_DATA = "013"
 UPSERT_CHUNK = 500
+
+
+class FinancialIngestError(RuntimeError):
+    """전 종목이 같은 API 오류로 거부되어 배치가 실패했다."""
 
 
 # ── 파싱 ──────────────────────────────────────────────────────────────────────
@@ -199,7 +205,8 @@ async def ingest(
 
     한 종목이 실패해도 멈추지 않는다. 미제출·비상장전환 등으로 응답이 없는 종목이
     정상적으로 존재하고, 그중 하나 때문에 나머지 종목을 다시 받는 것은 한도
-    낭비다. 실패는 세어서 마지막에 보고한다.
+    낭비다. 실패는 세어서 마지막에 보고하되, 전 종목이 같은 비정상 상태로
+    거부되면 배치를 실패시킨다.
     """
     stats = {"targets": 0, "rows": 0, "no_data": 0, "no_equity": 0, "failed": 0}
 
@@ -214,6 +221,7 @@ async def ingest(
 
         logger.info("대상 %d종목 · %d년 사업보고서", len(targets), year)
 
+        failures: Counter[str] = Counter()
         rows: list[dict] = []
         async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
             for i, (ticker, corp_code) in enumerate(targets, 1):
@@ -224,8 +232,11 @@ async def ingest(
                     logger.exception("재무제표 조회 실패: %s (%s)", ticker, corp_code)
                     continue
 
-                if status != STATUS_OK or not payload:
-                    # "013"(조회 데이터 없음)이 대부분이다. 오류가 아니라 미제출이다.
+                if status not in (STATUS_OK, STATUS_NO_DATA):
+                    stats["failed"] += 1
+                    failures[status] += 1
+                    logger.warning("재무제표 조회 거부: %s status=%s", ticker, status)
+                elif status == STATUS_NO_DATA or not payload:
                     stats["no_data"] += 1
                 elif (picked := pick_equity(payload)) is None:
                     # 응답은 왔는데 자본총계 행이 없다. 금융업 등 계정 구성이 다른 경우.
@@ -245,6 +256,13 @@ async def ingest(
                 if i % 200 == 0:
                     logger.info("진행 %d/%d · 누적 %d행", i, len(targets), len(rows))
                 await asyncio.sleep(DELAY_S)
+
+        if len(failures) == 1 and sum(failures.values()) == len(targets):
+            status = next(iter(failures))
+            raise FinancialIngestError(
+                f"전 {len(targets)}종목 재무제표 조회 실패: status={status}; "
+                "check API credentials or quota"
+            )
 
         stats["rows"] = await _upsert(session, rows)
         await session.commit()
@@ -271,7 +289,7 @@ async def _main() -> None:
     # (KRX처럼 헤더에 실을 수 없다) 그대로 두면 crtfc_key가 로그에 찍힌다.
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
-    if not settings.dart_api_key:
+    if not (settings.dart_api_key or "").strip():
         raise SystemExit("DART_API_KEY가 비어 있다. .env를 확인할 것")
 
     year = args.year or default_year(date.today())
@@ -286,6 +304,9 @@ async def _main() -> None:
             stats["no_equity"],
             stats["failed"],
         )
+    except FinancialIngestError as exc:
+        logger.error("%s", exc)
+        raise SystemExit(str(exc)) from None
     finally:
         await engine.dispose()
 

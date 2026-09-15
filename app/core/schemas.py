@@ -70,6 +70,10 @@ class HealthResponse(BaseModel):
     env: str
     model: str
     ingest: IngestState
+    ingest_probe_errors: list[str] = Field(
+        default_factory=list,
+        description="DB 조회 실패로 확인하지 못한 적재 항목. 빈 테이블은 포함하지 않는다.",
+    )
 
 
 # ── 응답 조각 ────────────────────────────────────────────
