@@ -162,8 +162,6 @@ def test_unknown_placeholder_rejects_declared_only_key() -> None:
         "공시가 2건 있었습니다.",
         "반도체가 3종목입니다.",
         "세 개를 담고 있습니다.",
-        "6개월 동안 유지했습니다.",
-        "30일간 이어졌습니다.",
         "구독자는 10명입니다.",
         # 배수
         "밸류에이션이 2배입니다.",
@@ -523,3 +521,21 @@ def test_수량은_여전히_잡는다(text: str) -> None:
 )
 def test_각주가_마침표_뒤에_붙어도_문장을_센다(text: str) -> None:
     assert len(split_sentences(text)) == 3, text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "최근 1년간 변동성이 컸습니다.",
+        "3개월 추이는 완만했습니다.",
+        "6개월 동안 유지했습니다.",
+        "30일간 이어졌습니다.",
+    ],
+)
+def test_기간은_원시_수치가_아니다(text: str) -> None:
+    assert check_raw_number(text).passed, text
+
+
+@pytest.mark.parametrize("text", ["1종목에 쏠려 있습니다.", "3종목을 보유 중입니다."])
+def test_종목_수는_여전히_수량이다(text: str) -> None:
+    assert not check_raw_number(text).passed, text
