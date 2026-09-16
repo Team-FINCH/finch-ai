@@ -128,9 +128,7 @@ def test_부호와_방향이_붙는다():
 
 
 def test_검색_결과가_근거로_바뀐다():
-    citations = citations_from_hits(
-        [{"title": "반기보고서", "text": "본문", "similarity": 0.9}]
-    )
+    citations = citations_from_hits([{"title": "반기보고서", "text": "본문", "similarity": 0.9}])
     assert citations[0].id == "cit_1"
     assert citations[0].relevance == 0.9
 
@@ -282,9 +280,7 @@ async def test_원시_수치를_쓰면_통과하지_못한다():
         "used_placeholders": [],
         "used_citations": [],
     }
-    outcome = await generate_section(
-        "my_impact", client=FakeClient(raw), engine_values=_values()
-    )
+    outcome = await generate_section("my_impact", client=FakeClient(raw), engine_values=_values())
     assert outcome.section is None
 
 
@@ -335,3 +331,17 @@ def test_thinking_블록은_본문에서_제외한다():
         usage = None
 
     assert _to_result(Message()).payload["narrative"] == "본문"
+
+
+@pytest.mark.anyio
+async def test_LLM_타임아웃은_섹션_실패로_돌아오고_예외를_올리지_않는다():
+    from app.core.errors import LLMTimeout
+
+    class TimeoutClient:
+        async def generate(self, **_: Any) -> LlmResult:
+            raise LLMTimeout("timeout")
+
+    outcome = await generate_section("current", client=TimeoutClient())
+
+    assert outcome.section is None
+    assert outcome.reasons == ("llm_error:LLMTimeout",)

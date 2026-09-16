@@ -47,8 +47,7 @@ class FakeClient:
         )
         # thesis_check가 4문장을 요구하므로 전 섹션을 4문장으로 맞춘다(§2).
         narrative += (
-            "동일 업황 노출이 겹칩니다. 분산 효과는 제한적입니다. "
-            "업황 지표를 함께 확인하십시오."
+            "동일 업황 노출이 겹칩니다. 분산 효과는 제한적입니다. 업황 지표를 함께 확인하십시오."
         )
         payload = {
             "narrative": narrative,
@@ -200,13 +199,9 @@ async def test_같은_종목과_프롬프트의_최근_공통_섹션을_찾는�
         async def scalars(self, _statement):
             return Rows()
 
-    monkeypatch.setattr(
-        "app.api.routes.stocks.prompt_version_for", lambda _endpoint: "prompt_test"
-    )
+    monkeypatch.setattr("app.api.routes.stocks.prompt_version_for", lambda _endpoint: "prompt_test")
 
-    cached = await _cached_common_sections(
-        Session(), "005930", {"current"}, now=now
-    )
+    cached = await _cached_common_sections(Session(), "005930", {"current"}, now=now)
 
     assert cached is not None
     assert cached.name == "삼성전자"
@@ -238,7 +233,7 @@ def test_일반_섹션은_설정하지_않은_조건부_키를_생략한다(clie
 
 
 def test_섹션_명칭은_출처_귀속형이다(client):
-    """"긍정/부정 요인"은 의견 제시로 읽힌다. 명세 §3."""
+    """ "긍정/부정 요인"은 의견 제시로 읽힌다. 명세 §3."""
     sections = _post(client, {"sections": ["attention", "risks"]}).json()["content"]["sections"]
     assert sections["attention"]["title"] == "시장이 주목하는 요인"
     assert "긍정" not in sections["attention"]["title"]
@@ -248,8 +243,13 @@ def test_섹션_명칭은_출처_귀속형이다(client):
 def test_생략하면_전체_섹션을_시도한다(client):
     sections = _post(client, {}).json()["content"]["sections"]
     assert set(sections) == {
-        "current", "changes", "attention", "risks",
-        "my_impact", "thesis_check", "next_events",
+        "current",
+        "changes",
+        "attention",
+        "risks",
+        "my_impact",
+        "thesis_check",
+        "next_events",
     }
 
 
@@ -292,7 +292,9 @@ def test_논지가_있으면_기록을_함께_돌려준다(client, monkeypatch):
         return Thesis()
 
     monkeypatch.setattr("app.api.routes.stocks.get_active_thesis", _thesis)
-    section = _post(client, {"sections": ["thesis_check"]}).json()["content"]["sections"]["thesis_check"]
+    section = _post(client, {"sections": ["thesis_check"]}).json()["content"]["sections"][
+        "thesis_check"
+    ]
     assert section["thesis"]["text"] == "HBM 구조적 성장에 베팅"
     assert section["supporting"] == []
     # 논지 원문이 프롬프트에 실려야 대조가 성립한다.
@@ -481,3 +483,40 @@ def test_키가_없으면_지어내지_않고_실패한다(monkeypatch):
     # 사유는 detail 로만 나간다. message 는 사용자에게 그대로 보이는 문구다(백엔드 §1.3).
     assert body["detail"]["reason"] == "llm_key_missing"
     assert "LLM" not in body["message"]
+
+
+@pytest.mark.anyio
+async def test_공통_캐시는_키마다_최근_성공_행에서_가져온다(monkeypatch):
+    """한 섹션이 null 로 저장돼도 나머지 섹션의 캐시는 살아야 한다."""
+    now = datetime(2026, 8, 28, 12, 0, tzinfo=timezone(timedelta(hours=9)))
+
+    def _row(hour: int, sections: dict[str, Any]) -> SimpleNamespace:
+        return SimpleNamespace(
+            created_at=datetime(2026, 8, 28, hour, 0),
+            payload={
+                "content": {"ticker": "005930", "name": "삼성전자", "sections": sections},
+                "citations": [],
+                "data_as_of": {},
+            },
+        )
+
+    section = {"title": "t", "text": "x", "segments": [], "cached": False, "cached_at": None}
+    rows = [
+        _row(11, {"current": None, "changes": section}),  # 최신 행은 current 실패
+        _row(10, {"current": section, "changes": section}),
+    ]
+
+    class Session:
+        async def scalars(self, _statement):
+            return SimpleNamespace(all=lambda: rows)
+
+    monkeypatch.setattr("app.api.routes.stocks.prompt_version_for", lambda _endpoint: "prompt_test")
+
+    cached = await _cached_common_sections(
+        Session(), "005930", {"current", "changes", "risks"}, now=now
+    )
+
+    assert cached is not None
+    assert set(cached.sections) == {"current", "changes"}  # risks 는 호출부가 생성
+    assert cached.sections["changes"]["cached_at"].startswith("2026-08-28T11")
+    assert cached.sections["current"]["cached_at"].startswith("2026-08-28T10")
