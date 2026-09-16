@@ -556,3 +556,20 @@ def test_요청_경로는_실패한_섹션을_다시_만들지_않고_배치만_
     body = _post(client, {"sections": ["current"]}).json()
     assert body["content"]["sections"]["current"] is None
     assert client.llm.calls == []  # 요청 경로는 기다리지 않는다
+
+
+@pytest.mark.anyio
+async def test_공통_캐시_조회는_SQL_에서_종목으로_거른다(monkeypatch):
+    """다른 종목의 히트 기록 20행에 밀려 원본을 못 찾던 버그. 조회 조건에 종목이 있어야 한다."""
+    captured: list[str] = []
+
+    class Session:
+        async def scalars(self, statement):
+            captured.append(str(statement.compile(compile_kwargs={"literal_binds": True})))
+            return SimpleNamespace(all=lambda: [])
+
+    monkeypatch.setattr("app.api.routes.stocks.prompt_version_for", lambda _endpoint: "prompt_test")
+    now = datetime(2026, 8, 28, 12, 0, tzinfo=timezone(timedelta(hours=9)))
+    await _cached_common_sections(Session(), "005930", {"current"}, now=now)
+
+    assert captured and "'005930'" in captured[0] and "ticker" in captured[0]

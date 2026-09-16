@@ -243,6 +243,9 @@ async def _cached_common_sections(
                 select(AIResponse)
                 .where(
                     AIResponse.endpoint == "stocks.analysis",
+                    # 종목을 SQL 에서 거른다. 최근 20행만 가져와 파이썬에서 고르면 다른
+                    # 종목의 캐시 히트 기록에 밀려 원본을 못 찾고 매번 다시 만든다.
+                    AIResponse.payload["content"]["ticker"].astext == ticker,
                     AIResponse.prompt_version == version,
                     AIResponse.created_at >= now - _COMMON_CACHE_TTL,
                     *([AIResponse.user_id == user_id] if user_id else []),
