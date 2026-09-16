@@ -30,6 +30,7 @@ from app.core.errors import InsufficientData, InvalidRequest, LLMTimeout
 from app.core.models import AIResponse, Event, Instrument
 from app.core.response_log import record
 from app.core.schemas import Citation, ContentModel, DataAsOf, Envelope, Segment, now_kst
+from app.core.usage_limits import ANALYSIS_BATCH_USER, current_usage, reset_usage
 from app.llm.client import NullLlmClient, get_llm_client
 from app.llm.generate import (
     SectionOutcome,
@@ -369,7 +370,25 @@ async def build_analysis(
             **shared,
         )
 
-    outcomes: list[SectionOutcome] = list(await asyncio.gather(*tasks.values()))
+    # 종목 분석은 사용자와 무관한 종목 단위 정보라 생성 비용을 요청자 개인 예산에
+    # 물리지 않는다. 배치가 못 채운 종목을 첫 조회자가 대신 만드는 셈이라 배치 장부
+    # (system:analysis-batch) 에서 나간다. 분당 요청 한도는 그대로 요청자 몫이다.
+    counter = current_usage()
+    token = (
+        await counter.guard.enter_system(
+            ANALYSIS_BATCH_USER,
+            "stocks.analysis",
+            now=now,
+            budget=settings.ai_batch_daily_token_budget,
+        )
+        if counter is not None and tasks
+        else None
+    )
+    try:
+        outcomes: list[SectionOutcome] = list(await asyncio.gather(*tasks.values()))
+    finally:
+        if token is not None:
+            reset_usage(token)
     if (
         tasks
         and all(o.section is None for o in outcomes)

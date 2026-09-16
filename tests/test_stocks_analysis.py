@@ -477,3 +477,25 @@ async def test_공통_캐시는_복사된_섹션을_원본으로_치지_않는�
     assert cached is not None
     assert cached.sections["risks"]["cached_at"].startswith("2026-08-28T11")  # 새 섹션은 원본
     assert cached.sections["current"]["cached_at"].startswith("2026-08-28T10")  # 복사본은 건너뜀
+
+
+def test_요청_시점_생성은_요청자_예산이_아니라_배치_장부에서_나간다(client, monkeypatch):
+    """종목 분석은 종목 단위 정보라 첫 조회자가 대신 만들어도 그 사람 예산을 깎지 않는다."""
+    from app.api.routes import stocks
+
+    entered: list[str] = []
+
+    class Guard:
+        async def enter_system(self, user_id, endpoint, *, now, budget):
+            entered.append(user_id)
+            return object()
+
+    class Counter:
+        guard = Guard()
+
+    monkeypatch.setattr(stocks, "current_usage", lambda: Counter())
+    monkeypatch.setattr(stocks, "reset_usage", lambda token: None)
+
+    _post(client, {"sections": ["current"]})
+
+    assert entered == ["system:analysis-batch"]

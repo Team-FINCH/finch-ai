@@ -60,6 +60,8 @@ class DailyUsage:
 _current: ContextVar[UsageCounter | None] = ContextVar("ai_usage", default=None)
 log = logging.getLogger("app.core.usage_limits")
 KST = ZoneInfo("Asia/Seoul")
+#: 종목 분석 선생성·요청 시점 대리 생성이 쓰는 장부. 배치 예산에서 나간다.
+ANALYSIS_BATCH_USER = "system:analysis-batch"
 
 #: 브리핑 배치가 쓰는 시스템 장부의 주인. 실제 사용자 ID와 겹치지 않도록 접두를
 #: 붙인다. 장부 테이블의 user_id 컬럼이 40자이므로 이름을 더 늘리지 않는다.
@@ -412,9 +414,7 @@ def _window_counts(row: Any, start: datetime, window: timedelta) -> tuple[int, i
     return 0, 0
 
 
-def _retry_after(
-    *, previous: int, current: int, limit: int, elapsed: float, window_s: int
-) -> int:
+def _retry_after(*, previous: int, current: int, limit: int, elapsed: float, window_s: int) -> int:
     """직전 창의 무게가 충분히 빠질 때까지 남은 초.
 
     이번 창 건수만으로 이미 한도를 채웠다면 창이 바뀌어야 열리므로 창 끝까지

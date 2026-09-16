@@ -33,6 +33,7 @@ from app.core.errors import InsufficientData, RateLimited
 from app.core.models import AIResponse
 from app.core.schemas import Envelope, now_kst
 from app.core.usage_limits import (
+    ANALYSIS_BATCH_USER,
     BRIEFING_BATCH_USER,
     UsageGuard,
     default_guard,
@@ -120,9 +121,6 @@ async def _generate(
         return envelope
     finally:
         reset_usage(token)
-
-
-ANALYSIS_BATCH_USER = "system:analysis-batch"
 
 
 async def prebuild_analyses(guard: UsageGuard) -> tuple[int, int, list[str]]:
