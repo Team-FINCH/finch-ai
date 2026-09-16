@@ -374,11 +374,19 @@ async def diagnosis(
     user_id: CurrentUser, db: DbSession, _usage: UsageLimit
 ) -> Envelope[DiagnosisContent]:
     """위험 지표를 계산하고 상위 항목을 설명한다(§5). 본문은 `build_diagnosis`."""
-    return await build_diagnosis(user_id, db)
+    # 요청 시점에는 저장된 진단을 그대로 준다. 보유가 바뀌어도 다시 만들지 않는다 —
+    # 자주 매매하는 사용자가 조회마다 LLM 을 태우지 않게. 재생성은 아침 배치가 한다.
+    # 저장된 것이 하나도 없을 때(첫 사용자)만 한 번 만든다.
+    return await build_diagnosis(user_id, db, regenerate=False)
 
 
-async def build_diagnosis(user_id: str, db: AsyncSession) -> Envelope[DiagnosisContent]:
+async def build_diagnosis(
+    user_id: str, db: AsyncSession, *, regenerate: bool = True
+) -> Envelope[DiagnosisContent]:
     """사용자 진단을 조회하거나 생성한다. 배치(`ingest.briefings`)와 라우터가 같이 쓴다.
+
+    `regenerate=True`(배치)면 지문이 바뀌었을 때 다시 만들고, `False`(라우터)면 저장된
+    진단이 있는 한 지문과 무관하게 그것을 돌려준다. `summary.cached_at` 이 기준 시각이다.
 
     히스토리가 짧으면 409로 끊지 않는다. 집중도·현금·금리민감도 진단은 그대로 유효해서
     신규 포트폴리오에도 절반은 답할 수 있다. 대신 `risk_score`·`risk_level`·
@@ -407,7 +415,7 @@ async def build_diagnosis(user_id: str, db: AsyncSession) -> Envelope[DiagnosisC
     cache = await db.scalar(
         select(PortfolioDiagnosisCache).where(PortfolioDiagnosisCache.user_id == user_id)
     )
-    if cache is not None and cache.fingerprint == fingerprint:
+    if cache is not None and (not regenerate or cache.fingerprint == fingerprint):
         content = _cached_content(cache)
         if content is not None:
             envelope = Envelope[DiagnosisContent](
