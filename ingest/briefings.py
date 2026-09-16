@@ -26,6 +26,7 @@ from sqlalchemy import distinct, select
 
 from app.api.routes.briefing import BriefingContent, build_briefing
 from app.api.routes.portfolio import build_attribution, build_diagnosis
+from app.api.routes.stocks import COMMON_SECTIONS, AnalysisRequest, build_analysis
 from app.core.config import settings
 from app.core.db import SessionFactory, engine
 from app.core.errors import InsufficientData, RateLimited
@@ -56,6 +57,9 @@ class BatchResult:
     duration_ms: int = 0
     budget_exhausted: bool = False
     failed_users: tuple[str, ...] = ()
+    analyses_generated: int = 0
+    analyses_cached: int = 0
+    failed_tickers: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, int | bool | list[str]]:
         return {
@@ -69,6 +73,9 @@ class BatchResult:
             "duration_ms": self.duration_ms,
             "budget_exhausted": self.budget_exhausted,
             "failed_users": list(self.failed_users),
+            "analyses_generated": self.analyses_generated,
+            "analyses_cached": self.analyses_cached,
+            "failed_tickers": list(self.failed_tickers),
         }
 
 
@@ -115,6 +122,42 @@ async def _generate(
         reset_usage(token)
 
 
+ANALYSIS_BATCH_USER = "system:analysis-batch"
+
+
+async def prebuild_analyses(guard: UsageGuard) -> tuple[int, int, list[str]]:
+    """서비스 30종목의 공통 섹션을 미리 만든다. 사용자와 무관해 종목당 하루 한 번이다.
+
+    이미 그날 것이 있으면 캐시라 비용이 없다. 실패한 종목은 요청 시점 생성으로
+    떨어지므로 배치는 멈추지 않고 종목 코드만 모아 보고한다.
+    """
+    generated = cached = 0
+    failed: list[str] = []
+    body = AnalysisRequest(sections=sorted(COMMON_SECTIONS), personalize=False)
+    for ticker in settings.service_tickers:
+        token = await guard.enter_system(
+            ANALYSIS_BATCH_USER,
+            _ENDPOINT,
+            now=now_kst(),
+            budget=settings.ai_batch_daily_token_budget,
+        )
+        try:
+            async with SessionFactory() as session:
+                envelope = await build_analysis(ticker, body, ANALYSIS_BATCH_USER, session)
+            if envelope.cached:
+                cached += 1
+            else:
+                generated += 1
+        except RateLimited:
+            raise
+        except Exception:
+            log.exception("종목 %s 분석 선생성 실패", ticker)
+            failed.append(ticker)
+        finally:
+            reset_usage(token)
+    return generated, cached, failed
+
+
 async def run(
     users: list[str],
     *,
@@ -133,6 +176,11 @@ async def run(
     retries = 0
     budget_exhausted = False
     failed_users: list[str] = []
+    analyses = (0, 0, [])
+    try:
+        analyses = await prebuild_analyses(guard)
+    except RateLimited:
+        budget_exhausted = True
     for index, user_id in enumerate(unique_users):
         for attempt in range(1, max_attempts + 1):
             try:
@@ -186,6 +234,9 @@ async def run(
         duration_ms=round((time.monotonic() - started) * 1000),
         budget_exhausted=budget_exhausted,
         failed_users=tuple(failed_users),
+        analyses_generated=analyses[0],
+        analyses_cached=analyses[1],
+        failed_tickers=tuple(analyses[2]),
     )
     log.info("briefing_batch_metrics %s", json.dumps(result.as_dict(), ensure_ascii=False))
     return result

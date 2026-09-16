@@ -197,3 +197,40 @@ async def test_배치는_브리핑_뒤에_진단도_미리_만들고_보유_없�
 
     assert envelope.content.status == "empty"
     assert calls == ["u1", "u1"]  # 진단·원인 분석을 시도했고, 보유 없음은 예외로 번지지 않는다
+
+
+@pytest.mark.anyio
+async def test_배치는_서비스_종목의_공통_섹션을_먼저_만들고_실패_종목은_모아_보고한다(monkeypatch):
+    from types import SimpleNamespace
+
+    from ingest import briefings
+
+    seen: list[tuple[str, bool, list[str]]] = []
+
+    async def fake_analysis(ticker, body, user_id, session):
+        seen.append((ticker, body.personalize, list(body.sections)))
+        if ticker == "000660":
+            raise RuntimeError("boom")
+        return SimpleNamespace(cached=ticker == "005930")
+
+    class Guard:
+        async def enter_system(self, *a, **k):
+            return object()
+
+    class Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+    monkeypatch.setattr(briefings, "build_analysis", fake_analysis)
+    monkeypatch.setattr(briefings, "SessionFactory", lambda: Session())
+    monkeypatch.setattr(briefings, "reset_usage", lambda token: None)
+    monkeypatch.setattr(briefings.settings, "service_tickers", ("005930", "000660", "035420"))
+
+    generated, cached, failed = await briefings.prebuild_analyses(Guard())
+
+    assert (generated, cached, failed) == (1, 1, ["000660"])
+    assert all(not personal for _, personal, _ in seen)  # 개인 섹션은 배치가 만들지 않는다
+    assert "my_impact" not in seen[0][2]
