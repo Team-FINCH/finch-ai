@@ -219,7 +219,7 @@ def test_전후와_차분을_함께_돌려준다(client: TestClient) -> None:
     assert content["shortfall"] is None
     assert 0.0 < content["before"]["hhi"] <= 1.0
     assert 0.0 < content["after"]["hhi"] <= 1.0
-    assert content["summary"]["text"]
+    assert content["summary"] is None  # 문장은 만들지 않는다. 수치만 보낸다
 
 
 def test_응답을_저장해_피드백을_받는다(client: TestClient) -> None:
@@ -272,10 +272,9 @@ def test_price를_생략하면_최근_종가로_본다(client: TestClient) -> No
     assert row["amount"] == 10 * CLOSE_000660
 
 
-def test_결정론적_요약은_전후_비교_결과를_반영한다(client: TestClient) -> None:
+def test_요약_문장은_만들지_않고_수치만_보낸다(client: TestClient) -> None:
     content = _post(client, HOLDER, CONCENTRATE).json()["content"]
-    assert content["summary"]["text"]
-    assert "주문 후" in content["summary"]["text"]
+    assert content["summary"] is None
     assert content["delta"]["hhi"] > 0
 
 
@@ -291,7 +290,7 @@ def test_경고는_엔진_임계가_고른다(client: TestClient) -> None:
     assert content["before"]["top1_weight"] < 0.25 <= content["after"]["top1_weight"]
     for warning in content["warnings"]:
         assert warning["after"] >= warning["threshold"], "임계를 넘었기에 경고다"
-        assert warning["title"] and warning["text"]
+        assert warning["title"] and warning["text"] is None
 
 
 def test_위험을_낮추는_주문은_경고를_만들지_않는다(client: TestClient) -> None:
@@ -452,7 +451,7 @@ def test_GMS_키가_없어도_전후_비교는_성공한다(monkeypatch: pytest.
     with TestClient(app) as client:
         response = _post(client, HOLDER, [_buy(price=214000)])
     assert response.status_code == 200
-    assert response.json()["content"]["summary"] is not None
+    assert response.json()["content"]["summary"] is None
 
 
 def test_주문이_비면_400(client: TestClient) -> None:
@@ -460,7 +459,7 @@ def test_주문이_비면_400(client: TestClient) -> None:
     assert _post(client, HOLDER, []).status_code == 400
 
 
-def test_모델_생성_없이도_수치와_요약이_나온다(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_모델_생성_없이도_수치가_나온다(monkeypatch: pytest.MonkeyPatch) -> None:
     class Blocked:
         async def generate(self, **_: Any) -> LlmResult:
             # 수치를 직접 쓴 응답 — 검사에서 차단된다.
@@ -475,8 +474,8 @@ def test_모델_생성_없이도_수치와_요약이_나온다(monkeypatch: pyte
     with _make_client(monkeypatch, StubSession(), llm=Blocked()) as client:
         content = _post(client, HOLDER, CONCENTRATE).json()["content"]
 
-    assert content["summary"] is not None
+    assert content["summary"] is None
     assert content["warnings"], "엔진이 감지한 경고 목록은 남는다"
-    assert all(w["text"] for w in content["warnings"])
+    assert all(w["text"] is None for w in content["warnings"])
     assert all(isinstance(w["threshold"], float) for w in content["warnings"])
     assert content["delta"]["hhi"] > 0.0
