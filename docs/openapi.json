@@ -3522,6 +3522,7 @@
     },
     "/api/ai/v1/stocks/{ticker}/analysis": {
       "post": {
+        "description": "종목 분석. 본문은 `build_analysis` — 아침 배치(`ingest.briefings`)와 같은 함수다.",
         "operationId": "create_analysis_api_ai_v1_stocks__ticker__analysis_post",
         "parameters": [
           {

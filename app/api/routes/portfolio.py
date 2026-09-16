@@ -20,7 +20,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -132,6 +132,10 @@ class AttributionEvent(BaseModel):
 
 
 class AttributionContributor(BaseModel):
+    # 응답 로그는 별칭 없이 `return_` 로 저장하고, 캐시 조회는 그 JSON 을 되읽는다.
+    # 두 이름을 다 받아야 저장값이 검증을 통과한다.
+    model_config = ConfigDict(populate_by_name=True)
+
     ticker: str
     name: str
     sector: str

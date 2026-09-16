@@ -21,6 +21,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter
 from pydantic import BaseModel, Field, WithJsonSchema, field_serializer
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, DbSession, UsageLimit
 from app.core.adapters import ledger_source
@@ -349,6 +350,13 @@ async def create_analysis(
     user_id: CurrentUser,
     db: DbSession,
     _usage: UsageLimit,
+) -> Envelope[AnalysisContent]:
+    """종목 분석. 본문은 `build_analysis` — 아침 배치(`ingest.briefings`)와 같은 함수다."""
+    return await build_analysis(ticker, body, user_id, db)
+
+
+async def build_analysis(
+    ticker: str, body: AnalysisRequest, user_id: str, db: AsyncSession
 ) -> Envelope[AnalysisContent]:
     if not _TICKER_RE.fullmatch(ticker):
         raise InvalidRequest("종목코드는 6자리 숫자입니다.", detail={"ticker": ticker})
