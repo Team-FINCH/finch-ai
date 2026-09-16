@@ -150,3 +150,49 @@ async def test_예산이_소진되면_재시도하지_않고_남은_사용자를
     assert result.skipped == 2
     assert result.budget_exhausted is True
     assert result.as_dict()["budget_exhausted"] is True
+
+
+@pytest.mark.anyio
+async def test_배치는_브리핑_뒤에_진단도_미리_만들고_보유_없음은_건너뛴다(monkeypatch):
+    from app.api.routes.briefing import BriefingContent
+    from app.core.errors import InsufficientData
+    from app.core.schemas import Envelope
+    from ingest import briefings
+
+    calls: list[str] = []
+
+    async def fake_briefing(user_id, session, day, *, use_cache):
+        return Envelope[BriefingContent](
+            content={
+                "date": None,
+                "status": "empty",
+                "generated_at": "2026-09-16T09:20:00+09:00",
+                "items": [],
+            }
+        )
+
+    async def fake_diagnosis(user_id, session):
+        calls.append(user_id)
+        raise InsufficientData("보유 종목이 없어 진단할 대상이 없습니다.")
+
+    class Guard:
+        async def enter_system(self, *a, **k):
+            return object()
+
+    monkeypatch.setattr(briefings, "build_briefing", fake_briefing)
+    monkeypatch.setattr(briefings, "build_diagnosis", fake_diagnosis)
+    monkeypatch.setattr(briefings, "reset_usage", lambda token: None)
+
+    class Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+    monkeypatch.setattr(briefings, "SessionFactory", lambda: Session())
+
+    envelope = await briefings._generate(Guard(), "u1", None, force=False)
+
+    assert envelope.content.status == "empty"
+    assert calls == ["u1"]  # 진단을 시도했고, 보유 없음은 예외로 번지지 않는다

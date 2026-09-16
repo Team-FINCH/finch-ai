@@ -22,6 +22,7 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, DbSession, UsageLimit
 from app.core.adapters import Ledger, ledger_source
@@ -325,7 +326,8 @@ def _diagnosis_fingerprint(snapshot: PortfolioSnapshot, prompt_version: str) -> 
                 "symbol": holding.symbol,
                 "quantity": format(holding.quantity, ".8f"),
                 "avg_cost": format(holding.avg_cost, ".8f"),
-                "price": format(holding.price, ".8f"),
+                # 현재가는 넣지 않는다. 장중 호가가 바뀔 때마다 지문이 바뀌어 조회마다
+                # 재생성됐다(운영 히트율 26%). 지표는 종가 시계열로 계산하므로 거래일이면 된다.
             }
             for holding in sorted(snapshot.holdings, key=lambda item: item.symbol)
         ],
@@ -371,7 +373,12 @@ def _cached_content(row: PortfolioDiagnosisCache) -> DiagnosisContent | None:
 async def diagnosis(
     user_id: CurrentUser, db: DbSession, _usage: UsageLimit
 ) -> Envelope[DiagnosisContent]:
-    """위험 지표를 계산하고 상위 항목을 설명한다(§5).
+    """위험 지표를 계산하고 상위 항목을 설명한다(§5). 본문은 `build_diagnosis`."""
+    return await build_diagnosis(user_id, db)
+
+
+async def build_diagnosis(user_id: str, db: AsyncSession) -> Envelope[DiagnosisContent]:
+    """사용자 진단을 조회하거나 생성한다. 배치(`ingest.briefings`)와 라우터가 같이 쓴다.
 
     히스토리가 짧으면 409로 끊지 않는다. 집중도·현금·금리민감도 진단은 그대로 유효해서
     신규 포트폴리오에도 절반은 답할 수 있다. 대신 `risk_score`·`risk_level`·
