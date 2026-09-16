@@ -25,7 +25,7 @@ from datetime import date, timedelta
 from sqlalchemy import distinct, select
 
 from app.api.routes.briefing import BriefingContent, build_briefing
-from app.api.routes.portfolio import build_diagnosis
+from app.api.routes.portfolio import build_attribution, build_diagnosis
 from app.core.config import settings
 from app.core.db import SessionFactory, engine
 from app.core.errors import InsufficientData, RateLimited
@@ -102,13 +102,14 @@ async def _generate(
     try:
         async with SessionFactory() as session:
             envelope = await build_briefing(user_id, session, day, use_cache=not force)
-        # 진단도 같은 배치에서 미리 만든다. 지문(보유·거래일)이 같으면 저장값이라
-        # 비용이 없고, 보유가 없거나 원장을 못 읽으면 InsufficientData 라 건너뛴다.
-        try:
-            async with SessionFactory() as session:
-                await build_diagnosis(user_id, session)
-        except InsufficientData:
-            pass
+        # 진단과 수익률 원인 분석(1d)도 같은 배치에서 미리 만든다. 이미 그날 것이 있으면
+        # 저장값이라 비용이 없고, 보유가 없거나 원장을 못 읽으면 InsufficientData 라 건너뛴다.
+        for build in (build_diagnosis, build_attribution):
+            try:
+                async with SessionFactory() as session:
+                    await build(user_id, session)
+            except InsufficientData:
+                pass
         return envelope
     finally:
         reset_usage(token)

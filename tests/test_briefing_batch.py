@@ -181,6 +181,7 @@ async def test_배치는_브리핑_뒤에_진단도_미리_만들고_보유_없�
 
     monkeypatch.setattr(briefings, "build_briefing", fake_briefing)
     monkeypatch.setattr(briefings, "build_diagnosis", fake_diagnosis)
+    monkeypatch.setattr(briefings, "build_attribution", fake_diagnosis)
     monkeypatch.setattr(briefings, "reset_usage", lambda token: None)
 
     class Session:
@@ -195,4 +196,4 @@ async def test_배치는_브리핑_뒤에_진단도_미리_만들고_보유_없�
     envelope = await briefings._generate(Guard(), "u1", None, force=False)
 
     assert envelope.content.status == "empty"
-    assert calls == ["u1"]  # 진단을 시도했고, 보유 없음은 예외로 번지지 않는다
+    assert calls == ["u1", "u1"]  # 진단·원인 분석을 시도했고, 보유 없음은 예외로 번지지 않는다

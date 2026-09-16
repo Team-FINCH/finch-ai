@@ -578,7 +578,17 @@ async def _cached_attribution(
 async def attribution(
     body: AttributionRequest, user_id: CurrentUser, db: DbSession, _usage: UsageLimit
 ) -> Envelope[AttributionContent]:
-    """기간 수익률을 시장·섹터·선택으로 분해한다(§6).
+    """기간 수익률을 시장·섹터·선택으로 분해한다(§6). 본문은 `build_attribution`."""
+    return await build_attribution(user_id, db, body.period)
+
+
+async def build_attribution(
+    user_id: str, db: AsyncSession, period: Period = Period.D1
+) -> Envelope[AttributionContent]:
+    """기간 수익률 분해를 조회하거나 생성한다. 배치(`ingest.briefings`)와 라우터가 같이 쓴다.
+
+    사용자·기간·마지막 거래일로 캐시하므로 기간당 하루 한 번만 생성된다. 프런트가 쓰는
+    `1d` 는 아침 배치가 미리 만들고, 다른 기간은 요청 때 만들어 그날 캐시된다.
 
     벤치마크는 시가총액으로 합성한 시장 전체다 — 왜 업종지수를 쓰지 않는지는
     `app.engines.attribution` 모듈 설명에 적혀 있다. 원장을 못 읽거나 구간에 거래일이
@@ -597,14 +607,12 @@ async def attribution(
     if not rows:
         raise InsufficientData("수익률을 낼 수 있는 거래일이 없습니다.")
 
-    window = [
-        row for row in rows if row.trade_date >= _period_start(body.period, rows[-1].trade_date)
-    ]
+    window = [row for row in rows if row.trade_date >= _period_start(period, rows[-1].trade_date)]
     if not window:
-        raise InsufficientData(f"{body.period.value} 구간에 거래일이 없습니다.")
+        raise InsufficientData(f"{period.value} 구간에 거래일이 없습니다.")
 
     days = [row.trade_date for row in window]
-    if (hit := await _cached_attribution(db, user_id, body.period.value, days[-1])) is not None:
+    if (hit := await _cached_attribution(db, user_id, period.value, days[-1])) is not None:
         await record(db, hit, user_id=user_id, endpoint="portfolio.attribution")
         return hit
     weights = [{c.symbol: c.weight for c in row.contributions} for row in window]
@@ -644,7 +652,7 @@ async def attribution(
         prompt="attribution",
         client=client,
         engine_values=_attribution_segments(result),
-        request=_attribution_request(result, body.period),
+        request=_attribution_request(result, period),
     )
     if outcome.section is None:
         log.warning("성과 요인 요약 생성 실패 · %s", "; ".join(outcome.reasons))
@@ -653,7 +661,7 @@ async def attribution(
     last = PortfolioEngine(ledger).snapshot(days[-1])
     envelope = Envelope[AttributionContent](
         content={
-            "period": body.period.value,
+            "period": period.value,
             "start": days[0].isoformat(),
             "end": days[-1].isoformat(),
             "trading_days": result.trading_days,
