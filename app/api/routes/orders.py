@@ -49,7 +49,6 @@ router = APIRouter(prefix="/orders", tags=["orders"])
 Number = float | int
 
 _SOURCE = MetricSource.RISK_ENGINE
-_SUMMARY_TITLE = "주문 요약"
 
 #: 모델이 "어긋나는 점 없음"을 알리는 고정 문구. 프롬프트가 이 문자열을 그대로 지정하고
 #: 서버가 접두사로 걸러 낸다 — 없는 충돌을 채워 넣지 않게 하려면 "안 씀"을 표현할
@@ -106,8 +105,9 @@ class PreviewWarning(BaseModel):
     before: Number | None
     after: Number
     threshold: Number
-    text: str | None
-    segments: list[Segment] | None
+    #: 문장은 만들지 않는다. 엔진 수치(before·after·threshold)를 프런트가 그린다.
+    text: str | None = None
+    segments: list[Segment] | None = None
 
 
 class ThesisConflict(BaseModel):
@@ -337,30 +337,9 @@ def _raised(before: RiskAssessment, after: RiskAssessment) -> list[Finding]:
     ]
 
 
-def _deterministic_summary(
-    order_summary: Sequence[Mapping[str, Any]],
-    feasible: bool,
-    cash: float,
-    raised: Sequence[Finding],
-) -> str:
-    orders = ", ".join(
-        f"{row['ticker']} {row['side']} {row['quantity']}주" for row in order_summary
-    )
-    parts = [f"주문 {orders}을 가정해 포트폴리오 위험 지표를 비교했습니다."]
-    if not feasible:
-        parts.append(f"현금이 {round(-cash):,}원 부족합니다.")
-    elif raised:
-        titles = ", ".join(_FINDING_TITLES.get(f.id, f.id) for f in raised)
-        parts.append(f"주문 후 {titles} 위험이 새로 발생하거나 높아집니다.")
-    else:
-        parts.append("주문 후 새로 높아진 위험 항목은 없습니다.")
-    return " ".join(parts)
-
-
-def _deterministic_warning(finding: Finding, before: RiskAssessment) -> dict[str, Any]:
-    title = _FINDING_TITLES.get(finding.id, finding.id)
-    text = f"{title} 위험이 기준치를 넘었습니다. 엔진 계산 결과를 확인해 주세요."
-    return {"text": text, "segments": []}
+# 주문 전 점검은 LLM 도 프리셋 문장도 쓰지 않는다. 엔진 차분(before·after·delta·
+# warnings·shortfall)만 보내고 문장은 화면이 수치로 만든다. 서버가 "현금이 N원 부족합니다"
+# 같은 문장을 조립하면 프런트가 같은 수치를 두 번 표현하고, 문구 정책이 두 곳에 갈린다.
 
 
 # ── 위키 ──────────────────────────────────────────────────────────────────────
@@ -437,7 +416,6 @@ async def preview(
     before_measures, after_measures = _measures(before), _measures(after)
     raised = _raised(before, after)
     feasible = after_snapshot.cash >= 0.0
-    summary_text = _deterministic_summary(order_summary, feasible, after_snapshot.cash, raised)
 
     envelope = Envelope[PreviewContent](
         content={
@@ -457,18 +435,11 @@ async def preview(
                     "before": next((f.value for f in before.findings if f.id == finding.id), None),
                     "after": finding.value,
                     "threshold": finding.threshold,
-                    **_deterministic_warning(finding, before),
                 }
                 for finding in raised
             ],
             "thesis_conflicts": [],
-            "summary": {
-                "title": _SUMMARY_TITLE,
-                "text": summary_text,
-                "segments": [],
-                "cached": False,
-                "cached_at": None,
-            },
+            "summary": None,
         },
         data_as_of=DataAsOf(
             price=_as_datetime(before_snapshot),

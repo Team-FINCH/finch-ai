@@ -695,8 +695,8 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
       "before": 0.4230,
       "after": 0.5044,
       "threshold": 0.3500,
-      "text": "이 주문은 반도체 업종 비중을 50.4%로 올립니다. …",
-      "segments": [ ]
+      "text": null,
+      "segments": null
     }
   ],
   "thesis_conflicts": [
@@ -710,24 +710,20 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
       "segments": [ ]
     }
   ],
-  "summary": {
-    "title": "주문 요약",
-    "text": "이 주문을 실행하면 …",
-    "segments": [ ],
-    "cached": false,
-    "cached_at": null
-  }
+  "summary": null
 }
 ```
+
+**문장은 만들지 않는다 (2026-09-16).** LLM 도, "현금이 N원 부족합니다" 같은 프리셋 문장도 쓰지 않는다. 엔진 차분(`before` · `after` · `delta` · `warnings` · `shortfall`)만 보내고 화면이 수치로 문장을 만든다. `summary` 는 항상 `null`, `warnings[].text` · `segments` 도 `null` 이다.
 
 | 키 | 실제 출력 |
 | --- | --- |
 | `order_summary` | 체결을 가정한 주문 한 줄씩. `price`를 생략했으면 여기 채워진 값이 실제 사용된 단가다 |
 | `before` · `after` | [§5](#ep-diagnosis) `indicators`에서 `sector_count`를 제외한 열한 키에 `top_sector_weight`를 더한 **열두 키**. 양쪽 키 구성은 같다 |
 | `delta` | `after − before`. **숫자인 지표만 담긴다** — `rate_sensitivity`처럼 문자열이거나 한쪽이 `null`인 지표는 키째로 빠진다 |
-| `warnings` | 이 주문 때문에 **새로 걸렸거나 등급이 올라간** 항목만. 나아진 항목은 요약이 말한다. 첫 발생이면 `before`가 `null` |
+| `warnings` | 이 주문 때문에 **새로 걸렸거나 등급이 올라간** 항목만. `title` · `metric` · `before` · `after` · `threshold` 로 화면이 문장을 만든다. `text` · `segments` 는 `null`. 첫 발생이면 `before`가 `null` |
 | `thesis_conflicts` | 주문에 오른 종목의 `user_stated` 논지 중 어긋난 것만. 충돌이 없으면 빈 배열 |
-| `summary` | [§12](#types) Section 다섯 키. 생성이 막히면 `null` |
+| `summary` | 항상 `null`. 서버는 문장을 만들지 않는다 |
 
 `feasible`이 `false`면 현금 부족이며 부족액은 **최상위 `shortfall`**에 담긴다 (에러가 아니라 200 응답의 본문이다. 부족하지 않으면 `null`). `thesis_conflicts`는 **사용자가 직접 진술한 항목(`user_stated`)만** 사용한다. AI가 추론한 성향으로 주문에 이의를 제기하면 근거 없는 참견이 된다.
 

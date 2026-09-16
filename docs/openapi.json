@@ -2798,9 +2798,7 @@
           "metric",
           "before",
           "after",
-          "threshold",
-          "text",
-          "segments"
+          "threshold"
         ],
         "title": "PreviewWarning",
         "type": "object"
