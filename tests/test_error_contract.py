@@ -69,10 +69,6 @@ async def _no_hits(*_: Any, **__: Any) -> list[dict]:
     return []
 
 
-async def _no_thesis(*_: Any, **__: Any) -> None:
-    return None
-
-
 class _LiveClient:
     """NullLlmClient만 아니면 된다. 이 자리의 테스트는 LLM에 닿기 전에 끝난다."""
 
@@ -94,7 +90,6 @@ def test_종목분석_LLM_타임아웃은_504다(monkeypatch):
         monkeypatch,
         app__api__routes__stocks__get_llm_client=lambda: _TimingOutClient(),
         app__api__routes__stocks__search=_no_hits,
-        app__api__routes__stocks__get_active_thesis=_no_thesis,
     )
     res = client.post(STOCKS_URL, json={"sections": ["current"]}, headers=AUTH)
     assert res.status_code == 504
@@ -107,7 +102,6 @@ def test_종목분석_근거_검색_실패는_502다(monkeypatch):
         monkeypatch,
         app__api__routes__stocks__get_llm_client=lambda: _LiveClient(),
         app__api__routes__stocks__search=_retrieval_failed,
-        app__api__routes__stocks__get_active_thesis=_no_thesis,
     )
     res = client.post(STOCKS_URL, json={"sections": ["current"]}, headers=AUTH)
     assert res.status_code == 502
@@ -119,7 +113,6 @@ def test_종목분석_LLM_키가_없으면_409다(monkeypatch):
     client = _app(
         monkeypatch,
         app__api__routes__stocks__search=_no_hits,
-        app__api__routes__stocks__get_active_thesis=_no_thesis,
     )
     res = client.post(STOCKS_URL, json={"sections": ["current"]}, headers=AUTH)
     assert res.status_code == 409
