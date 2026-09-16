@@ -141,7 +141,9 @@ async def prebuild_analyses(guard: UsageGuard) -> tuple[int, int, list[str]]:
         )
         try:
             async with SessionFactory() as session:
-                envelope = await build_analysis(ticker, body, ANALYSIS_BATCH_USER, session)
+                envelope = await build_analysis(
+                    ticker, body, ANALYSIS_BATCH_USER, session, retry_failed=True
+                )
             if envelope.cached:
                 cached += 1
             else:
