@@ -234,9 +234,6 @@ async def _cached_common_sections(
                 select(AIResponse)
                 .where(
                     AIResponse.endpoint == "stocks.analysis",
-                    # 캐시 히트도 기록되므로 그 행을 다시 집으면 TTL 이 영원히 늘어난다.
-                    # 실제 생성 행만 캐시 원본으로 친다.
-                    AIResponse.cached.is_(False),
                     AIResponse.prompt_version == version,
                     AIResponse.created_at >= now - _COMMON_CACHE_TTL,
                     *([AIResponse.user_id == user_id] if user_id else []),
@@ -267,7 +264,12 @@ async def _cached_common_sections(
         if cached_at.tzinfo is None:
             cached_at = cached_at.replace(tzinfo=now.tzinfo)
         for key in keys - selected.keys():
-            if sections.get(key) is not None:
+            # 그 행에서 실제로 생성한 섹션만 원본이다. 복사된 섹션은 `cached: true` 로
+            # 저장되므로 그걸 다시 집으면 TTL 이 영원히 늘어난다. 행 단위 `cached` 로
+            # 가르면 일부만 생성한 행(배치의 부분 캐시 히트, 검사 실패 뒤 재생성)의
+            # 새 섹션까지 버려져 매 요청 그 섹션을 다시 만드는 루프가 생긴다.
+            section = sections.get(key)
+            if section is not None and not section.get("cached"):
                 selected[key] = {
                     **sections[key],
                     "cached": True,
@@ -399,7 +401,9 @@ async def build_analysis(
             "sections": sections,
         },
         citations=citations,
-        cached=bool(cached),
+        # 요청한 섹션을 하나도 새로 만들지 않았을 때만 캐시 히트다. 일부만 생성한
+        # 응답을 true 로 남기면 대시보드 히트율이 부풀고 토큰이 0 이 아닌 히트가 생긴다.
+        cached=bool(cached) and not tasks,
         data_as_of=DataAsOf(
             price=cached_data.price,
             filings=max(
