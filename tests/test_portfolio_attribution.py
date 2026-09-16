@@ -543,3 +543,20 @@ def test_문장_생성이_실패해도_숫자는_나온다(monkeypatch: pytest.M
     assert content["summary"] is None
     assert content["breakdown"]["market"] is not None
     assert content["contributors"] or content["detractors"]
+
+
+def test_기여_종목의_return_은_저장된_이름으로도_되읽힌다():
+    """응답 로그가 `return_` 로 저장한 JSON 을 캐시 조회가 검증할 수 있어야 한다."""
+    from app.api.routes.portfolio import AttributionContributor
+
+    base = {
+        "ticker": "005930",
+        "name": "삼성전자",
+        "sector": "반도체",
+        "weight": 0.5,
+        "contribution": 0.005,
+        "held_at_start": True,
+        "events": [],
+    }
+    assert AttributionContributor.model_validate({**base, "return_": 0.01}).return_ == 0.01
+    assert AttributionContributor.model_validate({**base, "return": 0.02}).return_ == 0.02
