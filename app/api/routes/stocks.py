@@ -14,7 +14,7 @@ import asyncio
 import logging
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from enum import StrEnum
 from typing import Annotated, Any
 
@@ -24,26 +24,21 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, DbSession, UsageLimit
-from app.core.adapters import ledger_source
 from app.core.config import settings
-from app.core.enums import EventType, MetricSource, WikiSource
+from app.core.enums import EventType
 from app.core.errors import InsufficientData, InvalidRequest, LLMTimeout
 from app.core.models import AIResponse, Event, Instrument
 from app.core.response_log import record
 from app.core.schemas import Citation, ContentModel, DataAsOf, Envelope, Segment, now_kst
-from app.engines.portfolio import Holding, PortfolioEngine, PortfolioSnapshot
 from app.llm.client import NullLlmClient, get_llm_client
 from app.llm.generate import (
     SectionOutcome,
     citations_from_hits,
     documents_block,
     generate_section,
-    ratio_segment,
 )
-from app.llm.guard import Feature
 from app.llm.versioning import prompt_version_for
 from app.rag.search import search
-from app.wiki.store import get_active_thesis
 
 log = logging.getLogger("app.api.stocks")
 
@@ -90,6 +85,7 @@ _COMMON_CACHE_TTL = timedelta(hours=settings.analysis_cache_ttl_h)
 
 class AnalysisRequest(BaseModel):
     sections: list[AnalysisSectionName] | None = Field(default=None)
+    #: 계약 호환용. 종목 분석은 사용자와 무관해 이 값은 무시된다.
     personalize: bool = True
 
 
@@ -172,41 +168,6 @@ class AnalysisContent(BaseModel):
 
 
 # ── 원장 ─────────────────────────────────────────────────
-async def _snapshot(user_id: str) -> PortfolioSnapshot | None:
-    """마지막 거래일 기준 스냅샷. 원장을 못 읽으면 None이다.
-
-    어느 원장을 읽을지는 `ledger_source()` 가 정한다(설정 `LEDGER_SOURCE`).
-    원천이 없거나(`none`) 읽기에 실패하면 없는 것을 억지로 만들지 않고 개인화
-    섹션만 조용히 비운다 — §3이 정한 동작이다.
-    """
-    source = ledger_source()
-    if source is None:
-        return None
-    try:
-        ledger = await source.load(user_id)
-    except (KeyError, FileNotFoundError, OSError):
-        return None
-    if not ledger.trading_days:
-        return None
-    return PortfolioEngine(ledger).snapshot(ledger.trading_days[-1])
-
-
-def _find(snapshot: PortfolioSnapshot | None, ticker: str) -> Holding | None:
-    if snapshot is None:
-        return None
-    return next((h for h in snapshot.holdings if h.symbol == ticker), None)
-
-
-def _impact_values(holding: Holding, snapshot: PortfolioSnapshot) -> dict[str, Segment]:
-    source = MetricSource.PORTFOLIO_ENGINE
-    return {
-        "weight": ratio_segment(holding.weight, source),
-        "stock_weight": ratio_segment(holding.stock_weight, source),
-        "return_rate": ratio_segment(holding.return_rate, source, signed=True),
-        "top1_weight": ratio_segment(snapshot.concentration().top1, source),
-    }
-
-
 async def _upcoming_events(
     db: DbSession, ticker: str, *, today: date | None = None
 ) -> list[UpcomingEvent]:
@@ -361,51 +322,19 @@ async def build_analysis(
     if not _TICKER_RE.fullmatch(ticker):
         raise InvalidRequest("종목코드는 6자리 숫자입니다.", detail={"ticker": ticker})
 
-    requested = list(body.sections or SECTIONS)
+    # 종목 분석은 종목 단위 정보다 — 공시·뉴스만으로 만들고 사용자 보유·논지에
+    # 따라 달라지지 않는다. 개인 섹션(my_impact·thesis_check)은 요청해도 만들지
+    # 않고 응답에서 빠진다. 사용자별 생성이 요청마다 LLM 을 태우고 검사에 자주
+    # 걸려 화면이 늦어지던 것이 이유다. 아침 배치가 30종목 공통 섹션을 미리 만든다.
+    requested = [key for key in (body.sections or SECTIONS) if key not in PERSONAL_SECTIONS]
     unknown = [key for key in requested if key not in SECTION_TITLES]
     if unknown:
         raise InvalidRequest("알 수 없는 섹션입니다.", detail={"sections": unknown})
 
     now = now_kst()
-    common_requested = set(requested) & COMMON_SECTIONS
-    cached = await _cached_common_sections(db, ticker, common_requested, now=now)
-    snapshot = await _snapshot(user_id) if body.personalize else None
-    holding = _find(snapshot, ticker)
-    thesis = (
-        await get_active_thesis(db, user_id, ticker)
-        if body.personalize and "thesis_check" in requested
-        else None
-    )
-    # 개인 섹션도 같은 TTL 로 캐시한다. 원장 기준일이 같고 논지가 캐시 이후 바뀌지
-    # 않았을 때만 유효하다. 호출 자체가 GMS 토큰을 쓰므로 재진입마다 2회를 아낀다.
-    # ponytail: 같은 거래일 안의 장중 매매는 TTL 까지 반영되지 않는다. 문제되면
-    # 보유 수량을 지문에 넣는다.
-    personal_keys = {
-        key
-        for key in requested
-        if key in PERSONAL_SECTIONS
-        and body.personalize
-        and not (key == "my_impact" and (holding is None or snapshot is None))
-        and not (key == "thesis_check" and thesis is None)
-    }
-    personal = await _cached_common_sections(db, ticker, personal_keys, now=now, user_id=user_id)
-    if personal is not None and (
-        personal.data_as_of.portfolio != _as_datetime(snapshot)
-        or (thesis is not None and thesis.recorded_at > personal.cached_at)
-    ):
-        personal = None
+    cached = await _cached_common_sections(db, ticker, set(requested), now=now)
     generation_keys = [
-        key
-        for key in requested
-        if not (cached is not None and key in cached.sections)
-        and not (personal is not None and key in personal.sections)
-    ]
-    generation_keys = [
-        key
-        for key in generation_keys
-        if not (key in PERSONAL_SECTIONS and not body.personalize)
-        and not (key == "my_impact" and (holding is None or snapshot is None))
-        and not (key == "thesis_check" and thesis is None)
+        key for key in requested if not (cached is not None and key in cached.sections)
     ]
 
     client = get_llm_client()
@@ -431,33 +360,12 @@ async def build_analysis(
     shared = {"citations": citations, "documents": documents, "client": client}
     tasks: dict[str, Any] = {}
     for key in generation_keys:
-        if key == "my_impact":
-            if holding is None or snapshot is None:
-                continue  # 비보유 종목은 null. 에러가 아니다(§3).
-            tasks[key] = generate_section(
-                key,
-                title=SECTION_TITLES[key],
-                engine_values=_impact_values(holding, snapshot),
-                **shared,
-            )
-        elif key == "thesis_check":
-            if thesis is None:
-                continue
-            tasks[key] = generate_section(
-                key,
-                title=SECTION_TITLES[key],
-                feature=Feature.THESIS_CHECK,
-                wiki=f"{thesis.text} (기록: {thesis.recorded_at:%Y-%m-%d})",
-                wiki_source=WikiSource(thesis.source),
-                **shared,
-            )
-        else:
-            tasks[key] = generate_section(
-                key,
-                title=SECTION_TITLES[key],
-                schedule=_schedule_block(upcoming_events) if key == "next_events" else "",
-                **shared,
-            )
+        tasks[key] = generate_section(
+            key,
+            title=SECTION_TITLES[key],
+            schedule=_schedule_block(upcoming_events) if key == "next_events" else "",
+            **shared,
+        )
 
     outcomes: list[SectionOutcome] = list(await asyncio.gather(*tasks.values()))
     if (
@@ -472,41 +380,12 @@ async def build_analysis(
     sections: dict[str, Any] = dict.fromkeys(requested)
     if cached:
         sections.update(cached.sections)
-    if personal:
-        sections.update(personal.sections)
-    outcomes_by_key = {outcome.key: outcome for outcome in outcomes}
     for outcome in outcomes:
         if outcome.section is None:
             log.warning("섹션 %s 생성 실패 · %s", outcome.key, "; ".join(outcome.reasons))
             continue
         sections[outcome.key] = outcome.section.model_dump(mode="json")
 
-    # 캐시에서 온 thesis_check 는 이미 논지·근거 분류가 들어 있다.
-    if "thesis_check" in outcomes_by_key and sections["thesis_check"] and thesis is not None:
-        evidence_by_id = {citation.id: citation for citation in citations}
-        classified = outcomes_by_key["thesis_check"].thesis_evidence
-
-        def _evidence_payload(stance: str) -> list[dict[str, str]]:
-            return [
-                {
-                    "citation_id": item.citation_id,
-                    "title": evidence_by_id[item.citation_id].title,
-                    "source": evidence_by_id[item.citation_id].source,
-                    "rationale": item.rationale,
-                }
-                for item in classified
-                if item.stance == stance
-            ]
-
-        sections["thesis_check"] |= {
-            "thesis": {
-                "text": thesis.text,
-                "recorded_at": thesis.recorded_at.isoformat(),
-                "source": thesis.source,
-            },
-            "supporting": _evidence_payload("supporting"),
-            "challenging": _evidence_payload("challenging"),
-        }
     if "next_events" in generation_keys and sections.get("next_events"):
         sections["next_events"]["events"] = [
             event.model_dump(mode="json") for event in upcoming_events
@@ -516,14 +395,13 @@ async def build_analysis(
     envelope = Envelope[AnalysisContent](
         content={
             "ticker": ticker,
-            "name": (await _display_name(db, snapshot, ticker, cached.name if cached else None)),
+            "name": await _display_name(db, ticker, cached.name if cached else None),
             "sections": sections,
         },
         citations=citations,
         cached=bool(cached),
         data_as_of=DataAsOf(
             price=cached_data.price,
-            portfolio=_as_datetime(snapshot),
             filings=max(
                 (h["published_at"] for h in hits if h.get("published_at")),
                 default=cached_data.filings,
@@ -536,18 +414,6 @@ async def build_analysis(
     return envelope
 
 
-async def _display_name(
-    db: DbSession, snapshot: PortfolioSnapshot | None, ticker: str, fallback: str | None
-) -> str:
-    holding = _find(snapshot, ticker)
-    if holding:
-        return holding.name
+async def _display_name(db: DbSession, ticker: str, fallback: str | None) -> str:
     name = await db.scalar(select(Instrument.name).where(Instrument.ticker == ticker))
     return name or fallback or ticker
-
-
-def _as_datetime(snapshot: PortfolioSnapshot | None) -> datetime | None:
-    """스냅샷 기준일을 장 마감 시각으로 본다. 종가 기준이기 때문이다."""
-    if snapshot is None:
-        return None
-    return datetime.combine(snapshot.trade_date, time(15, 30))

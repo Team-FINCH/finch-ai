@@ -94,7 +94,6 @@ def client(monkeypatch):
     fake = FakeClient()
     monkeypatch.setattr("app.api.routes.stocks.get_llm_client", lambda: fake)
     monkeypatch.setattr("app.api.routes.stocks.search", _no_hits)
-    monkeypatch.setattr("app.api.routes.stocks.get_active_thesis", _no_thesis)
     monkeypatch.setattr("app.api.routes.stocks._upcoming_events", _no_upcoming_events)
     monkeypatch.setattr("app.api.routes.stocks._cached_common_sections", _no_cache)
     app = create_app()
@@ -108,10 +107,6 @@ def client(monkeypatch):
 
 async def _no_hits(*_: Any, **__: Any) -> list[dict]:
     return []
-
-
-async def _no_thesis(*_: Any, **__: Any) -> None:
-    return None
 
 
 async def _no_upcoming_events(*_: Any, **__: Any) -> list[Any]:
@@ -242,102 +237,15 @@ def test_섹션_명칭은_출처_귀속형이다(client):
 
 def test_생략하면_전체_섹션을_시도한다(client):
     sections = _post(client, {}).json()["content"]["sections"]
-    assert set(sections) == {
-        "current",
-        "changes",
-        "attention",
-        "risks",
-        "my_impact",
-        "thesis_check",
-        "next_events",
-    }
+    # 개인 섹션(my_impact·thesis_check)은 종목 단위 분석이라 응답에 없다.
+    assert set(sections) == {"current", "changes", "attention", "risks", "next_events"}
 
 
-def test_보유_종목이면_수치가_치환된다(client):
-    section = _post(client, {"sections": ["my_impact"]}).json()["content"]["sections"]["my_impact"]
-    assert "{{" not in section["text"]
-    metrics = [s for s in section["segments"] if s["type"] == "metric"]
-    assert metrics
-    assert metrics[0]["source"] == "portfolio_engine"
-    assert "".join(s["value"] for s in section["segments"]) == section["text"]
-
-
-def test_비보유_종목의_개인화_섹션은_null이다(client):
-    """에러가 아니다. 명세 §3."""
-    body = _post(client, {"sections": ["my_impact", "current"]}, user=STRANGER).json()
-    assert body["content"]["sections"]["my_impact"] is None
-    assert body["content"]["sections"]["current"] is not None
-
-
-def test_personalize가_false면_개인화_섹션을_만들지_않는다(client):
-    sections = _post(
-        client, {"sections": ["my_impact", "thesis_check"], "personalize": False}
-    ).json()["content"]["sections"]
-    assert sections == {"my_impact": None, "thesis_check": None}
-    assert client.llm.calls == []
-
-
-def test_논지가_없으면_thesis_check는_null이다(client):
-    body = _post(client, {"sections": ["thesis_check"]}).json()
-    assert body["content"]["sections"]["thesis_check"] is None
-
-
-def test_논지가_있으면_기록을_함께_돌려준다(client, monkeypatch):
-    class Thesis:
-        text = "HBM 구조적 성장에 베팅"
-        recorded_at = datetime(2026, 3, 11, 10, 22)
-        source = "user_stated"
-
-    async def _thesis(*_: Any, **__: Any):
-        return Thesis()
-
-    monkeypatch.setattr("app.api.routes.stocks.get_active_thesis", _thesis)
-    section = _post(client, {"sections": ["thesis_check"]}).json()["content"]["sections"][
-        "thesis_check"
-    ]
-    assert section["thesis"]["text"] == "HBM 구조적 성장에 베팅"
-    assert section["supporting"] == []
-    # 논지 원문이 프롬프트에 실려야 대조가 성립한다.
-    assert "HBM 구조적 성장에 베팅" in client.llm.calls[0]["user"]
-
-
-def test_논지와_관련된_검색_근거를_방향별로_분류한다(client, monkeypatch):
-    class Thesis:
-        text = "HBM 구조적 성장에 베팅"
-        recorded_at = datetime(2026, 3, 11, 10, 22)
-        source = "user_stated"
-
-    async def _thesis(*_: Any, **__: Any):
-        return Thesis()
-
-    async def _hits(*_: Any, **__: Any) -> list[dict]:
-        return [
-            {
-                "text": "HBM 사업 매출이 확대되었다",
-                "ticker": "005930",
-                "title": "분기보고서",
-                "source": "DART",
-                "published_at": datetime(2026, 8, 14, 16, 12),
-                "similarity": 0.91,
-            }
-        ]
-
-    monkeypatch.setattr("app.api.routes.stocks.get_active_thesis", _thesis)
-    monkeypatch.setattr("app.api.routes.stocks.search", _hits)
-
-    section = _post(client, {"sections": ["thesis_check"]}).json()["content"]["sections"][
-        "thesis_check"
-    ]
-
-    assert section["supporting"] == [
-        {
-            "citation_id": "cit_1",
-            "title": "분기보고서",
-            "source": "DART",
-            "rationale": "HBM 사업 확대가 기록된 투자 이유를 뒷받침합니다.",
-        }
-    ]
-    assert section["challenging"] == []
+def test_개인_섹션을_요청해도_만들지_않고_응답에서_뺀다(client):
+    """종목 분석은 사용자와 무관한 종목 단위 정보다. 공시·뉴스만으로 만든다."""
+    body = _post(client, {"sections": ["my_impact", "thesis_check", "current"]}).json()
+    assert set(body["content"]["sections"]) == {"current"}
+    assert len(client.llm.calls) == 1  # 공통 섹션 하나만 생성한다
 
 
 def test_확정된_미래_일정을_next_events에_연결한다(client, monkeypatch):

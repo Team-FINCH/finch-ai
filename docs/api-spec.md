@@ -256,13 +256,12 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 
 ```
 {
-  "sections": ["current", "changes", "attention", "risks",
-               "my_impact", "thesis_check", "next_events"],
+  "sections": ["current", "changes", "attention", "risks", "next_events"],
   "personalize": true
 }
 ```
 
-`sections`를 생략하면 전체를 반환한다. 비보유 종목에서 `my_impact`·`thesis_check`를 요청하면 해당 섹션은 `null`로 반환되며 에러가 아니다.
+`sections`를 생략하면 다섯 섹션 전체를 반환한다. **종목 분석은 사용자와 무관한 종목 단위 정보**다 — 공시·뉴스만으로 만들고 보유·논지에 따라 달라지지 않는다. 사용자별이던 `my_impact`·`thesis_check`는 요청해도 만들지 않고 응답에서 빠진다(v0.9, 2026-09-16). `personalize`는 계약 호환용으로 받기만 하고 무시한다. 아침 배치가 서비스 30종목의 다섯 섹션을 미리 만들어 요청은 저장값을 돌려준다.
 
 #### Response — content
 
@@ -345,8 +344,7 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 | --- | --- |
 | `sections` | 요청한 `sections`의 키가 **그대로 전부** 들어온다. 값이 없는 섹션은 키가 빠지는 것이 아니라 `null`이다 |
 | 섹션 공통 | 모든 섹션은 [§12](#types) Section 다섯 키(`title · text · segments · cached · cached_at`)를 갖는다. `changes`·`attention`·`risks`도 예외가 아니다 |
-| `my_impact` | `personalize: true`이고 **보유 중일 때만** 값이 찬다. 아니면 `null` |
-| `thesis_check` | 기록된 활성 논지가 있을 때만 값이 차고, 그때 Section 다섯 키에 `thesis`·`supporting`·`challenging`이 더 붙는다 |
+| `my_impact` · `thesis_check` | 더 이상 만들지 않는다. 요청해도 응답에 키가 없다. 보유 영향은 포트폴리오 진단, 논지 점검은 위키·채팅이 맡는다 |
 | `next_events` | Section 다섯 키에 `events`가 더 붙는다 |
 | `cached` · `cached_at` | 6시간 안에 만든 같은 종목·같은 프롬프트 버전의 공통 섹션을 재사용하면 `true` / 원본 생성 시각. 새로 만든 섹션과 개인화 섹션은 `false` / `null` |
 
