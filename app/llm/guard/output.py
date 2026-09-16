@@ -156,8 +156,7 @@ def _fail(check: CheckName, *reasons: tuple[str, str | None]) -> CheckResult:
     return CheckResult(
         check=check,
         violations=tuple(
-            Violation(check=check, reason=reason, evidence=evidence)
-            for reason, evidence in reasons
+            Violation(check=check, reason=reason, evidence=evidence) for reason, evidence in reasons
         ),
     )
 
@@ -373,6 +372,17 @@ _NOISE = "〔〕"
 _ALLOWED_NUMERIC: tuple[re.Pattern[str], ...] = (
     re.compile(r"\d{4}\s*회계연도"),
     re.compile(r"\d{4}\s*년(?:도|대)?"),
+    # 날짜 표기와 단독 연도. 근거의 공시일을 "2026-09-15" 로 옮겨 적은 것을 수치로
+    # 반려하면 같은 문장이 매번 다시 나온다. 운영 반려 2위였다.
+    re.compile(r"(?<!\d)(?:19|20)\d{2}[-./]\d{1,2}[-./]\d{1,2}(?!\d)"),
+    re.compile(
+        r"(?<!\d)(?:19|20)\d{2}(?!\d)"
+        r"(?!\s*(?:원|주(?![요가식])|개(?![정최발선인시편장막])|건|명|배|%|퍼센트))"
+    ),
+    # 순위·설비 번호·세대. 운영 반려 1위가 '1' 이었고 1위·1호기가 그 자리였다.
+    re.compile(r"\d+\s*(?:위|호기|호선|호|세대|공장|라인|기(?![간업]))"),
+    # 기간으로서의 "한 주". 수량(주식 한 주)과 갈리는 자리는 앞뒤 말로 본다.
+    re.compile(r"(?:지난|이번|최근|한)\s*(?:한\s*)?주(?:간|\s*동안|\s*사이)"),
     re.compile(r"\d\s*분기"),
     re.compile(r"[상하]반기"),
     re.compile(r"\d{1,2}\s*월(?:\s*\d{1,2}\s*일)?"),
@@ -386,22 +396,25 @@ _ALLOWED_NUMERIC: tuple[re.Pattern[str], ...] = (
 
 #: 반드시 자리표시자로 써야 하는 표기. 금지 사유를 함께 둔다.
 _FORBIDDEN_NUMERIC: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("비율", re.compile(r"[\d,]+(?:\.\d+)?\s*%\s*(?:p|포인트)?")),
-    ("비율", re.compile(r"[\d,]+(?:\.\d+)?\s*퍼센트(?:\s*포인트)?")),
+    ("비율", re.compile(r"\d[\d,]*(?:\.\d+)?\s*%\s*(?:p|포인트)?")),
+    ("비율", re.compile(r"\d[\d,]*(?:\.\d+)?\s*퍼센트(?:\s*포인트)?")),
     ("비율", re.compile(r"\d+\s*분의\s*\d+")),
-    ("금액", re.compile(r"\$\s*[\d,]+(?:\.\d+)?")),
-    ("금액", re.compile(r"[\d,]+(?:\.\d+)?\s*(?:조|억|만|천|백)?\s*원")),
-    ("금액", re.compile(r"[\d,]+(?:\.\d+)?\s*(?:달러|엔|위안|유로)")),
-    ("금액", re.compile(r"[\d,]+(?:\.\d+)?\s*(?:조|억|만)(?!\s*원)")),
-    ("수량", re.compile(r"[\d,]+\s*(?:개월|일간|일\s*동안|주간|년간|년\s*동안|일째)")),
-    ("수량", re.compile(r"[\d,]+\s*(?:개|종목|주|건|곳|명|사|가지|차례|회|칸|판)")),
-    ("배수", re.compile(r"[\d,]+(?:\.\d+)?\s*배")),
-    ("배수", re.compile(r"(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*배")),
+    ("금액", re.compile(r"\$\s*\d[\d,]*(?:\.\d+)?")),
+    ("금액", re.compile(r"\d[\d,]*(?:\.\d+)?\s*(?:조|억|만|천|백)?\s*원")),
+    ("금액", re.compile(r"\d[\d,]*(?:\.\d+)?\s*(?:달러|엔|위안|유로)")),
+    ("금액", re.compile(r"\d[\d,]*(?:\.\d+)?\s*(?:조|억|만)(?!\s*원)")),
+    ("수량", re.compile(r"\d[\d,]*\s*(?:개월|일간|일\s*동안|주간|년간|년\s*동안|일째)")),
     (
         "수량",
         re.compile(
-            r"(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*(?:개|종목|주|건|곳|명|가지)"
+            r"\d[\d,]*\s*(?:개(?![정최발선인시편장막])|종목|주(?![요가식])|건|곳|명|사|가지|차례|회|칸|판)"
         ),
+    ),
+    ("배수", re.compile(r"\d[\d,]*(?:\.\d+)?\s*배")),
+    ("배수", re.compile(r"(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*배")),
+    (
+        "수량",
+        re.compile(r"(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*(?:개|종목|주|건|곳|명|가지)"),
     ),
 )
 
@@ -463,9 +476,7 @@ def check_engine_values(
             continue
         expected = engine_values[key]
         if value != expected:
-            problems.append(
-                ("치환 값이 엔진 출력과 다르다", f"{key}: {value!r} != {expected!r}")
-            )
+            problems.append(("치환 값이 엔진 출력과 다르다", f"{key}: {value!r} != {expected!r}"))
         elif expected not in rendered:
             problems.append(("치환한 값이 본문에 없다", f"{key}: {expected!r}"))
 

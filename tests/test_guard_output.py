@@ -347,9 +347,7 @@ def test_wiki_tone_rejects_assertion_for_ai_inferred() -> None:
     assert result.disposition is Disposition.REGENERATE
 
 
-@pytest.mark.parametrize(
-    "source", [WikiSource.USER_STATED, WikiSource.DERIVED_FROM_TRADES, None]
-)
+@pytest.mark.parametrize("source", [WikiSource.USER_STATED, WikiSource.DERIVED_FROM_TRADES, None])
 def test_wiki_tone_allows_assertion_for_confirmed_source(source: WikiSource | None) -> None:
     """사용자가 직접 말했거나 거래에서 나온 사실은 단정해도 된다."""
     assert check_wiki_tone("배당 성향을 중요하게 보십니다.", source).passed
@@ -436,6 +434,7 @@ def test_run_output_guard_block_wins_over_regenerate() -> None:
     report = run_output_guard(payload, context, stop_at_first_failure=False)
     assert report.disposition is Disposition.BLOCK
 
+
 def test_괄호를_빠뜨린_각주도_각주로_모은다():
     """모델이 ^cit_5 처럼 흘려 써도 표준 표기로 모은다.
 
@@ -464,6 +463,7 @@ def test_괄호_없는_각주도_지어낸_근거로_잡힌다():
     assert result.violations
     assert result.violations[0].evidence == "cit_9"
 
+
 def test_narrative_만_보낸_응답이_스키마를_통과한다():
     """모델은 narrative 만 보낸다. REQUIRED_FIELDS 가 그보다 많으면 전 기능이 죽는다.
 
@@ -489,3 +489,25 @@ def test_프롬프트가_없어진_필드를_요구하지_않는다():
 
     assert not stale, f"프롬프트가 없어진 필드를 요구한다: {stale}"
 
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "공시일은 2026-09-15 입니다.",  # 날짜
+        "2026 개정안이 통과됐습니다.",  # 단독 연도 + 개정
+        "국내 1위 사업자입니다.",  # 순위
+        "신한울 1호기가 재가동됐습니다.",  # 설비 번호
+        "지난 한 주 동안 등락이 컸습니다.",  # 기간으로서의 한 주
+        ", 원 단위로 표시됩니다.",  # 쉼표만 있는 자리는 수치가 아니다
+    ],
+)
+def test_운영에서_오탐이던_표기는_원시_수치가_아니다(text: str) -> None:
+    assert check_raw_number(text).passed, text
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["한 주를 추가 매수했습니다.", "2026개를 샀습니다.", "2026주를 샀습니다."],
+)
+def test_수량은_여전히_잡는다(text: str) -> None:
+    assert not check_raw_number(text).passed, text
