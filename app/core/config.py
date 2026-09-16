@@ -30,7 +30,9 @@ class Settings(BaseSettings):
     gms_key: str = ""
     gms_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-5-nano"
-    llm_max_tokens: int = 16_000
+    #: 추론 토큰 상한. low 실측 ~550 이라 여유 7배. 16_000 이면 모델이 추론에
+    #: 그만큼 쓸 수 있어 사용량 폭주를 막지 못한다 (2026-09-16 실측 high 4,480).
+    llm_max_tokens: int = 4_000
     llm_timeout_s: int = 30
     #: 최초 1회 + 재생성. GMS 크레딧의 대부분이 재생성에서 나가므로
     #: 배포 없이 조일 수 있게 설정으로 뺀다 (GitLab #64).
@@ -47,7 +49,7 @@ class Settings(BaseSettings):
     ai_rate_limit_orders_per_minute: int = 30
     ai_rate_limit_briefing_per_minute: int = 60
     ai_daily_token_budget: int = 500_000
-    ai_gms_reservation_tokens: int = 20_000
+    ai_gms_reservation_tokens: int = 6_000
     ai_gms_reservation_ttl_s: int = 5 * 60
 
     # 배치·스케줄러는 사용자가 누른 요청이 아니므로 개인 예산을 깎지 않는다. 대신

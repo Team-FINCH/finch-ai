@@ -260,7 +260,9 @@ async def _cached_common_sections(
     keys: set[str],
     *,
     now: datetime,
+    user_id: str | None = None,
 ) -> CachedAnalysis | None:
+    """`user_id` 를 주면 그 사용자의 응답만 본다 — 개인 섹션(`my_impact`·`thesis_check`) 용."""
     if not keys or db is None:
         return None
     version = prompt_version_for("stocks.analysis")
@@ -272,6 +274,7 @@ async def _cached_common_sections(
                     AIResponse.endpoint == "stocks.analysis",
                     AIResponse.prompt_version == version,
                     AIResponse.created_at >= now - _COMMON_CACHE_TTL,
+                    *([AIResponse.user_id == user_id] if user_id else []),
                 )
                 .order_by(AIResponse.created_at.desc())
                 .limit(20)
@@ -357,7 +360,30 @@ async def create_analysis(
         if body.personalize and "thesis_check" in requested
         else None
     )
-    generation_keys = [key for key in requested if cached is None or key not in cached.sections]
+    # 개인 섹션도 같은 TTL 로 캐시한다. 원장 기준일이 같고 논지가 캐시 이후 바뀌지
+    # 않았을 때만 유효하다. 호출 자체가 GMS 토큰을 쓰므로 재진입마다 2회를 아낀다.
+    # ponytail: 같은 거래일 안의 장중 매매는 TTL 까지 반영되지 않는다. 문제되면
+    # 보유 수량을 지문에 넣는다.
+    personal_keys = {
+        key
+        for key in requested
+        if key in PERSONAL_SECTIONS
+        and body.personalize
+        and not (key == "my_impact" and (holding is None or snapshot is None))
+        and not (key == "thesis_check" and thesis is None)
+    }
+    personal = await _cached_common_sections(db, ticker, personal_keys, now=now, user_id=user_id)
+    if personal is not None and (
+        personal.data_as_of.portfolio != _as_datetime(snapshot)
+        or (thesis is not None and thesis.recorded_at > personal.cached_at)
+    ):
+        personal = None
+    generation_keys = [
+        key
+        for key in requested
+        if not (cached is not None and key in cached.sections)
+        and not (personal is not None and key in personal.sections)
+    ]
     generation_keys = [
         key
         for key in generation_keys
@@ -422,6 +448,8 @@ async def create_analysis(
     sections: dict[str, Any] = dict.fromkeys(requested)
     if cached:
         sections.update(cached.sections)
+    if personal:
+        sections.update(personal.sections)
     outcomes_by_key = {outcome.key: outcome for outcome in outcomes}
     for outcome in outcomes:
         if outcome.section is None:
@@ -429,7 +457,8 @@ async def create_analysis(
             continue
         sections[outcome.key] = outcome.section.model_dump(mode="json")
 
-    if "thesis_check" in sections and sections["thesis_check"] and thesis is not None:
+    # 캐시에서 온 thesis_check 는 이미 논지·근거 분류가 들어 있다.
+    if "thesis_check" in outcomes_by_key and sections["thesis_check"] and thesis is not None:
         evidence_by_id = {citation.id: citation for citation in citations}
         classified = outcomes_by_key["thesis_check"].thesis_evidence
 

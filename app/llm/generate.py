@@ -374,7 +374,7 @@ async def generate_section(
     title: str | None = None,
     feature: Feature = Feature.STOCK_ANALYST_SECTION,
     prompt: str = "stock_analyst",
-    effort: str = "high",
+    effort: str = "low",
     engine_values: Mapping[str, Segment] | None = None,
     citations: Sequence[Citation] = (),
     documents: str = "",

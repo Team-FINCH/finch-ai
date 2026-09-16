@@ -245,16 +245,16 @@ Wiki 항목의 `source`에 따라 인용 어투가 달라진다. 이 구분을 �
 
 ## §6 모델 라우팅
 
-사용자에게 보이는 설명은 전부 `gpt-5-nano`로 생성한다. 작업 난이도는 모델이 아니라 `effort`로 조절한다.
+사용자에게 보이는 설명은 전부 `gpt-5-nano`로 생성한다. 작업 난이도는 모델이 아니라 `effort`로 조절한다. 2026-09-16 실측에서 같은 프롬프트가 high 28초·medium 16초·low 4초였고 출력은 같았다. 수치는 엔진이 넘기고 LLM 은 문장만 쓰므로 전 경로 low 를 기본으로 한다.
 
 | 작업 | 모델 | effort | 근거 |
 | --- | --- | --- | --- |
-| Stock Analyst 섹션 | `gpt-5-nano` | high | 공시·재무 해석, 다중 근거 종합 |
-| Ask My Portfolio | `gpt-5-nano` | high | 도구 선택 + 다단 추론 |
-| Thesis Check | `gpt-5-nano` | high | 논지와 신규 사실의 대조 판단 |
-| Portfolio Doctor | `gpt-5-nano` | medium | 입력이 구조화되어 있어 추론 부담 낮음 |
-| Why Moved | `gpt-5-nano` | medium | 동일 |
-| Before You Trade | `gpt-5-nano` | low | 차분 설명, 2–3문장 |
+| Stock Analyst 섹션 | `gpt-5-nano` | low | 공시·재무 해석, 다중 근거 종합 |
+| Ask My Portfolio | `gpt-5-nano` | low | 도구 선택 + 다단 추론 |
+| Thesis Check | `gpt-5-nano` | low | 논지와 신규 사실의 대조 판단 |
+| Portfolio Doctor | `gpt-5-nano` | low | 입력이 구조화되어 있어 추론 부담 낮음 |
+| Why Moved | `gpt-5-nano` | low | 동일 |
+| Before You Trade | 없음 | — | 엔진 차분에 템플릿 문장. LLM 을 부르지 않는다 |
 | Briefing 문장 | `gpt-5-nano` | low | 입력 확정, 2문장 |
 | 출력단 의미 검사 | `gpt-5-nano` | low | 분류 한 건, 저지연 |
 

@@ -85,7 +85,7 @@ class LlmClient(Protocol):
         system: list[dict[str, Any]],
         user: str,
         schema: dict[str, Any],
-        effort: str = "high",
+        effort: str = "low",
         max_tokens: int | None = None,
     ) -> LlmResult: ...
 
@@ -181,7 +181,7 @@ class AnthropicClient:
         system: list[dict[str, Any]],
         user: str,
         schema: dict[str, Any],
-        effort: str = "high",
+        effort: str = "low",
         max_tokens: int | None = None,
     ) -> LlmResult:
         import anthropic
@@ -332,7 +332,7 @@ class GmsClient:
         system: list[dict[str, Any]],
         user: str,
         schema: dict[str, Any],
-        effort: str = "high",
+        effort: str = "low",
         max_tokens: int | None = None,
     ) -> LlmResult:
         reservation = await reserve_gms()
@@ -403,6 +403,7 @@ class GmsClient:
                         }
                         for t in tools
                     ],
+                    "reasoning_effort": "low",
                     "max_completion_tokens": max_tokens or settings.llm_max_tokens,
                 }
             )

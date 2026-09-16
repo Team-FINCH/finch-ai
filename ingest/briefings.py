@@ -4,7 +4,7 @@
     python -m ingest.briefings --users user_a,user_b --date 2026-08-28
     python -m ingest.briefings --force
 
-기본 대상은 최근 30일 안에 AI 기능을 사용한 사용자다. 백엔드가 별도 사용자 목록을
+기본 대상은 최근 7일 안에 AI 기능을 사용한 사용자다. 백엔드가 별도 사용자 목록을
 넘길 수 있는 환경에서는 ``--users``로 대상을 명시한다.
 
 토큰은 사용자 개인 예산이 아니라 배치 전용 장부에서 나간다. 사용자가 누른 요청이
@@ -71,7 +71,7 @@ class BatchResult:
         }
 
 
-async def active_users(*, days: int = 30) -> list[str]:
+async def active_users(*, days: int = 7) -> list[str]:
     """최근 AI 사용 이력이 있는 사용자 목록. 익명 행은 제외한다."""
     since = now_kst() - timedelta(days=days)
     async with SessionFactory() as session:
@@ -206,7 +206,7 @@ async def _main(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="활성 사용자 데일리 브리핑 선생성")
     parser.add_argument("--users", help="쉼표로 구분한 사용자 ID. 생략 시 최근 활성 사용자")
-    parser.add_argument("--active-days", type=int, default=30, help="활성 사용자 조회 기간")
+    parser.add_argument("--active-days", type=int, default=7, help="활성 사용자 조회 기간")
     parser.add_argument("--date", type=_parse_date, help="기준일(YYYY-MM-DD)")
     parser.add_argument("--force", action="store_true", help="기존 일일 결과를 무시하고 재생성")
     return asyncio.run(_main(parser.parse_args()))

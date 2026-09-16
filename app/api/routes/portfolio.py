@@ -29,6 +29,7 @@ from app.core.config import settings
 from app.core.enums import MetricSource, Period
 from app.core.errors import InsufficientData, InvalidRequest
 from app.core.models import (
+    AIResponse,
     Event,
     IndexDaily,
     Instrument,
@@ -509,6 +510,52 @@ async def diagnosis(
     return envelope
 
 
+async def _cached_attribution(
+    db: DbSession, user_id: str, period: str, end: date
+) -> Envelope[AttributionContent] | None:
+    """같은 사용자·기간·마지막 거래일로 오늘 이미 만든 분해가 있으면 그대로 돌려준다.
+
+    시세는 장 마감 후 하루 한 번 확정되므로 마지막 거래일이 같으면 입력이 같다.
+    전용 테이블 대신 응답 로그를 읽는다 — 종목 분석 캐시와 같은 방식이다.
+    """
+    version = prompt_version_for("portfolio.attribution")
+    try:
+        rows = (
+            await db.scalars(
+                select(AIResponse)
+                .where(
+                    AIResponse.user_id == user_id,
+                    AIResponse.endpoint == "portfolio.attribution",
+                    AIResponse.prompt_version == version,
+                    AIResponse.created_at >= now_kst() - timedelta(hours=24),
+                )
+                .order_by(AIResponse.created_at.desc())
+                .limit(10)
+            )
+        ).all()
+    except Exception:  # 캐시는 최적화다. 조회 실패가 본래 분해를 막으면 안 된다.
+        log.warning("성과 요인 캐시 조회 실패 · user=%s", user_id, exc_info=True)
+        return None
+    for row in rows:
+        payload = row.payload
+        content = payload.get("content") if isinstance(payload, dict) else None
+        if not isinstance(content, dict) or content.get("period") != period:
+            continue
+        if content.get("end") != end.isoformat() or not content.get("summary"):
+            continue
+        cached_at = row.created_at
+        if cached_at.tzinfo is None:
+            cached_at = cached_at.replace(tzinfo=now_kst().tzinfo)
+        content["summary"] |= {"cached": True, "cached_at": cached_at.isoformat()}
+        return Envelope[AttributionContent](
+            content=content,
+            data_as_of=DataAsOf.model_validate(payload.get("data_as_of", {})),
+            model=payload.get("model") or settings.llm_model,
+            cached=True,
+        )
+    return None
+
+
 @router.post("/attribution")
 async def attribution(
     body: AttributionRequest, user_id: CurrentUser, db: DbSession, _usage: UsageLimit
@@ -539,6 +586,9 @@ async def attribution(
         raise InsufficientData(f"{body.period.value} 구간에 거래일이 없습니다.")
 
     days = [row.trade_date for row in window]
+    if (hit := await _cached_attribution(db, user_id, body.period.value, days[-1])) is not None:
+        await record(db, hit, user_id=user_id, endpoint="portfolio.attribution")
+        return hit
     weights = [{c.symbol: c.weight for c in row.contributions} for row in window]
     returns = [{c.symbol: c.return_rate for c in row.contributions} for row in window]
     symbols = sorted({s for w in weights for s in w})
