@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from enum import StrEnum
 from typing import Annotated, Any
@@ -82,6 +82,9 @@ _RAG_TOP_K = 6
 _UPCOMING_DAYS = 90
 _UPCOMING_LIMIT = 5
 _COMMON_CACHE_TTL = timedelta(hours=settings.analysis_cache_ttl_h)
+#: 검사에 실패해 null 로 저장된 섹션을 다시 시도하기까지의 간격. 없으면 실패한
+#: 섹션은 원본이 없어 매 요청 다시 만들다 또 실패해 화면이 늦고 토큰이 샌다.
+_FAILED_RETRY_AFTER = timedelta(hours=1)
 
 
 class AnalysisRequest(BaseModel):
@@ -215,6 +218,8 @@ class CachedAnalysis:
     citations: list[Citation]
     data_as_of: DataAsOf
     cached_at: datetime
+    #: 최근 생성 시도에서 검사에 실패한 키. `_FAILED_RETRY_AFTER` 안에는 다시 만들지 않는다.
+    failed: frozenset[str] = frozenset()
 
 
 async def _cached_common_sections(
@@ -250,6 +255,7 @@ async def _cached_common_sections(
     # 히트로 치면, 섹션 하나가 검사에 실패해 null 로 저장된 순간 나머지 섹션까지
     # 매 요청 다시 만들게 된다. 없는 키만 호출부가 생성한다.
     selected: dict[str, dict[str, Any]] = {}
+    failed: set[str] = set()
     newest: CachedAnalysis | None = None
     for row in rows:
         payload = row.payload
@@ -276,7 +282,18 @@ async def _cached_common_sections(
                     "cached": True,
                     "cached_at": cached_at.isoformat(),
                 }
-        if newest is None and selected:
+            elif (
+                section is None
+                and key in sections
+                and not getattr(row, "cached", False)
+                and key not in failed
+                and cached_at >= now - _FAILED_RETRY_AFTER
+            ):
+                # 생성을 시도한 행(cached=false)에서 null 이면 그때 검사에 실패한 것이다.
+                # 한 시간은 다시 시도하지 않는다. ponytail: 실패 사유는 안 본다 — 근거 부족
+                # 같은 영구 실패도 한 시간마다 한 번은 다시 돈다.
+                failed.add(key)
+        if newest is None and (selected or failed):
             newest = CachedAnalysis(
                 name=str(content.get("name") or ticker),
                 sections=selected,
@@ -284,8 +301,10 @@ async def _cached_common_sections(
                 data_as_of=DataAsOf.model_validate(payload.get("data_as_of", {})),
                 cached_at=cached_at,
             )
-        if keys <= selected.keys():
+        if keys <= selected.keys() | failed:
             break
+    if newest is not None:
+        newest = replace(newest, failed=frozenset(failed - selected.keys()))
     return newest
 
 
@@ -337,7 +356,9 @@ async def build_analysis(
     now = now_kst()
     cached = await _cached_common_sections(db, ticker, set(requested), now=now)
     generation_keys = [
-        key for key in requested if not (cached is not None and key in cached.sections)
+        key
+        for key in requested
+        if not (cached is not None and (key in cached.sections or key in cached.failed))
     ]
 
     client = get_llm_client()

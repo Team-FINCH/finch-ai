@@ -499,3 +499,39 @@ def test_요청_시점_생성은_요청자_예산이_아니라_배치_장부에�
     _post(client, {"sections": ["current"]})
 
     assert entered == ["system:analysis-batch"]
+
+
+@pytest.mark.anyio
+async def test_검사에_실패한_섹션은_한_시간_동안_다시_만들지_않는다(monkeypatch):
+    """null 로 저장된 섹션을 매 요청 다시 만들다 또 실패하면 화면이 늦고 토큰이 샌다."""
+    now = datetime(2026, 8, 28, 12, 0, tzinfo=timezone(timedelta(hours=9)))
+    fresh = {"title": "t", "text": "새로 만듦", "segments": [], "cached": False, "cached_at": None}
+    row = SimpleNamespace(
+        created_at=datetime(2026, 8, 28, 11, 30),
+        cached=False,  # 생성을 시도한 행. attention 은 검사에 걸려 null
+        payload={
+            "content": {
+                "ticker": "005930",
+                "name": "삼성전자",
+                "sections": {"current": fresh, "attention": None},
+            },
+            "citations": [],
+            "data_as_of": {},
+        },
+    )
+
+    class Session:
+        async def scalars(self, _statement):
+            return SimpleNamespace(all=lambda: [row])
+
+    monkeypatch.setattr("app.api.routes.stocks.prompt_version_for", lambda _endpoint: "prompt_test")
+    cached = await _cached_common_sections(Session(), "005930", {"current", "attention"}, now=now)
+
+    assert cached is not None
+    assert set(cached.sections) == {"current"}
+    assert cached.failed == {"attention"}  # 호출부가 생성 대상에서 뺀다
+
+    # 한 시간이 지나면 다시 시도한다
+    later = now + timedelta(hours=2)
+    cached = await _cached_common_sections(Session(), "005930", {"current", "attention"}, now=later)
+    assert cached is not None and cached.failed == frozenset()
