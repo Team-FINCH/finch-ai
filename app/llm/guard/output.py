@@ -233,10 +233,15 @@ _BRACE_RESIDUE_RE = re.compile(r"\{\{[^{}]*\}\}|\{\{|\}\}")
 _CITATION_RE = re.compile(r"\[\^(cit_[A-Za-z0-9_-]+)\]")
 #: 소수점을 문장 끝으로 오인하지 않도록 숫자 뒤 마침표는 제외한다.
 _SENTENCE_END_RE = re.compile(r"(?<!\d)[.!?]+(?=\s|$)")
+#: 마침표 뒤에 붙은 각주를 앞으로 옮긴다: `…입니다.[^cit_1] ` → `…입니다[^cit_1]. `.
+#: 모델이 각주를 마침표 뒤에 붙이는 일이 흔한데, 그러면 마침표 다음이 공백이 아니라
+#: 문장 끝으로 안 세서 문단 전체가 1문장으로 잡혔다. 운영 폐기 1위 사유였다.
+_TRAILING_CITATION_RE = re.compile(r"([.!?]+)((?:\s*\[\^[^\]]+\])+)")
 
 
 def split_sentences(text: str) -> list[str]:
     """문장 단위로 자른다. 종결부호를 붙인 채로 돌려준다."""
+    text = _TRAILING_CITATION_RE.sub(lambda m: m.group(2).strip() + m.group(1), text)
     sentences: list[str] = []
     start = 0
     for match in _SENTENCE_END_RE.finditer(text):

@@ -511,3 +511,15 @@ def test_운영에서_오탐이던_표기는_원시_수치가_아니다(text: st
 )
 def test_수량은_여전히_잡는다(text: str) -> None:
     assert not check_raw_number(text).passed, text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "매출이 늘었습니다.[^cit_1] 이는 회복으로 읽힙니다.[^cit_2] 공시를 지켜볼 만합니다.",
+        "매출이 늘었습니다[^cit_1]. 이는 회복으로 읽힙니다. 공시를 지켜볼 만합니다.",
+        "매출이 늘었습니다.[^cit_1][^cit_2] 이는 회복으로 읽힙니다. 끝입니다.[^cit_3]",
+    ],
+)
+def test_각주가_마침표_뒤에_붙어도_문장을_센다(text: str) -> None:
+    assert len(split_sentences(text)) == 3, text
