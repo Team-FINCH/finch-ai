@@ -857,6 +857,82 @@
         "title": "ChatHistoryContent",
         "type": "object"
       },
+      "ChatJobContent": {
+        "additionalProperties": false,
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatContent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "status",
+          "conversation_id"
+        ],
+        "title": "ChatJobContent",
+        "type": "object"
+      },
       "ChatMessageContent": {
         "additionalProperties": false,
         "properties": {
@@ -1661,6 +1737,57 @@
           "content"
         ],
         "title": "Envelope[ChatHistoryContent]",
+        "type": "object"
+      },
+      "Envelope_ChatJobContent_": {
+        "properties": {
+          "cached": {
+            "default": false,
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "content": {
+            "$ref": "#/components/schemas/ChatJobContent"
+          },
+          "data_as_of": {
+            "$ref": "#/components/schemas/DataAsOf"
+          },
+          "disclaimer": {
+            "title": "Disclaimer",
+            "type": "string"
+          },
+          "freshness_warnings": {
+            "items": {
+              "$ref": "#/components/schemas/FreshnessWarning"
+            },
+            "title": "Freshness Warnings",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "Envelope[ChatJobContent]",
         "type": "object"
       },
       "Envelope_DeletedFactContent_": {
@@ -3280,6 +3407,7 @@
     },
     "/api/ai/v1/chat": {
       "post": {
+        "description": "동기 경로. 프런트 전환까지 유지한다 (#90 ㅂ).\n\n작업 행을 `running` 으로 만들어 워커가 집지 않게 한 뒤 이 프로세스 안에서 돌린다.\n최대 `SYNC_WAIT_S` 초 기다렸다 답만 돌려주고, 넘기면 504 지만 작업은 취소하지\n않고 끝까지 돌아 이력과 `GET /chat/jobs/{id}` 에 남는다.",
         "operationId": "chat_api_ai_v1_chat_post",
         "requestBody": {
           "content": {
@@ -3357,6 +3485,109 @@
           }
         },
         "summary": "Conversation Messages",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/ai/v1/chat/jobs": {
+      "post": {
+        "description": "답을 만들기 시작하고 바로 202 를 준다. 결과는 `GET /chat/jobs/{job_id}`.",
+        "operationId": "create_chat_job_api_ai_v1_chat_jobs_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ChatJobContent_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Chat Job",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/ai/v1/chat/jobs/{job_id}": {
+      "get": {
+        "description": "상태와 결과. 한도에 걸리지 않는다 — LLM 을 부르지 않는다 (#90 ㄴ).\n\n남의 것·없는 것·24시간 지난 것은 모두 404 다 (#90 ㄷ·ㅁ).",
+        "operationId": "get_chat_job_api_ai_v1_chat_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ChatJobContent_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Chat Job",
         "tags": [
           "chat"
         ]

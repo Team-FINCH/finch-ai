@@ -6,15 +6,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy import select
 
+from app import chat_jobs
 from app.api.routes import (
     briefing,
     chat,
@@ -44,8 +46,18 @@ API_PREFIX = "/api/ai/v1"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    yield
-    await engine.dispose()
+    # 채팅 비동기 작업 워커 (#90). 로컬(APP_ENV=local)도 켠다 — 동기 /chat 이 이 워커에
+    # 기대므로 워커 없이는 55초 뒤 504 다.
+    stop = asyncio.Event()
+    task = asyncio.create_task(chat_jobs.worker(app.state.usage_guard, stop=stop))
+    try:
+        yield
+    finally:
+        stop.set()
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+        await engine.dispose()
 
 
 # ── 적재 상태 점검 ──────────────────────────────────────────────────────────────
@@ -57,10 +69,7 @@ _INGEST_PROBES = {
         "RAG 문서가 한 건이라도 적재되었으면 1.",
     ),
     "embeddings": (
-        select(1)
-        .select_from(DocumentChunk)
-        .where(DocumentChunk.embedding.is_not(None))
-        .limit(1),
+        select(1).select_from(DocumentChunk).where(DocumentChunk.embedding.is_not(None)).limit(1),
         "임베딩이 채워진 청크가 한 건이라도 있으면 1.",
     ),
     "price_daily": (
@@ -72,10 +81,7 @@ _INGEST_PROBES = {
     #: embeddings 는 청크 한 건만 임베딩되어도 1 이라 부분 백필을 못 잡는다.
     #: 적재는 됐는데 --backfill 이 덜 돌면 검색 품질만 조용히 무너진다 (GitLab #62).
     "embedding_backfill_pending": (
-        select(1)
-        .select_from(DocumentChunk)
-        .where(DocumentChunk.embedding.is_(None))
-        .limit(1),
+        select(1).select_from(DocumentChunk).where(DocumentChunk.embedding.is_(None)).limit(1),
         "임베딩이 비어 있는 청크가 남아 있으면 1 — 백필이 덜 끝났다는 뜻이다.",
     ),
     "price_backfill_pending": (

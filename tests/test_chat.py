@@ -135,6 +135,23 @@ def build(fake: FakeClient, monkeypatch, session: Any | None = None) -> TestClie
     app = create_app()
     db = session or FeedbackSession()
     app.dependency_overrides[get_session] = lambda: db
+
+    # 동기 /chat 은 작업 실행기를 거친다. 실행기는 자기 DB 세션을 여니, 테스트에서는
+    # 같은 가짜 세션으로 답만 만들게 바꿔 끼운다.
+    async def _inline_run(job, guard):
+        from app.api.routes.chat import ChatRequest, answer_question
+        from app.core.errors import AppError
+
+        body = ChatRequest(
+            conversation_id=job.conversation_id, message=job.question, context=job.context
+        )
+        try:
+            envelope = await answer_question(body, job.user_id, db)
+        except AppError as exc:
+            return "failed", None, {"code": exc.code.value, "message": exc.message}
+        return "completed", envelope.model_dump(mode="json"), None
+
+    monkeypatch.setattr("app.chat_jobs.run_job", _inline_run)
     client = TestClient(app)
     client.db = db
     return client

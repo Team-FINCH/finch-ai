@@ -219,6 +219,7 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 | 400 | `UNSUPPORTED_MARKET` | 해외 종목 요청 | "현재 국내 종목만 지원합니다" |
 | 401 | `UNAUTHORIZED` | 내부 토큰 불일치, 신뢰 헤더 누락·공백 | **사용자 세션 유지.** AI 영역만 오류 표시 |
 | 404 | `INSTRUMENT_NOT_FOUND` | 미상장·폐지 종목 | 종목 페이지 자체 처리 |
+| 404 | `RESOURCE_NOT_FOUND` | 없는·남의·24시간 지난 채팅 작업(§4.2) | "작업을 찾을 수 없음". 새 질문으로 유도 |
 | 409 | `INSUFFICIENT_DATA` | 보유 종목 0개, 가격 히스토리 60거래일 미만 | **AI 영역만 대체 문구로 숨김.** 화면 전체 실패 아님 |
 | 422 | `GUARDRAIL_BLOCKED` | 투자 권유·가격 예측 요구, 수치 검증 실패 | 차단 사유 문구 표시 |
 | 429 | `RATE_LIMITED` | 호출 한도 초과 | `Retry-After` 헤더만큼 대기 |
@@ -398,6 +399,32 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 `answer`는 [§2.3](#narrative)의 Section과 같은 모양이라 종목 분석의 섹션과 같은 방식으로 렌더링한다. `tools_used`는 이번 답변에서 실제로 호출된 Tool 이름이며, 근거를 되짚을 때 쓴다 — 호출 순서는 보장하지 않는다. 투자 용어 질의(featureSpec §10.2 "용어 설명")도 이 엔드포인트가 담당하고, 도구가 필요 없는 질문은 Tool 없이 답하므로 `tools_used`가 빈 배열이 된다.
 
 성공한 질문과 최종 답변은 `conversation_id` 아래에 저장한다. 생성 실패나 가드레일 차단 요청은 이력에 남기지 않는다. 같은 ID로 다음 질문이 오면 최근 12개 메시지를 지시 대상과 의도 파악용 문맥으로 GMS에 전달한다. 단, 이전 답변의 보유량·가격·비중·손익은 현재 사실로 재사용하지 않고 필요한 수치는 도구로 다시 조회한다.
+
+### §4.2 비동기 작업 — 생성 202 · 상태 조회
+
+**POST** `/api/ai/v1/chat/jobs`
+
+답을 만들기 시작하고 **202 Accepted** 로 바로 돌아온다(이슈 #84·#90). 요청 본문은 `POST /chat` 과 같다. 응답은 §2 봉투이고 `content` 는 `job_id` · `status`(`queued`) · `conversation_id` 다. `X-Idempotency-Key` 헤더가 같으면 409 가 아니라 **같은 `job_id` 를 202 로** 다시 준다 — 백엔드 멱등성 필터의 2차 방어다. 호출 한도는 `POST /chat` 과 같은 채팅 한도를 쓴다.
+
+**GET** `/api/ai/v1/chat/jobs/{job_id}`
+
+상태와 결과. LLM 을 부르지 않으므로 **호출 한도에 걸리지 않는다**. 권장 폴링 2초. `status` 는 `queued` → `running` → `completed` | `failed`. `completed` 면 `result` 가 `POST /chat` 의 `content` 와 같은 모양이고 봉투의 `citations` · `data_as_of` 도 그 답의 것이다. `failed` 면 `result` 는 `null`, `error` 에 `code` · `message` · `retryable` 이 들어간다 — **HTTP 200 본문 안**이다. `retryable` 은 `LLM_TIMEOUT` · `RETRIEVAL_FAILED` 만 `true` 다.
+
+```
+{
+  "job_id": "job_01JQZ8M3T7K2",
+  "status": "completed",
+  "conversation_id": "conv_01JQZ8M3T7K2",
+  "created_at": "2026-09-16T14:30:00+09:00",
+  "completed_at": "2026-09-16T14:30:42+09:00",
+  "result": { "conversation_id": "…", "answer": { … }, "tools_used": [ … ] },
+  "error": null
+}
+```
+
+작업은 Postgres 테이블에 두므로 AI 서버를 재배포해도 진행 중이던 작업이 사라지지 않는다 — `running` 이던 것은 기동 시 `queued` 로 되돌려 다시 실행한다. **보존 24시간**이고, 지난 것·없는 것·다른 사용자의 것은 모두 `404 RESOURCE_NOT_FOUND` 다. 완료된 답은 §4.1 이력에 **한 번** 저장되며 `result.answer` 와 이력의 마지막 메시지는 같은 답이다.
+
+기존 `POST /chat` 은 프런트 전환까지 유지한다. 내부적으로 작업을 만들어 **최대 55초** 기다렸다 답만 돌려주고, 넘기면 `504 LLM_TIMEOUT`(detail 에 `job_id`)이지만 작업은 취소되지 않고 끝까지 돌아 이력과 위 조회에 남는다. 프런트 전환 MR 머지 뒤 2주 후 제거한다.
 
 ### §4.1 대화 메시지 조회
 

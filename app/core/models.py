@@ -358,6 +358,37 @@ class ChatMessage(Base):
     )
 
 
+class ChatJob(Base):
+    """채팅 비동기 작업 (#90). 큐·상태·결과를 한 행에 둔다.
+
+    메모리 큐가 아니라 테이블이므로 서버가 재시작돼도 진행 중이던 작업이 남고,
+    파드가 여럿이어도 `FOR UPDATE SKIP LOCKED` 로 같은 작업을 두 번 잡지 않는다.
+    """
+
+    __tablename__ = "chat_jobs"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    conversation_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    idempotency_key: Mapped[str | None] = mapped_column(String(80))
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    context: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="queued")
+    result: Mapped[dict | None] = mapped_column(JSONB)
+    error: Mapped[dict | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(TS, server_default=func.now())
+    started_at: Mapped[datetime | None] = mapped_column(TS)
+    completed_at: Mapped[datetime | None] = mapped_column(TS)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('queued', 'running', 'completed', 'failed')", name="ck_chat_jobs_status"
+        ),
+        Index("ix_chat_jobs_status_created", "status", "created_at"),
+        Index("ix_chat_jobs_idempotency", "user_id", "idempotency_key", unique=True),
+    )
+
+
 class PortfolioDiagnosisCache(Base):
     """사용자별 최신 포트폴리오 진단.
 
