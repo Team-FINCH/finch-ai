@@ -26,7 +26,7 @@ from app.api.deps import CurrentUser, DbSession, UsageLimit
 from app.core.adapters import ledger_source
 from app.core.config import settings
 from app.core.enums import EventType, MetricSource, WikiSource
-from app.core.errors import InsufficientData, InvalidRequest
+from app.core.errors import InsufficientData, InvalidRequest, LLMTimeout
 from app.core.models import AIResponse, Event, Instrument
 from app.core.response_log import record
 from app.core.schemas import Citation, ContentModel, DataAsOf, Envelope, Segment, now_kst
@@ -283,6 +283,11 @@ async def _cached_common_sections(
     except Exception:  # 캐시는 최적화이므로 장애가 본래 분석을 막으면 안 된다.
         log.warning("종목 %s 공통 분석 캐시 조회 실패", ticker, exc_info=True)
         return None
+    # 키마다 가장 최근에 성공한 행에서 가져온다. 한 행이 모든 키를 다 갖고 있어야
+    # 히트로 치면, 섹션 하나가 검사에 실패해 null 로 저장된 순간 나머지 섹션까지
+    # 매 요청 다시 만들게 된다. 없는 키만 호출부가 생성한다.
+    selected: dict[str, dict[str, Any]] = {}
+    newest: CachedAnalysis | None = None
     for row in rows:
         payload = row.payload
         if not isinstance(payload, dict):
@@ -293,27 +298,27 @@ async def _cached_common_sections(
         sections = content.get("sections")
         if content.get("ticker") != ticker or not isinstance(sections, dict):
             continue
-        if not keys.issubset(sections) or any(sections[key] is None for key in keys):
-            continue
         cached_at = row.created_at
         if cached_at.tzinfo is None:
             cached_at = cached_at.replace(tzinfo=now.tzinfo)
-        selected = {
-            key: {
-                **sections[key],
-                "cached": True,
-                "cached_at": cached_at.isoformat(),
-            }
-            for key in keys
-        }
-        return CachedAnalysis(
-            name=str(content.get("name") or ticker),
-            sections=selected,
-            citations=[Citation.model_validate(item) for item in payload.get("citations", [])],
-            data_as_of=DataAsOf.model_validate(payload.get("data_as_of", {})),
-            cached_at=cached_at,
-        )
-    return None
+        for key in keys - selected.keys():
+            if sections.get(key) is not None:
+                selected[key] = {
+                    **sections[key],
+                    "cached": True,
+                    "cached_at": cached_at.isoformat(),
+                }
+        if newest is None and selected:
+            newest = CachedAnalysis(
+                name=str(content.get("name") or ticker),
+                sections=selected,
+                citations=[Citation.model_validate(c) for c in payload.get("citations", [])],
+                data_as_of=DataAsOf.model_validate(payload.get("data_as_of", {})),
+                cached_at=cached_at,
+            )
+        if keys <= selected.keys():
+            break
+    return newest
 
 
 def _hits_from_cache(cached: CachedAnalysis) -> list[dict[str, Any]]:
@@ -444,6 +449,14 @@ async def create_analysis(
             )
 
     outcomes: list[SectionOutcome] = list(await asyncio.gather(*tasks.values()))
+    if (
+        tasks
+        and all(o.section is None for o in outcomes)
+        and any(r.startswith("llm_error:") for o in outcomes for r in o.reasons)
+    ):
+        # 일부만 실패하면 빈 섹션으로 내려 나머지를 살리지만, 전부 LLM 장애면
+        # 살릴 것이 없다. 504 로 끝내 빈 응답이 캐시되지 않게 한다.
+        raise LLMTimeout("분석 응답이 지연되어 중단했습니다. 다시 시도해 주세요.")
 
     sections: dict[str, Any] = dict.fromkeys(requested)
     if cached:
@@ -492,9 +505,7 @@ async def create_analysis(
     envelope = Envelope[AnalysisContent](
         content={
             "ticker": ticker,
-            "name": (
-                await _display_name(db, snapshot, ticker, cached.name if cached else None)
-            ),
+            "name": (await _display_name(db, snapshot, ticker, cached.name if cached else None)),
             "sections": sections,
         },
         citations=citations,

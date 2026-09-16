@@ -27,8 +27,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from app.core.config import settings
 from app.core.enums import CitationType, Direction, MetricSource, Unit, WikiSource
+from app.core.errors import LLMTimeout
 from app.core.schemas import Citation, Section, Segment, now_kst
 from app.llm.client import LlmClient
 from app.llm.guard import (
@@ -155,9 +158,7 @@ def ratio_segment(
 
 def count_segment(raw: float, source: MetricSource, *, digits: int = 1) -> Segment:
     """유효 종목 수처럼 단위가 개수인 값."""
-    return Segment.metric(
-        f"{raw:.{digits}f}개", raw=raw, source=source, unit=Unit.COUNT
-    )
+    return Segment.metric(f"{raw:.{digits}f}개", raw=raw, source=source, unit=Unit.COUNT)
 
 
 def krw_segment(raw: float, source: MetricSource, *, signed: bool = False) -> Segment:
@@ -175,9 +176,7 @@ def krw_segment(raw: float, source: MetricSource, *, signed: bool = False) -> Se
     )
 
 
-def segments_from_narrative(
-    narrative: str, values: Mapping[str, Segment]
-) -> list[Segment]:
+def segments_from_narrative(narrative: str, values: Mapping[str, Segment]) -> list[Segment]:
     """`{{key}}`를 엔진 조각으로 바꾸며 조각 목록을 만든다.
 
     이어 붙인 결과는 `render_placeholders`가 만든 문자열과 정확히 같다.
@@ -223,9 +222,7 @@ def citations_from_hits(
     ]
 
 
-def documents_block(
-    hits: Sequence[Mapping[str, Any]], citations: Sequence[Citation]
-) -> str:
+def documents_block(hits: Sequence[Mapping[str, Any]], citations: Sequence[Citation]) -> str:
     """L5. 근거 id와 원문 조각을 짝지어 넘긴다."""
     return "\n\n".join(
         f"[^{citation.id}] {citation.title}\n{hit.get('text', '')}"
@@ -273,9 +270,7 @@ def build_user_turn(
         parts.append("[사용 가능한 수치 자리표시자]\n없습니다. 수치를 언급하지 마십시오.")
 
     if citations:
-        rows = "\n".join(
-            f"[^{c.id}] {c.title} ({c.source})" for c in citations
-        )
+        rows = "\n".join(f"[^{c.id}] {c.title} ({c.source})" for c in citations)
         parts.append(f"[사용 가능한 근거]\n{rows}")
     else:
         # §7 — RAG 0건이어도 생성은 진행하되 고정 문구로 한계를 밝힌다.
@@ -414,24 +409,30 @@ async def generate_section(
     feedback = ""
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        result = await client.generate(
-            system=build_system(prompt),
-            user=user_turn if not feedback else f"{user_turn}\n\n{feedback}",
-            schema=(
-                THESIS_NARRATIVE_SCHEMA
-                if feature is Feature.THESIS_CHECK
-                else NARRATIVE_SCHEMA
-            ),
-            effort=effort,
-        )
+        try:
+            result = await client.generate(
+                system=build_system(prompt),
+                user=user_turn if not feedback else f"{user_turn}\n\n{feedback}",
+                schema=(
+                    THESIS_NARRATIVE_SCHEMA if feature is Feature.THESIS_CHECK else NARRATIVE_SCHEMA
+                ),
+                effort=effort,
+            )
+        except (LLMTimeout, httpx.HTTPError) as exc:
+            # 섹션 하나의 장애가 요청 전체를 504 로 끝내면 병렬로 만든 형제 섹션까지
+            # 버려지고 캐시도 비어, 다음 요청이 전부 다시 만든다. 빈 섹션으로 돌려
+            # 나머지는 살리고 응답도 저장한다. 예산·한도 예외는 그대로 올라간다.
+            log.warning("섹션 %s LLM 호출 실패 · %s", key, exc)
+            return SectionOutcome(
+                key=key,
+                reasons=(f"llm_error:{type(exc).__name__}",),
+                attempts=attempt,
+                cache_read_tokens=cache_read,
+            )
         cache_read = result.cache_read_tokens
 
         narrative = result.payload.get("narrative")
-        segments = (
-            segments_from_narrative(narrative, values)
-            if isinstance(narrative, str)
-            else []
-        )
+        segments = segments_from_narrative(narrative, values) if isinstance(narrative, str) else []
         report = run_output_guard(
             result.payload,
             GuardContext(
@@ -446,9 +447,7 @@ async def generate_section(
         thesis_evidence: tuple[ThesisEvidence, ...] = ()
         evidence_reasons: tuple[str, ...] = ()
         if feature is Feature.THESIS_CHECK:
-            thesis_evidence, evidence_reasons = _thesis_evidence(
-                result.payload, citation_ids
-            )
+            thesis_evidence, evidence_reasons = _thesis_evidence(result.payload, citation_ids)
 
         if report.passed and not evidence_reasons:
             return SectionOutcome(

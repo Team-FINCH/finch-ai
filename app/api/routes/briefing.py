@@ -20,7 +20,7 @@ from sqlalchemy import or_, select
 from app.api.deps import CurrentUser, DbSession, UsageLimit
 from app.core.adapters import Ledger, ledger_source
 from app.core.enums import BriefingStatus, CitationType, EventType, MetricSource, RateSensitivity
-from app.core.errors import InsufficientData
+from app.core.errors import InsufficientData, LLMTimeout
 from app.core.models import AIResponse, Document, Event
 from app.core.response_log import record
 from app.core.schemas import Citation, DataAsOf, Envelope, Segment, now_kst
@@ -200,6 +200,11 @@ async def build_briefing(
                 publishers_by_document=publishers_by_document,
             )
         )
+
+    if not items and any(outcome.reasons for outcome in outcomes):
+        # 항목이 있었는데 문장이 하나도 안 나온 것은 장애다. EMPTY 로 저장하면
+        # 그날 내내 빈 화면이 캐시된다. 저장하지 않고 끝내 다음 요청이 다시 만든다.
+        raise LLMTimeout("브리핑 문장을 만들지 못했습니다. 다시 시도해 주세요.")
 
     envelope = Envelope[BriefingContent](
         content={
