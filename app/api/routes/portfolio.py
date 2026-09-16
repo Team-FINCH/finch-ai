@@ -22,6 +22,7 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, DbSession, UsageLimit
 from app.core.adapters import Ledger, ledger_source
@@ -325,7 +326,8 @@ def _diagnosis_fingerprint(snapshot: PortfolioSnapshot, prompt_version: str) -> 
                 "symbol": holding.symbol,
                 "quantity": format(holding.quantity, ".8f"),
                 "avg_cost": format(holding.avg_cost, ".8f"),
-                "price": format(holding.price, ".8f"),
+                # 현재가는 넣지 않는다. 장중 호가가 바뀔 때마다 지문이 바뀌어 조회마다
+                # 재생성됐다(운영 히트율 26%). 지표는 종가 시계열로 계산하므로 거래일이면 된다.
             }
             for holding in sorted(snapshot.holdings, key=lambda item: item.symbol)
         ],
@@ -371,7 +373,20 @@ def _cached_content(row: PortfolioDiagnosisCache) -> DiagnosisContent | None:
 async def diagnosis(
     user_id: CurrentUser, db: DbSession, _usage: UsageLimit
 ) -> Envelope[DiagnosisContent]:
-    """위험 지표를 계산하고 상위 항목을 설명한다(§5).
+    """위험 지표를 계산하고 상위 항목을 설명한다(§5). 본문은 `build_diagnosis`."""
+    # 요청 시점에는 저장된 진단을 그대로 준다. 보유가 바뀌어도 다시 만들지 않는다 —
+    # 자주 매매하는 사용자가 조회마다 LLM 을 태우지 않게. 재생성은 아침 배치가 한다.
+    # 저장된 것이 하나도 없을 때(첫 사용자)만 한 번 만든다.
+    return await build_diagnosis(user_id, db, regenerate=False)
+
+
+async def build_diagnosis(
+    user_id: str, db: AsyncSession, *, regenerate: bool = True
+) -> Envelope[DiagnosisContent]:
+    """사용자 진단을 조회하거나 생성한다. 배치(`ingest.briefings`)와 라우터가 같이 쓴다.
+
+    `regenerate=True`(배치)면 지문이 바뀌었을 때 다시 만들고, `False`(라우터)면 저장된
+    진단이 있는 한 지문과 무관하게 그것을 돌려준다. `summary.cached_at` 이 기준 시각이다.
 
     히스토리가 짧으면 409로 끊지 않는다. 집중도·현금·금리민감도 진단은 그대로 유효해서
     신규 포트폴리오에도 절반은 답할 수 있다. 대신 `risk_score`·`risk_level`·
@@ -400,7 +415,7 @@ async def diagnosis(
     cache = await db.scalar(
         select(PortfolioDiagnosisCache).where(PortfolioDiagnosisCache.user_id == user_id)
     )
-    if cache is not None and cache.fingerprint == fingerprint:
+    if cache is not None and (not regenerate or cache.fingerprint == fingerprint):
         content = _cached_content(cache)
         if content is not None:
             envelope = Envelope[DiagnosisContent](
@@ -526,6 +541,9 @@ async def _cached_attribution(
                 .where(
                     AIResponse.user_id == user_id,
                     AIResponse.endpoint == "portfolio.attribution",
+                    # 캐시 히트도 기록되므로 그 행을 다시 집으면 TTL 이 영원히 늘어난다.
+                    # 실제 생성 행만 캐시 원본으로 친다.
+                    AIResponse.cached.is_(False),
                     AIResponse.prompt_version == version,
                     AIResponse.created_at >= now_kst() - timedelta(hours=24),
                 )
@@ -560,7 +578,17 @@ async def _cached_attribution(
 async def attribution(
     body: AttributionRequest, user_id: CurrentUser, db: DbSession, _usage: UsageLimit
 ) -> Envelope[AttributionContent]:
-    """기간 수익률을 시장·섹터·선택으로 분해한다(§6).
+    """기간 수익률을 시장·섹터·선택으로 분해한다(§6). 본문은 `build_attribution`."""
+    return await build_attribution(user_id, db, body.period)
+
+
+async def build_attribution(
+    user_id: str, db: AsyncSession, period: Period = Period.D1
+) -> Envelope[AttributionContent]:
+    """기간 수익률 분해를 조회하거나 생성한다. 배치(`ingest.briefings`)와 라우터가 같이 쓴다.
+
+    사용자·기간·마지막 거래일로 캐시하므로 기간당 하루 한 번만 생성된다. 프런트가 쓰는
+    `1d` 는 아침 배치가 미리 만들고, 다른 기간은 요청 때 만들어 그날 캐시된다.
 
     벤치마크는 시가총액으로 합성한 시장 전체다 — 왜 업종지수를 쓰지 않는지는
     `app.engines.attribution` 모듈 설명에 적혀 있다. 원장을 못 읽거나 구간에 거래일이
@@ -579,14 +607,12 @@ async def attribution(
     if not rows:
         raise InsufficientData("수익률을 낼 수 있는 거래일이 없습니다.")
 
-    window = [
-        row for row in rows if row.trade_date >= _period_start(body.period, rows[-1].trade_date)
-    ]
+    window = [row for row in rows if row.trade_date >= _period_start(period, rows[-1].trade_date)]
     if not window:
-        raise InsufficientData(f"{body.period.value} 구간에 거래일이 없습니다.")
+        raise InsufficientData(f"{period.value} 구간에 거래일이 없습니다.")
 
     days = [row.trade_date for row in window]
-    if (hit := await _cached_attribution(db, user_id, body.period.value, days[-1])) is not None:
+    if (hit := await _cached_attribution(db, user_id, period.value, days[-1])) is not None:
         await record(db, hit, user_id=user_id, endpoint="portfolio.attribution")
         return hit
     weights = [{c.symbol: c.weight for c in row.contributions} for row in window]
@@ -626,7 +652,7 @@ async def attribution(
         prompt="attribution",
         client=client,
         engine_values=_attribution_segments(result),
-        request=_attribution_request(result, body.period),
+        request=_attribution_request(result, period),
     )
     if outcome.section is None:
         log.warning("성과 요인 요약 생성 실패 · %s", "; ".join(outcome.reasons))
@@ -635,7 +661,7 @@ async def attribution(
     last = PortfolioEngine(ledger).snapshot(days[-1])
     envelope = Envelope[AttributionContent](
         content={
-            "period": body.period.value,
+            "period": period.value,
             "start": days[0].isoformat(),
             "end": days[-1].isoformat(),
             "trading_days": result.trading_days,

@@ -520,3 +520,13 @@ async def test_공통_캐시는_키마다_최근_성공_행에서_가져온다(m
     assert set(cached.sections) == {"current", "changes"}  # risks 는 호출부가 생성
     assert cached.sections["changes"]["cached_at"].startswith("2026-08-28T11")
     assert cached.sections["current"]["cached_at"].startswith("2026-08-28T10")
+
+
+def test_공통_캐시_조회는_캐시_히트_행을_원본으로_치지_않는다():
+    """캐시 히트도 기록되므로, 그 행을 다시 집으면 TTL 이 영원히 늘어난다."""
+    import inspect
+
+    from app.api.routes import stocks
+
+    source = inspect.getsource(stocks._cached_common_sections)
+    assert "AIResponse.cached.is_(False)" in source

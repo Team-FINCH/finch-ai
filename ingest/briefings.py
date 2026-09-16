@@ -25,9 +25,10 @@ from datetime import date, timedelta
 from sqlalchemy import distinct, select
 
 from app.api.routes.briefing import BriefingContent, build_briefing
+from app.api.routes.portfolio import build_attribution, build_diagnosis
 from app.core.config import settings
 from app.core.db import SessionFactory, engine
-from app.core.errors import RateLimited
+from app.core.errors import InsufficientData, RateLimited
 from app.core.models import AIResponse
 from app.core.schemas import Envelope, now_kst
 from app.core.usage_limits import (
@@ -100,7 +101,16 @@ async def _generate(
     )
     try:
         async with SessionFactory() as session:
-            return await build_briefing(user_id, session, day, use_cache=not force)
+            envelope = await build_briefing(user_id, session, day, use_cache=not force)
+        # 진단과 수익률 원인 분석(1d)도 같은 배치에서 미리 만든다. 이미 그날 것이 있으면
+        # 저장값이라 비용이 없고, 보유가 없거나 원장을 못 읽으면 InsufficientData 라 건너뛴다.
+        for build in (build_diagnosis, build_attribution):
+            try:
+                async with SessionFactory() as session:
+                    await build(user_id, session)
+            except InsufficientData:
+                pass
+        return envelope
     finally:
         reset_usage(token)
 
@@ -139,9 +149,7 @@ async def run(
                 # 예산 소진은 일시 오류가 아니다 — 재시도해도, 다음 사용자로
                 # 넘어가도 같은 벽에 부딪힌다. 남은 대상을 남겨 두고 멈춘다.
                 budget_exhausted = True
-                log.error(
-                    "배치 토큰 예산 소진 · user=%s detail=%s", user_id, exc.detail
-                )
+                log.error("배치 토큰 예산 소진 · user=%s detail=%s", user_id, exc.detail)
                 break
             except Exception:
                 if attempt == max_attempts:

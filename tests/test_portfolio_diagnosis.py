@@ -48,9 +48,7 @@ class FakeClient:
         keys = _PLACEHOLDER_RE.findall(turn.split("[사용 가능한 수치 자리표시자]")[-1])
         first = keys[0] if keys else None
         fact = (
-            f"확인된 지표는 {{{{{first}}}}}입니다. "
-            if first
-            else "수치로 확인된 지표가 없습니다. "
+            f"확인된 지표는 {{{{{first}}}}}입니다. " if first else "수치로 확인된 지표가 없습니다. "
         )
         # summary는 2~3문장, finding은 정확히 3문장이다(응답 정책 §2).
         body = (
@@ -181,7 +179,9 @@ def test_같은_포트폴리오는_저장된_진단을_재사용한다(client: T
 def test_진단_결과를_사용자별_최신_캐시에_저장한다(client: TestClient) -> None:
     response = _get(client, HOLDER)
     cache = next(
-        row for row in client.db.added if isinstance(row, PortfolioDiagnosisCache)  # type: ignore[attr-defined]
+        row
+        for row in client.db.added
+        if isinstance(row, PortfolioDiagnosisCache)  # type: ignore[attr-defined]
     )
     assert cache.user_id == HOLDER
     assert cache.fingerprint
@@ -198,8 +198,12 @@ def test_findings_순서가_심각도_순서다(client: TestClient) -> None:
 
 def test_각_항목이_계약대로_생긴다(client: TestClient) -> None:
     categories = {
-        "concentration", "volatility", "correlation",
-        "style_tilt", "macro_exposure", "liquidity",
+        "concentration",
+        "volatility",
+        "correlation",
+        "style_tilt",
+        "macro_exposure",
+        "liquidity",
     }
     for finding in _get(client, HOLDER).json()["content"]["findings"]:
         assert finding["category"] in categories
@@ -274,6 +278,7 @@ def test_보유_0종목이면_409(monkeypatch: pytest.MonkeyPatch) -> None:
         instruments={"005930": Instrument("005930", "삼성전자", "반도체")},
         prices={"005930": dict.fromkeys(days, 70000.0)},
     )
+
     async def _empty(_user):  # _ledger 는 async 다
         return empty
 
@@ -286,9 +291,7 @@ def test_보유_0종목이면_409(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_LLM_키가_없으면_409(monkeypatch: pytest.MonkeyPatch) -> None:
     """항목마다 null로 흩뿌리지 않고 한 번에 알린다."""
-    monkeypatch.setattr(
-        "app.api.routes.portfolio.get_llm_client", lambda: NullLlmClient()
-    )
+    monkeypatch.setattr("app.api.routes.portfolio.get_llm_client", lambda: NullLlmClient())
     app = create_app()
     app.dependency_overrides[get_session] = lambda: StubSession()
     with TestClient(app) as client:
@@ -350,3 +353,15 @@ def test_지표가_적재_전이면_해당_지표만_빠진다(client: TestClien
     assert indicators["beta"] is None
     assert indicators["large_cap_weight"] is None
     assert indicators["hhi"] > 0.0
+
+
+def test_요청_시점에는_지문이_달라도_저장된_진단을_돌려주고_배치만_다시_만든다():
+    """자주 매매하는 사용자가 조회마다 LLM 을 태우지 않게 한다."""
+    import inspect
+
+    from app.api.routes import portfolio
+
+    assert "not regenerate or cache.fingerprint == fingerprint" in inspect.getsource(
+        portfolio.build_diagnosis
+    )
+    assert "regenerate=False" in inspect.getsource(portfolio.diagnosis)
