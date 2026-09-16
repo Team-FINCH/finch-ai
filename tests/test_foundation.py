@@ -35,6 +35,7 @@ EXPECTED_TABLES = {
     "trade_watermarks",
     "ai_responses",
     "chat_messages",
+    "chat_jobs",
     "portfolio_diagnosis_cache",
     "ai_feedback",
     "ai_request_windows",
@@ -206,7 +207,9 @@ def test_health_returns_degraded_200_when_ingest_query_fails(monkeypatch) -> Non
     assert response.status_code == 200
     assert response.json()["status"] == "degraded"
     assert response.json()["ingest_probe_errors"] == [
-        "documents", "embeddings", "price_daily",
+        "documents",
+        "embeddings",
+        "price_daily",
     ]
     assert response.json()["ingest"] == {
         "documents": False,
@@ -229,9 +232,7 @@ def _gauges(body: str) -> dict[str, int]:
     """노출 텍스트에서 주석을 뺀 샘플만 뽑는다."""
     return {
         name: int(value)
-        for name, value in (
-            line.split() for line in body.splitlines() if not line.startswith("#")
-        )
+        for name, value in (line.split() for line in body.splitlines() if not line.startswith("#"))
     }
 
 
@@ -256,9 +257,7 @@ def test_metrics_exposes_ingest_state_as_zero_or_one_gauges(
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/plain")
-    assert _gauges(response.text) == dict(
-        zip(INGEST_GAUGES, [int(e) for e in exists], strict=True)
-    )
+    assert _gauges(response.text) == dict(zip(INGEST_GAUGES, [int(e) for e in exists], strict=True))
     for name in INGEST_GAUGES:
         assert f"# TYPE {name} gauge" in response.text
     assert response.text.endswith("\n")

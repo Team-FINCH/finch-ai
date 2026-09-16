@@ -72,6 +72,9 @@ def _usage_endpoint(path: str) -> str | None:
         return "stocks.analysis"
     suffixes = {
         "/chat": "chat",
+        # job 생성은 채팅과 같은 한도를 쓴다. 조회(GET /chat/jobs/{id})는 이 의존성을
+        # 아예 안 걸어 폴링이 한도에 걸리지 않는다 (#90 ㄴ).
+        "/chat/jobs": "chat",
         "/portfolio/diagnosis": "portfolio.diagnosis",
         "/portfolio/attribution": "portfolio.attribution",
         "/orders/preview": "orders.preview",

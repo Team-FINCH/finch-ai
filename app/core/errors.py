@@ -20,6 +20,7 @@ class ErrorCode(StrEnum):
     RATE_LIMITED = "RATE_LIMITED"
     RETRIEVAL_FAILED = "RETRIEVAL_FAILED"
     LLM_TIMEOUT = "LLM_TIMEOUT"
+    RESOURCE_NOT_FOUND = "RESOURCE_NOT_FOUND"
 
 
 STATUS_BY_CODE: dict[ErrorCode, int] = {
@@ -32,6 +33,7 @@ STATUS_BY_CODE: dict[ErrorCode, int] = {
     ErrorCode.RATE_LIMITED: 429,
     ErrorCode.RETRIEVAL_FAILED: 502,
     ErrorCode.LLM_TIMEOUT: 504,
+    ErrorCode.RESOURCE_NOT_FOUND: 404,
 }
 
 
@@ -104,3 +106,9 @@ class RetrievalFailed(AppError):
 
 class LLMTimeout(AppError):
     code = ErrorCode.LLM_TIMEOUT
+
+
+class ResourceNotFound(AppError):
+    """없는 것과 남의 것을 같은 답으로 가린다 (#90 ㅁ)."""
+
+    code = ErrorCode.RESOURCE_NOT_FOUND

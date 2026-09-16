@@ -45,6 +45,13 @@ class _Session:
     async def rollback(self) -> None:
         return None
 
+    async def scalars(self, statement: Any) -> Any:
+        class _Empty:
+            def all(self) -> list[Any]:
+                return []
+
+        return _Empty()
+
     async def scalar(self, statement: Any) -> Any:
         return None
 
@@ -54,6 +61,23 @@ def _app(monkeypatch, **patches: Any) -> TestClient:
         monkeypatch.setattr(target.replace("__", "."), value)
     app = create_app()
     app.dependency_overrides[get_session] = _Session
+
+    # 동기 /chat 은 작업 실행기를 거친다. 실행기는 자기 DB 세션을 여니 여기서는
+    # 가짜 세션으로 답만 만들고, 예외는 실행기와 같은 (status, result, error) 로 옮긴다.
+    async def _inline_run(job, guard):
+        from app.api.routes.chat import ChatRequest, answer_question
+        from app.core.errors import AppError
+
+        body = ChatRequest(
+            conversation_id=job.conversation_id, message=job.question, context=job.context
+        )
+        try:
+            envelope = await answer_question(body, job.user_id, _Session())
+        except AppError as exc:
+            return "failed", None, {"code": exc.code.value, "message": exc.message}
+        return "completed", envelope.model_dump(mode="json"), None
+
+    monkeypatch.setattr("app.chat_jobs.run_job", _inline_run)
     return TestClient(app)
 
 
