@@ -430,11 +430,50 @@ async def test_공통_캐시는_키마다_최근_성공_행에서_가져온다(m
     assert cached.sections["current"]["cached_at"].startswith("2026-08-28T10")
 
 
-def test_공통_캐시_조회는_캐시_히트_행을_원본으로_치지_않는다():
-    """캐시 히트도 기록되므로, 그 행을 다시 집으면 TTL 이 영원히 늘어난다."""
-    import inspect
+@pytest.mark.anyio
+async def test_공통_캐시는_복사된_섹션을_원본으로_치지_않는다(monkeypatch):
+    """캐시 히트 행의 섹션은 `cached: true` 다. 그걸 다시 집으면 TTL 이 영원히 늘어난다.
 
-    from app.api.routes import stocks
+    반대로 일부만 새로 만든 행의 새 섹션(`cached: false`)은 원본이어야 한다 — 행 단위
+    플래그로 거르면 그 섹션을 매 요청 다시 만든다.
+    """
+    now = datetime(2026, 8, 28, 12, 0, tzinfo=timezone(timedelta(hours=9)))
+    fresh = {"title": "t", "text": "새로 만듦", "segments": [], "cached": False, "cached_at": None}
+    copied = {"title": "t", "text": "복사본", "segments": [], "cached": True, "cached_at": "x"}
+    rows = [
+        SimpleNamespace(
+            created_at=datetime(2026, 8, 28, 11, 0),
+            payload={
+                "content": {
+                    "ticker": "005930",
+                    "name": "삼성전자",
+                    "sections": {"current": copied, "risks": fresh},
+                },
+                "citations": [],
+                "data_as_of": {},
+            },
+        ),
+        SimpleNamespace(
+            created_at=datetime(2026, 8, 28, 10, 0),
+            payload={
+                "content": {
+                    "ticker": "005930",
+                    "name": "삼성전자",
+                    "sections": {"current": fresh, "risks": fresh},
+                },
+                "citations": [],
+                "data_as_of": {},
+            },
+        ),
+    ]
 
-    source = inspect.getsource(stocks._cached_common_sections)
-    assert "AIResponse.cached.is_(False)" in source
+    class Session:
+        async def scalars(self, _statement):
+            return SimpleNamespace(all=lambda: rows)
+
+    monkeypatch.setattr("app.api.routes.stocks.prompt_version_for", lambda _endpoint: "prompt_test")
+    cached = await _cached_common_sections(Session(), "005930", {"current", "risks"}, now=now)
+
+    assert cached is not None
+    assert cached.sections["risks"]["cached_at"].startswith("2026-08-28T11")  # 새 섹션은 원본
+    assert cached.sections["current"]["cached_at"].startswith("2026-08-28T10")  # 복사본은 건너뜀
