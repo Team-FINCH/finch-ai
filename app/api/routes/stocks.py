@@ -272,6 +272,9 @@ async def _cached_common_sections(
                 select(AIResponse)
                 .where(
                     AIResponse.endpoint == "stocks.analysis",
+                    # 캐시 히트도 기록되므로 그 행을 다시 집으면 TTL 이 영원히 늘어난다.
+                    # 실제 생성 행만 캐시 원본으로 친다.
+                    AIResponse.cached.is_(False),
                     AIResponse.prompt_version == version,
                     AIResponse.created_at >= now - _COMMON_CACHE_TTL,
                     *([AIResponse.user_id == user_id] if user_id else []),
