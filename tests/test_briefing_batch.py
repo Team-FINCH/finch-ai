@@ -207,7 +207,8 @@ async def test_배치는_서비스_종목의_공통_섹션을_먼저_만들고_�
 
     seen: list[tuple[str, bool, list[str]]] = []
 
-    async def fake_analysis(ticker, body, user_id, session):
+    async def fake_analysis(ticker, body, user_id, session, *, retry_failed=False):
+        assert retry_failed  # 배치만 실패한 섹션을 다시 시도한다
         seen.append((ticker, body.personalize, list(body.sections)))
         if ticker == "000660":
             raise RuntimeError("boom")

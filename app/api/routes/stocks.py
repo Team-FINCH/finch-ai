@@ -30,7 +30,7 @@ from app.core.errors import InsufficientData, InvalidRequest, LLMTimeout
 from app.core.models import AIResponse, Event, Instrument
 from app.core.response_log import record
 from app.core.schemas import Citation, ContentModel, DataAsOf, Envelope, Segment, now_kst
-from app.core.usage_limits import ANALYSIS_BATCH_USER, current_usage, reset_usage
+from app.core.usage_limits import ANALYSIS_BATCH_USER, current_usage, reset_usage, usage_values
 from app.llm.client import NullLlmClient, get_llm_client
 from app.llm.generate import (
     SectionOutcome,
@@ -84,7 +84,10 @@ _UPCOMING_LIMIT = 5
 _COMMON_CACHE_TTL = timedelta(hours=settings.analysis_cache_ttl_h)
 #: 검사에 실패해 null 로 저장된 섹션을 다시 시도하기까지의 간격. 없으면 실패한
 #: 섹션은 원본이 없어 매 요청 다시 만들다 또 실패해 화면이 늦고 토큰이 샌다.
-_FAILED_RETRY_AFTER = timedelta(hours=1)
+#: 요청 경로는 실패한 섹션을 다시 시도하지 않는다 — 첫 조회자가 재시도를 기다리게
+#: 되기 때문이다. 재시도는 아침 배치가 `retry_failed=True` 로 한다. 상한은 캐시 TTL 과
+#: 같아 24시간 뒤에는 요청 경로도 (원본이 만료돼) 자연히 다시 만든다.
+_FAILED_RETRY_AFTER = _COMMON_CACHE_TTL
 
 
 class AnalysisRequest(BaseModel):
@@ -339,7 +342,12 @@ async def create_analysis(
 
 
 async def build_analysis(
-    ticker: str, body: AnalysisRequest, user_id: str, db: AsyncSession
+    ticker: str,
+    body: AnalysisRequest,
+    user_id: str,
+    db: AsyncSession,
+    *,
+    retry_failed: bool = False,
 ) -> Envelope[AnalysisContent]:
     if not _TICKER_RE.fullmatch(ticker):
         raise InvalidRequest("종목코드는 6자리 숫자입니다.", detail={"ticker": ticker})
@@ -358,7 +366,10 @@ async def build_analysis(
     generation_keys = [
         key
         for key in requested
-        if not (cached is not None and (key in cached.sections or key in cached.failed))
+        if not (
+            cached is not None
+            and (key in cached.sections or (key in cached.failed and not retry_failed))
+        )
     ]
 
     client = get_llm_client()
@@ -405,10 +416,13 @@ async def build_analysis(
         if counter is not None and tasks
         else None
     )
+    usage = None
     try:
         outcomes: list[SectionOutcome] = list(await asyncio.gather(*tasks.values()))
     finally:
         if token is not None:
+            # 장부는 배치 몫이지만 응답 로그의 토큰은 이 응답 것이어야 대시보드가 맞는다.
+            usage = usage_values()
             reset_usage(token)
     if (
         tasks
@@ -454,7 +468,7 @@ async def build_analysis(
             macro=cached_data.macro,
         ),
     )
-    await record(db, envelope, user_id=user_id, endpoint="stocks.analysis")
+    await record(db, envelope, user_id=user_id, endpoint="stocks.analysis", **(usage or {}))
     return envelope
 
 

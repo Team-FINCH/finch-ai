@@ -531,7 +531,28 @@ async def test_검사에_실패한_섹션은_한_시간_동안_다시_만들지_
     assert set(cached.sections) == {"current"}
     assert cached.failed == {"attention"}  # 호출부가 생성 대상에서 뺀다
 
-    # 한 시간이 지나면 다시 시도한다
-    later = now + timedelta(hours=2)
+    # 캐시 TTL 이 지나면 원본이 만료돼 자연히 다시 만든다 (그 전 재시도는 배치 몫)
+    later = now + timedelta(hours=25)
     cached = await _cached_common_sections(Session(), "005930", {"current", "attention"}, now=later)
     assert cached is not None and cached.failed == frozenset()
+
+
+def test_요청_경로는_실패한_섹션을_다시_만들지_않고_배치만_다시_시도한다(client, monkeypatch):
+    from app.api.routes import stocks
+
+    async def _cached(*_: Any, **__: Any) -> CachedAnalysis:
+        return CachedAnalysis(
+            name="삼성전자",
+            sections={},
+            citations=[],
+            data_as_of=DataAsOf(),
+            cached_at=datetime(2026, 8, 28, 9, 0).astimezone(),
+            failed=frozenset({"current"}),
+        )
+
+    monkeypatch.setattr(stocks, "_cached_common_sections", _cached)
+    monkeypatch.setattr(stocks, "current_usage", lambda: None)
+
+    body = _post(client, {"sections": ["current"]}).json()
+    assert body["content"]["sections"]["current"] is None
+    assert client.llm.calls == []  # 요청 경로는 기다리지 않는다
