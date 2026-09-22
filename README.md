@@ -158,6 +158,8 @@ python -m ingest.instruments
 python -m ingest.prices
 python -m app.rag.dart --tickers 005930,000660 --days 30
 python -m ingest.events --tickers 005930,000660 --days 30   # 공시 이벤트 표. 브리핑·성과 요인·일정이 읽는다
+# 새로 산 종목은 공시가 한 건도 없다. --backfill-days 로 그 종목만 1년을 거슬러 받는다
+python -m app.rag.dart --tickers 005930,000660 --days 7 --backfill-days 365
 python -m ingest.news --tickers 005930,000660 --days 7
 python -m app.rag.search --backfill
 ```

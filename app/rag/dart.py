@@ -246,6 +246,23 @@ async def load_targets(
         return [(ticker, codes[ticker]) for ticker in targets if ticker in codes]
 
 
+async def tickers_without_documents(tickers: Sequence[str]) -> set[str]:
+    """공시 원문이 한 건도 없는 종목. 첫 적재라 증분 창 대신 백필 창을 준다.
+
+    시세(`ingest.prices --days 400`)와 같은 구조다. 백엔드에서 새로 산 종목이
+    증분 7일만 받으면 3월에 나온 사업보고서가 영영 안 들어온다 (#98).
+    """
+    if not tickers:
+        return set()
+    async with SessionFactory() as session:
+        result = await session.execute(
+            select(Document.ticker)
+            .where(Document.source == SOURCE, Document.ticker.in_(tickers))
+            .distinct()
+        )
+        return set(tickers) - set(result.scalars())
+
+
 async def existing_rcept_nos(rcept_nos: Sequence[str]) -> set[str]:
     """이미 적재한 접수번호. 원문을 다시 받지 않기 위한 증분 판정이다."""
     if not rcept_nos:
@@ -287,9 +304,7 @@ async def save(filing: Filing, body: str) -> int:
     async with SessionFactory() as session:
         document_id = (await session.execute(statement)).scalar_one()
         # 재적재면 청킹 결과가 달라질 수 있다. 남은 조각이 근거로 딸려 나오지 않게 지운다.
-        await session.execute(
-            delete(DocumentChunk).where(DocumentChunk.document_id == document_id)
-        )
+        await session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
         if pieces:
             await session.execute(
                 pg_insert(DocumentChunk).values(
@@ -315,11 +330,16 @@ async def save(filing: Filing, body: str) -> int:
 
 
 async def run(
-    days: int, limit: int | None, max_docs: int, tickers: Sequence[str] | None = None
+    days: int,
+    limit: int | None,
+    max_docs: int,
+    tickers: Sequence[str] | None = None,
+    backfill_days: int | None = None,
 ) -> tuple[int, int, int]:
     """(적재 공시 수, 청크 수, 적재 실패 종목 수).
 
     개별 API 거절은 경고로 격리하고, 전 종목의 동일 거절은 예외로 보고한다.
+    `backfill_days` 를 주면 원문이 한 건도 없는 종목만 그만큼 거슬러 받는다.
     """
     api_key = (settings.dart_api_key or "").strip()
     if not api_key:
@@ -335,14 +355,23 @@ async def run(
     today = date.today()
     bgn_de = (today - timedelta(days=days)).strftime("%Y%m%d")
     end_de = today.strftime("%Y%m%d")
+    backfill_de = (
+        (today - timedelta(days=backfill_days)).strftime("%Y%m%d") if backfill_days else None
+    )
+    fresh = await tickers_without_documents([t for t, _ in targets]) if backfill_days else set()
     log.info("대상 %d종목 · 기간 %s~%s · 종목당 최대 %d건", len(targets), bgn_de, end_de, max_docs)
+    if fresh:
+        log.info(
+            "첫 적재 %d종목은 %s 부터 받는다: %s", len(fresh), backfill_de, ",".join(sorted(fresh))
+        )
 
     rejections: Counter[str] = Counter()
     saved = chunks = failed = 0
     with httpx.Client() as client:
         for i, (ticker, corp_code) in enumerate(targets, start=1):
             try:
-                filings = fetch_filing_list(client, api_key, corp_code, ticker, bgn_de, end_de)
+                since = backfill_de if ticker in fresh else bgn_de
+                filings = fetch_filing_list(client, api_key, corp_code, ticker, since, end_de)
                 known = await existing_rcept_nos([f.rcept_no for f in filings])
                 pending = [f for f in filings if f.rcept_no not in known][:max_docs]
                 log.info(
@@ -371,7 +400,10 @@ async def run(
     check_systemic_failure(rejections, len(targets))
     log.info(
         "공시 %d건 · 청크 %d개 적재 · 실패 %d종목 · API 거절 %d종목",
-        saved, chunks, failed, sum(rejections.values()),
+        saved,
+        chunks,
+        failed,
+        sum(rejections.values()),
     )
     return saved, chunks, failed
 
@@ -379,8 +411,18 @@ async def run(
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="DART 공시 적재기")
     parser.add_argument("--days", type=int, default=30, help="조회 기간(일). 기본 30")
-    parser.add_argument("--limit", type=int, default=None, help="서비스 목록의 앞 N종목만 (기본 전체)")
-    parser.add_argument("--tickers", help="쉼표 구분 종목코드. 주어지면 limit 을 무시하고 그 종목만")
+    parser.add_argument(
+        "--backfill-days",
+        type=int,
+        default=None,
+        help="공시가 한 건도 없는 종목만 이만큼 거슬러 받는다 (예: 365)",
+    )
+    parser.add_argument(
+        "--limit", type=int, default=None, help="서비스 목록의 앞 N종목만 (기본 전체)"
+    )
+    parser.add_argument(
+        "--tickers", help="쉼표 구분 종목코드. 주어지면 limit 을 무시하고 그 종목만"
+    )
     parser.add_argument("--max-docs", type=int, default=20, help="종목당 원문 수. 기본 20")
     parser.add_argument("--verbose", action="store_true", help="DEBUG 로그")
     args = parser.parse_args(argv)
@@ -392,13 +434,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     # httpx는 요청 URL을 통째로 찍는다. crtfc_key가 로그에 남으면 안 된다.
     logging.getLogger("httpx").setLevel(logging.WARNING)
     # 증분의 0건은 정상이다. 시스템 전체 API 거절이나 적재 예외는 비정상 종료한다.
-    tickers = (
-        [t.strip() for t in args.tickers.split(",") if t.strip()]
-        if args.tickers
-        else None
-    )
+    tickers = [t.strip() for t in args.tickers.split(",") if t.strip()] if args.tickers else None
     try:
-        _, _, failed = asyncio.run(run(args.days, args.limit, args.max_docs, tickers))
+        _, _, failed = asyncio.run(
+            run(args.days, args.limit, args.max_docs, tickers, args.backfill_days)
+        )
     except SystemicDartError as exc:
         log.error("%s", exc)
         return 1
