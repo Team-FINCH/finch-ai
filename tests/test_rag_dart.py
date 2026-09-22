@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import logging
 import zipfile
+from typing import Any
 
 import httpx
 import pytest
@@ -192,13 +193,27 @@ async def test_rejected_target_does_not_prevent_saving_other_filings(monkeypatch
     from unittest.mock import AsyncMock, Mock
 
     monkeypatch.setattr(dart.settings, "dart_api_key", "stub-key")
-    monkeypatch.setattr(dart, "load_targets", AsyncMock(return_value=[
-        ("005930", "a"), ("000660", "b"),
-    ]))
+    monkeypatch.setattr(
+        dart,
+        "load_targets",
+        AsyncMock(
+            return_value=[
+                ("005930", "a"),
+                ("000660", "b"),
+            ]
+        ),
+    )
     filing = dart.Filing("receipt", "000660", "name", "report", "20260814")
-    monkeypatch.setattr(dart, "fetch_filing_list", Mock(side_effect=[
-        dart.DartStatusError("rejected"), [filing],
-    ]))
+    monkeypatch.setattr(
+        dart,
+        "fetch_filing_list",
+        Mock(
+            side_effect=[
+                dart.DartStatusError("rejected"),
+                [filing],
+            ]
+        ),
+    )
     monkeypatch.setattr(dart, "existing_rcept_nos", AsyncMock(return_value=set()))
     monkeypatch.setattr(dart, "fetch_document", lambda *args: "filing body")
     save = AsyncMock(return_value=2)
@@ -207,3 +222,55 @@ async def test_rejected_target_does_not_prevent_saving_other_filings(monkeypatch
 
     assert await dart.run(30, None, 20) == (1, 2, 0)
     save.assert_awaited_once_with(filing, "filing body")
+
+
+@pytest.mark.anyio
+async def test_공시가_없는_종목만_백필_창으로_받는다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """새로 산 종목이 증분 7일만 받으면 3월 사업보고서가 영영 안 들어온다 (#98)."""
+    seen: list[tuple[str, str]] = []
+
+    async def fake_targets(*_: Any, **__: Any) -> list[tuple[str, str]]:
+        return [("005930", "00126380"), ("999999", "00999999")]
+
+    async def fake_fresh(_tickers: Any) -> set[str]:
+        return {"999999"}  # 원문이 한 건도 없는 종목
+
+    def fake_list(_client: Any, _key: str, _corp: str, ticker: str, bgn: str, _end: str) -> list:
+        seen.append((ticker, bgn))
+        return []
+
+    monkeypatch.setattr(dart.settings, "dart_api_key", "k")
+    monkeypatch.setattr(dart, "load_targets", fake_targets)
+    monkeypatch.setattr(dart, "tickers_without_documents", fake_fresh)
+    monkeypatch.setattr(dart, "fetch_filing_list", fake_list)
+
+    await dart.run(days=7, limit=None, max_docs=5, tickers=None, backfill_days=365)
+
+    windows = dict(seen)
+    assert windows["999999"] < windows["005930"], seen  # 첫 적재는 더 거슬러 올라간다
+
+
+@pytest.mark.anyio
+async def test_백필_일수를_주지_않으면_모든_종목이_같은_창을_쓴다(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[tuple[str, str]] = []
+
+    async def fake_targets(*_: Any, **__: Any) -> list[tuple[str, str]]:
+        return [("005930", "00126380"), ("999999", "00999999")]
+
+    async def boom(_tickers: Any) -> set[str]:
+        raise AssertionError("백필을 끄면 조회하지 않는다")
+
+    def fake_list(_client: Any, _key: str, _corp: str, ticker: str, bgn: str, _end: str) -> list:
+        seen.append((ticker, bgn))
+        return []
+
+    monkeypatch.setattr(dart.settings, "dart_api_key", "k")
+    monkeypatch.setattr(dart, "load_targets", fake_targets)
+    monkeypatch.setattr(dart, "tickers_without_documents", boom)
+    monkeypatch.setattr(dart, "fetch_filing_list", fake_list)
+
+    await dart.run(days=7, limit=None, max_docs=5)
+
+    assert len({bgn for _, bgn in seen}) == 1, seen
