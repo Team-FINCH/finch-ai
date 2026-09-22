@@ -137,18 +137,20 @@ def ratio_segment(
     *,
     signed: bool = False,
     digits: int = 1,
+    points: bool = False,
 ) -> Segment:
     """비율을 표시 문자열과 원값을 함께 담은 조각으로 만든다.
 
     표시 문자열이 곧 치환 값이다. 엔진 값 대조(§5.2 5번)가 이 문자열과
     본문을 한 글자 단위로 맞춰 보므로, 포맷을 호출부마다 다르게 쓰면 안 된다.
+    `points` 는 두 비율의 차(기여도·초과수익)라 `%p` 로 적는 값이다.
     """
     sign = "+" if signed and raw > 0 else ""
     direction = None
     if signed:
         direction = Direction.UP if raw > 0 else Direction.DOWN if raw < 0 else None
     return Segment.metric(
-        f"{sign}{raw * 100:.{digits}f}%",
+        f"{sign}{raw * 100:.{digits}f}%{'p' if points else ''}",
         raw=raw,
         source=source,
         unit=Unit.RATIO,

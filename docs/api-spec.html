@@ -1278,7 +1278,7 @@
             <tr><td><code>events[].title</code> · <code>summary</code></td><td><strong>같은 문자열이 두 키로 나간다.</strong> 별도 요약 패스가 없어 제목을 그대로 쓴다</td></tr>
             <tr><td><code>sectors</code></td><td>섹터별 배분·선택 효과. <code>proxy</code>는 그 섹터 벤치마크를 대체 지표로 채웠다는 뜻</td></tr>
             <tr><td><code>notes</code></td><td>계산 중 붙은 단서 문자열 배열. 없으면 빈 배열</td></tr>
-            <tr><td><code>summary</code> · <code>text</code> · <code>segments</code></td><td><strong>같은 내용이 두 자리로 나간다.</strong> <code>summary</code>가 <a href="#types">§12</a> Section 전체이고, <code>text</code>·<code>segments</code>는 그중 두 키를 최상위로 다시 펼친 것이다. 생성이 막히면 셋 다 <code>null</code></td></tr>
+            <tr><td><code>summary</code> · <code>text</code> · <code>segments</code></td><td><strong>같은 내용이 두 자리로 나간다.</strong> <code>summary</code>가 <a href="#types">§12</a> Section 전체이고, <code>text</code>·<code>segments</code>는 그중 두 키를 최상위로 다시 펼친 것이다. 생성이 막히면 셋 다 <code>null</code>. <strong>1~2문장</strong>이다(이슈 #94, 2026-09-22) — 화면이 수익률·세 축·종목 기여를 차트로 먼저 보여 주므로 그 넷을 되풀이하지 않고 숫자 여러 개를 함께 봐야 보이는 해석만 쓴다. 세 축(<code>market</code>·<code>sector</code>·<code>selection</code>)과 <code>excess_return</code> 의 자리표시자는 <code>%p</code> 두 자리, 수익률 둘은 <code>%</code> 두 자리로 치환된다</td></tr>
           </tbody>
         </table>
       </div>

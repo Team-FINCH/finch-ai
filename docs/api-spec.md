@@ -630,7 +630,7 @@ LLM은 계산을 시키지 않아도 *주어진 숫자를 반올림하거나 바
 | `events[].title` · `summary` | **같은 문자열이 두 키로 나간다.** 별도 요약 패스가 없어 제목을 그대로 쓴다 |
 | `sectors` | 섹터별 배분·선택 효과. `proxy`는 그 섹터 벤치마크를 대체 지표로 채웠다는 뜻 |
 | `notes` | 계산 중 붙은 단서 문자열 배열. 없으면 빈 배열 |
-| `summary` · `text` · `segments` | **같은 내용이 두 자리로 나간다.** `summary`가 [§12](#types) Section 전체이고, `text`·`segments`는 그중 두 키를 최상위로 다시 펼친 것이다. 생성이 막히면 셋 다 `null` |
+| `summary` · `text` · `segments` | **같은 내용이 두 자리로 나간다.** `summary`가 [§12](#types) Section 전체이고, `text`·`segments`는 그중 두 키를 최상위로 다시 펼친 것이다. 생성이 막히면 셋 다 `null`. **1~2문장**이다(이슈 #94, 2026-09-22) — 화면이 수익률·세 축·종목 기여를 차트로 먼저 보여 주므로 그 넷을 되풀이하지 않고 숫자 여러 개를 함께 봐야 보이는 해석만 쓴다. 세 축(`market`·`sector`·`selection`)과 `excess_return` 의 자리표시자는 `%p` 두 자리, 수익률 둘은 `%` 두 자리로 치환된다 |
 
 > **중복 키 — 미해결**
 > `portfolio_return`/`total_return`, `summary`/`text`+`segments`, `events[].title`/`summary` 세 쌍은 **같은 값을 두 이름으로 내보낸다.** 지금은 구현이 그렇게 동작하므로 그대로 적었다. 소비자가 붙기 전에 한쪽으로 줄이는 것이 맞고, 그 결정은 이 문서 밖이다.
