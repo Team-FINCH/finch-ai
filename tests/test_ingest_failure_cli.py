@@ -47,6 +47,10 @@ for module in (dart, events, financials):
     module.engine = MagicMock(dispose=AsyncMock())
 dart.load_targets = AsyncMock(return_value=targets)
 events.load_targets = AsyncMock(return_value=targets)
+# 이 검사는 종목당 목록 호출 1회를 전제로 거절 상태를 순서대로 흘린다. 유형별 분할
+# 조회(#98)는 종목당 호출을 늘리므로 여기서는 끈다 — 유형 분할은 test_rag_dart 가 본다.
+dart.DOCUMENT_TYPES = ()
+events.EVENT_TYPES = ()
 dart.existing_rcept_nos = AsyncMock(return_value=set())
 financials._targets = AsyncMock(return_value=targets)
 financials._upsert = AsyncMock(return_value=0)

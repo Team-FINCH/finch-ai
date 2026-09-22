@@ -32,6 +32,7 @@ from app.core.db import SessionFactory, engine
 from app.core.enums import EventType
 from app.core.models import Event
 from app.rag.dart import (
+    EVENT_TYPES,
     REQUEST_DELAY_S,
     DartStatusError,
     Filing,
@@ -60,12 +61,31 @@ RULES: list[tuple[tuple[str, ...], EventType, float]] = [
     ),
     # 배당은 §5.2의 0.8 목록에 없다. 없는 등급을 지어내지 않고 일반 공시로 둔다.
     (("배당",), EventType.DIVIDEND, 0.4),
-    # 0.8 주요 공시
+    # 0.8 주요 공시. 뒤쪽 열한 개는 #98 에서 추가 — 자본 구조·지배구조·거래 지위를 바꾸는 것들.
     (
-        ("공급계약", "유상증자", "자기주식", "대량보유", "주요주주"),
+        (
+            "공급계약",
+            "유상증자",
+            "자기주식",
+            "대량보유",
+            "주요주주",
+            "전환사채",
+            "신주인수권부사채",
+            "합병",
+            "분할",
+            "감자",
+            "최대주주변경",
+            "거래정지",
+            "관리종목",
+            "감사보고서",
+            "조회공시",
+            "소송",
+        ),
         EventType.FILING,
         0.8,
     ),
+    # 0.4 주주총회. 일정 성격이라 중요도는 낮고, 다가오는 일정 칸이 읽는다.
+    (("주주총회",), EventType.FILING, 0.4),
 ]
 
 DEFAULT = (EventType.FILING, 0.4)  # 0.4 그 밖의 일반 공시
@@ -134,13 +154,13 @@ async def ingest(
 ) -> dict[str, int]:
     """공시목록을 훑어 events를 채우고 요약을 돌려준다."""
     stats = {
-        "targets": 0,      # 시도한 종목 수
-        "with_filings": 0, # 공시가 하나라도 나온 종목 수
-        "filings": 0,      # 받은 공시 건수
-        "rows": 0,         # 실제로 넣은 행
-        "duplicates": 0,   # 이미 있어서 건너뛴 행
-        "unusable": 0,     # 날짜가 깨져 버린 건
-        "failed": 0,       # 종목 단위 실패
+        "targets": 0,  # 시도한 종목 수
+        "with_filings": 0,  # 공시가 하나라도 나온 종목 수
+        "filings": 0,  # 받은 공시 건수
+        "rows": 0,  # 실제로 넣은 행
+        "duplicates": 0,  # 이미 있어서 건너뛴 행
+        "unusable": 0,  # 날짜가 깨져 버린 건
+        "failed": 0,  # 종목 단위 실패
     }
 
     key = (api_key or settings.dart_api_key or "").strip()
@@ -151,7 +171,9 @@ async def ingest(
 
     targets = await load_targets(limit, tickers)
     if not targets:
-        logger.warning("corp_code가 있는 종목이 없다. 먼저 python -m ingest.instruments 를 실행할 것")
+        logger.warning(
+            "corp_code가 있는 종목이 없다. 먼저 python -m ingest.instruments 를 실행할 것"
+        )
         return stats
     stats["targets"] = len(targets)
 
@@ -167,7 +189,9 @@ async def ingest(
     with httpx.Client() as client:
         for i, (ticker, corp_code) in enumerate(targets, 1):
             try:
-                filings = fetch_filing_list(client, key, corp_code, ticker, bgn_de, end_de)
+                filings = fetch_filing_list(
+                    client, key, corp_code, ticker, bgn_de, end_de, EVENT_TYPES
+                )
             except DartStatusError as exc:
                 rejections[exc.status] += 1
                 stats["failed"] += 1
@@ -212,7 +236,9 @@ async def ingest(
 async def _main() -> None:
     parser = argparse.ArgumentParser(description="DART 공시목록 → events 적재")
     parser.add_argument("--days", type=int, default=30, help="오늘 기준 며칠 전부터 (기본 30)")
-    parser.add_argument("--tickers", help="쉼표 구분 종목코드. 주어지면 limit 을 무시하고 그 종목만")
+    parser.add_argument(
+        "--tickers", help="쉼표 구분 종목코드. 주어지면 limit 을 무시하고 그 종목만"
+    )
     parser.add_argument(
         "--limit",
         type=int,
@@ -224,11 +250,7 @@ async def _main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-5s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)  # crtfc_key가 로그에 남으면 안 된다
 
-    tickers = (
-        [t.strip() for t in args.tickers.split(",") if t.strip()]
-        if args.tickers
-        else None
-    )
+    tickers = [t.strip() for t in args.tickers.split(",") if t.strip()] if args.tickers else None
     try:
         s = await ingest(days=args.days, limit=args.limit, tickers=tickers)
         logger.info(

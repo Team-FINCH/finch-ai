@@ -157,6 +157,8 @@ python -m ingest.instruments
 python -m ingest.prices
 python -m app.rag.dart --tickers 005930,000660 --days 30
 python -m ingest.events --tickers 005930,000660 --days 30   # 공시 이벤트 표. 브리핑·성과 요인·일정이 읽는다
+# 공시 유형: 이벤트 표는 정기·주요사항·거래소·지분·감사(A·B·I·D·F), 원문은 정기·주요사항·거래소(A·B·I)만.
+# 정기공시 원문은 종류별 최신 1건, 정정공시는 최종본만 받는다. 코드 상수 EVENT_TYPES·DOCUMENT_TYPES.
 # 새로 산 종목은 공시가 한 건도 없다. --backfill-days 로 그 종목만 1년을 거슬러 받는다
 python -m app.rag.dart --tickers 005930,000660 --days 7 --backfill-days 365
 python -m ingest.news --tickers 005930,000660 --days 7

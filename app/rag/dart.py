@@ -88,6 +88,8 @@ class Filing:
     corp_name: str
     report_nm: str
     rcept_dt: str
+    #: DART 공시 유형 코드. A 정기 · B 주요사항 · I 거래소 · D 지분 … (목록 API `pblntf_ty`)
+    pblntf_ty: str = ""
 
     @property
     def published_at(self) -> datetime | None:
@@ -102,6 +104,18 @@ class Filing:
         return VIEWER_URL.format(rcept_no=self.rcept_no)
 
 
+#: DART 공시 유형 (목록 API `pblntf_ty`). 이벤트 표와 원문이 다른 범위를 받는다 (#98).
+#:   A 정기공시 · B 주요사항보고 · C 발행 · D 지분 · E 기타 · F 외부감사 · G 펀드 · H 유동화
+#:   I 거래소공시 · J 공정위
+#: 이벤트 표: 정기·주요사항·거래소·지분·감사. 원문: 정기·주요사항·거래소만. C·E·G·H·J 는
+#: 대기업의 공정위 계열회사 변동·임원 소유상황 같은 노이즈라 받지 않는다.
+EVENT_TYPES: tuple[str, ...] = ("A", "B", "I", "D", "F")
+DOCUMENT_TYPES: tuple[str, ...] = ("A", "B", "I")
+#: 정기공시 원문은 종류별 최신 1건만 받는다. 지난 분기 보고서는 이번 것에 포함돼 겹치고,
+#: 1년치 전문은 종목 37개 기준 청크가 수십만 개라 임베딩이 며칠 걸린다.
+PERIODIC_KINDS: tuple[str, ...] = ("사업보고서", "반기보고서", "분기보고서")
+
+
 # ── 수집 ───────────────────────────────────────────────────────
 
 
@@ -112,11 +126,30 @@ def fetch_filing_list(
     ticker: str,
     bgn_de: str,
     end_de: str,
+    types: Sequence[str] | None = None,
 ) -> list[Filing]:
     """한 종목의 공시목록. 페이징을 끝까지 따라간다.
 
+    `types` 를 주면 유형마다 따로 조회한다 — 목록 API 는 `pblntf_ty` 를 하나만 받는다.
     API 거절은 DartStatusError로 전달해 호출자가 전 종목 실패를 판별한다.
     """
+    filings: list[Filing] = []
+    for pblntf_ty in types or (None,):
+        filings.extend(
+            _fetch_filing_pages(client, api_key, corp_code, ticker, bgn_de, end_de, pblntf_ty)
+        )
+    return filings
+
+
+def _fetch_filing_pages(
+    client: httpx.Client,
+    api_key: str,
+    corp_code: str,
+    ticker: str,
+    bgn_de: str,
+    end_de: str,
+    pblntf_ty: str | None,
+) -> list[Filing]:
     filings: list[Filing] = []
     for page_no in range(1, PAGE_LIMIT + 1):
         try:
@@ -129,6 +162,9 @@ def fetch_filing_list(
                     "end_de": end_de,
                     "page_count": PAGE_COUNT,
                     "page_no": page_no,
+                    # 정정공시는 최종본만. 원본·정정본이 둘 다 오면 같은 내용이 두 번 적재된다.
+                    "last_reprt_at": "Y",
+                    **({"pblntf_ty": pblntf_ty} if pblntf_ty else {}),
                 },
                 timeout=HTTP_TIMEOUT,
             )
@@ -156,6 +192,7 @@ def fetch_filing_list(
                     corp_name=(item.get("corp_name") or "").strip(),
                     report_nm=(item.get("report_nm") or "").strip() or rcept_no,
                     rcept_dt=(item.get("rcept_dt") or "").strip(),
+                    pblntf_ty=pblntf_ty or "",
                 )
             )
 
@@ -244,6 +281,19 @@ async def load_targets(
         codes = {row.ticker: row.corp_code for row in await session.execute(stmt)}
         report_resolution(log, targets, list(codes), explicit=bool(tickers))
         return [(ticker, codes[ticker]) for ticker in targets if ticker in codes]
+
+
+def keep_latest_periodic(filings: Sequence[Filing]) -> list[Filing]:
+    """정기공시(사업·반기·분기보고서)는 종류별 최신 1건만 남긴다. 나머지는 그대로."""
+    latest: dict[str, Filing] = {}
+    others: list[Filing] = []
+    for filing in filings:
+        kind = next((k for k in PERIODIC_KINDS if k in filing.report_nm), None)
+        if kind is None:
+            others.append(filing)
+        elif kind not in latest or filing.rcept_dt > latest[kind].rcept_dt:
+            latest[kind] = filing
+    return others + list(latest.values())
 
 
 async def tickers_without_documents(tickers: Sequence[str]) -> set[str]:
@@ -371,7 +421,11 @@ async def run(
         for i, (ticker, corp_code) in enumerate(targets, start=1):
             try:
                 since = backfill_de if ticker in fresh else bgn_de
-                filings = fetch_filing_list(client, api_key, corp_code, ticker, since, end_de)
+                filings = keep_latest_periodic(
+                    fetch_filing_list(
+                        client, api_key, corp_code, ticker, since, end_de, DOCUMENT_TYPES
+                    )
+                )
                 known = await existing_rcept_nos([f.rcept_no for f in filings])
                 pending = [f for f in filings if f.rcept_no not in known][:max_docs]
                 log.info(

@@ -235,7 +235,7 @@ async def test_공시가_없는_종목만_백필_창으로_받는다(monkeypatch
     async def fake_fresh(_tickers: Any) -> set[str]:
         return {"999999"}  # 원문이 한 건도 없는 종목
 
-    def fake_list(_client: Any, _key: str, _corp: str, ticker: str, bgn: str, _end: str) -> list:
+    def fake_list(_client: Any, _key: str, _corp: str, ticker: str, bgn: str, *_: Any) -> list:
         seen.append((ticker, bgn))
         return []
 
@@ -262,7 +262,7 @@ async def test_백필_일수를_주지_않으면_모든_종목이_같은_창을_
     async def boom(_tickers: Any) -> set[str]:
         raise AssertionError("백필을 끄면 조회하지 않는다")
 
-    def fake_list(_client: Any, _key: str, _corp: str, ticker: str, bgn: str, _end: str) -> list:
+    def fake_list(_client: Any, _key: str, _corp: str, ticker: str, bgn: str, *_: Any) -> list:
         seen.append((ticker, bgn))
         return []
 
@@ -274,3 +274,43 @@ async def test_백필_일수를_주지_않으면_모든_종목이_같은_창을_
     await dart.run(days=7, limit=None, max_docs=5)
 
     assert len({bgn for _, bgn in seen}) == 1, seen
+
+
+def test_유형을_주면_유형마다_따로_조회하고_최종본만_받는다(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(dart, "REQUEST_DELAY_S", 0)
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(dict(request.url.params))
+        return httpx.Response(200, json={"status": "013"})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        dart.fetch_filing_list(client, "k", "x", "005930", "20260101", "20260131", ("A", "I"))
+
+    assert [p["pblntf_ty"] for p in seen] == ["A", "I"]
+    assert all(p["last_reprt_at"] == "Y" for p in seen)
+
+
+def test_정기공시는_종류별_최신_1건만_남긴다() -> None:
+    def f(name: str, dt: str) -> dart.Filing:
+        return dart.Filing(
+            rcept_no=dt + name[:2], ticker="t", corp_name="c", report_nm=name, rcept_dt=dt
+        )
+
+    kept = dart.keep_latest_periodic(
+        [
+            f("분기보고서 (2026.03)", "20260515"),
+            f("분기보고서 (2025.09)", "20251114"),
+            f("사업보고서 (2025.12)", "20260320"),
+            f("단일판매ㆍ공급계약체결", "20260601"),
+            f("[기재정정]분기보고서 (2026.03)", "20260520"),
+        ]
+    )
+    names = sorted(k.report_nm for k in kept)
+    assert names == [
+        "[기재정정]분기보고서 (2026.03)",
+        "단일판매ㆍ공급계약체결",
+        "사업보고서 (2025.12)",
+    ]
