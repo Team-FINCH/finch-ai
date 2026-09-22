@@ -150,9 +150,7 @@ def _wired(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
         _filing("[기재정정]단일판매ㆍ공급계약체결", stamp),
     ]
 
-    async def _targets(
-        limit: int, tickers: Sequence[str] | None = None
-    ) -> list[tuple[str, str]]:
+    async def _targets(limit: int, tickers: Sequence[str] | None = None) -> list[tuple[str, str]]:
         return [("005930", "00126380")]
 
     monkeypatch.setattr(events, "load_targets", _targets)
@@ -194,3 +192,19 @@ async def test_missing_api_key_reports_failure_without_touching_db(
     stats = await events.ingest(days=30, limit=10, api_key=None)
     assert stats["failed"] == 1
     assert stats["rows"] == 0
+
+
+@pytest.mark.parametrize(
+    "title,importance",
+    [
+        ("전환사채권발행결정", 0.8),
+        ("주식등의대량보유상황보고서", 0.8),
+        ("최대주주변경", 0.8),
+        ("주주총회소집결의", 0.4),
+        ("감사보고서제출", 0.8),
+    ],
+)
+def test_98_에서_추가한_분류_키워드(title: str, importance: float) -> None:
+    from ingest.events import classify
+
+    assert classify(title)[1] == importance, title
