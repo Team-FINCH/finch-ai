@@ -218,9 +218,9 @@ SENTENCE_LIMITS: dict[Feature, tuple[int, int]] = {
     Feature.WHY_MOVED: (3, 4),
     Feature.BEFORE_YOU_TRADE: (2, 3),
     Feature.ASK_MY_PORTFOLIO: (1, 6),
-    # §2 표에 성과 요인 분해 행은 없다. 시장·섹터·선택 세 축과 상위 기여 종목까지
-    # 짚어야 해서 Portfolio Doctor 요약보다 한 문장 더 준다.
-    Feature.PERFORMANCE_ATTRIBUTION: (2, 4),
+    # §2 표에 성과 요인 분해 행은 없다. 화면이 세 축과 상위 기여 종목을 차트로
+    # 먼저 보여 주므로(이슈 #94) 문장은 그 뒤에 남는 해석 한두 개다.
+    Feature.PERFORMANCE_ATTRIBUTION: (1, 2),
 }
 
 

@@ -853,12 +853,15 @@ def _attribution_segments(result: AttributionResult) -> dict[str, Segment]:
     """요약이 쓸 수 있는 수치. 상위 기여 종목 이름은 텍스트라 자리표시자가 아니다."""
     source = MetricSource.ATTRIBUTION_ENGINE
     values = {
-        "portfolio_return": ratio_segment(result.portfolio_return, source, signed=True),
-        "benchmark_return": ratio_segment(result.benchmark_return, source, signed=True),
-        "excess_return": ratio_segment(result.excess_return, source, signed=True),
-        "market": ratio_segment(result.market, source, signed=True),
-        "sector": ratio_segment(result.sector, source, signed=True),
-        "selection": ratio_segment(result.selection, source, signed=True),
+        # 화면(?tab=cause)과 같은 표기 — 수익률은 %, 기여도·초과수익은 %p 두 자리 (이슈 #94).
+        "portfolio_return": ratio_segment(result.portfolio_return, source, signed=True, digits=2),
+        "benchmark_return": ratio_segment(result.benchmark_return, source, signed=True, digits=2),
+        "excess_return": ratio_segment(
+            result.excess_return, source, signed=True, digits=2, points=True
+        ),
+        "market": ratio_segment(result.market, source, signed=True, digits=2, points=True),
+        "sector": ratio_segment(result.sector, source, signed=True, digits=2, points=True),
+        "selection": ratio_segment(result.selection, source, signed=True, digits=2, points=True),
     }
     if result.contributors:
         top = result.contributors[0]
