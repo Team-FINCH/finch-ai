@@ -2153,7 +2153,8 @@
           "filing",
           "dividend",
           "macro",
-          "product"
+          "product",
+          "news"
         ],
         "title": "EventType",
         "type": "string"
