@@ -296,6 +296,34 @@ def test_forbidden_expression_rejects_policy_violations(rendered: str) -> None:
     assert result.disposition is Disposition.REGENERATE
 
 
+@pytest.mark.parametrize(
+    "rendered",
+    [
+        pytest.param(
+            "Fact: 조회공시 요구에 대한 답변은 미확정입니다. Interpretation: 순매도가 확인됩니다.",
+            id="stock_analyst 라벨",
+        ),
+        pytest.param("Change: 단일 종목 비중이 바뀝니다.", id="before_you_trade 라벨"),
+        pytest.param("Risk: 집중도가 임계값을 넘었습니다.", id="portfolio_doctor 라벨"),
+        pytest.param("Watch : 확정 여부를 지켜봅니다.", id="콜론 앞 공백"),
+    ],
+)
+def test_forbidden_expression_rejects_structure_labels(rendered: str) -> None:
+    """프롬프트 「구조」의 순서 이름이 본문 라벨로 새면 반려한다 (이슈 #99).
+
+    사용자 화면에 영문 라벨이 그대로 보여 자리표시자 노출처럼 읽힌다.
+    """
+    result = check_forbidden_expression(rendered)
+    assert not result.passed, rendered
+    assert result.disposition is Disposition.REGENERATE
+
+
+def test_forbidden_expression_allows_label_words_without_colon() -> None:
+    """낱말 자체는 금지가 아니다. 라벨로 쓰인 형태(낱말 + 콜론)만 막는다."""
+    assert check_forbidden_expression("Watch 목록에 올려 두었습니다.").passed
+    assert check_forbidden_expression("위험 요인은 다음과 같습니다: 집중도입니다.").passed
+
+
 def test_forbidden_expression_allows_attributed_future_statement() -> None:
     """출처를 밝힌 전망은 우리 주장이 아니므로 통과해야 한다."""
     assert check_forbidden_expression("회사는 실적이 개선될 것이라고 밝혔습니다.").passed
