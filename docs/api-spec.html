@@ -1460,7 +1460,7 @@
         </table>
       </div>
       <p><code>category</code>는 <code>holding_move · earnings · filing · macro_event · portfolio_shift</code> 중 하나이며 최대 4건을 반환한다.</p>
-      <p><code>items[].event_type</code>은 원본 EventType인 <code>earnings · filing · dividend · macro · product</code> 중 하나다. 정책·거시는 <code>macro</code>, 공시는 <code>filing</code>, 실적은 <code>earnings</code>로 구분한다. 이벤트가 아닌 보유 등락·업종 변화는 <code>null</code>이다. 기존 <code>category</code> 매핑은 유지한다(배당·신제품의 category는 <code>filing</code>).</p>
+      <p><code>items[].event_type</code>은 원본 EventType인 <code>earnings · filing · dividend · macro · product · news</code> 중 하나다. 정책·거시는 <code>macro</code>, 공시는 <code>filing</code>, 실적은 <code>earnings</code>로 구분하고, 분류 규칙에 걸리지 않은 일반 기사는 <code>news</code>다. 이벤트가 아닌 보유 등락·업종 변화는 <code>null</code>이다. 기존 <code>category</code> 매핑은 유지한다(배당·신제품·뉴스의 category는 <code>filing</code>).</p>
       <p><code>items[].publisher</code>는 연결된 원문 Document의 표시용 출처다(예: 뉴스의 언론사명). 인용의 <code>publisher</code>와 같으며 수집 경로인 <code>source</code>로 대체하지 않는다. 문서가 없거나 삭제됐거나 publisher가 없으면 <code>null</code>이다. 두 키는 항상 포함되며, 이 키가 없는 기존 캐시는 재생성한다.</p>
       <p>
         <code>date</code>·<code>status</code>·<code>generated_at</code>·<code>items</code> 네 키는 항상 실려 나온다.
