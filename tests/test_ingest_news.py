@@ -392,7 +392,7 @@ def test_cap_counts_existing_news_but_not_filings_and_is_per_ticker_day(news_ses
         ("배당 발표", "dividend", 0.5),
         ("신제품 출시", "product", 0.5),
         ("기준금리 인하", "macro", 0.4),
-        ("일반 기사", "filing", 0.3),
+        ("일반 기사", "news", 0.3),
     ],
 )
 def test_classification_stays_below_earnings_filings(title, kind, importance):
