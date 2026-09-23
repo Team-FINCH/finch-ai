@@ -254,6 +254,12 @@ def _job_envelope(job: ChatJob) -> Envelope[ChatJobContent]:
     if result:
         envelope.citations = [Citation.model_validate(c) for c in result.get("citations", [])]
         envelope.data_as_of = DataAsOf.model_validate(result.get("data_as_of", {}))
+        # 저장된 봉투의 request_id 를 그대로 쓴다. Envelope 의 기본값은 조회할 때마다
+        # 새 값을 만드는데, POST /ai/feedback 은 이 값으로 원본 응답을 찾고(계약 C14)
+        # 응답 로그에는 **답을 만든 쪽의** request_id 만 남는다. 새로 발급하면 피드백이
+        # 엉뚱한 응답에 붙거나 404 가 되고, 화면에는 아무 표시도 나지 않는다 (이슈 #102).
+        # 동기 경로(POST /ai/chat)는 저장된 봉투를 그대로 돌려줘 이 문제가 없다.
+        envelope.request_id = result.get("request_id", envelope.request_id)
     return envelope
 
 
