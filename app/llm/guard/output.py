@@ -220,7 +220,12 @@ SENTENCE_LIMITS: dict[Feature, tuple[int, int]] = {
     Feature.ASK_MY_PORTFOLIO: (1, 6),
     # §2 표에 성과 요인 분해 행은 없다. 화면이 세 축과 상위 기여 종목을 차트로
     # 먼저 보여 주므로(이슈 #94) 문장은 그 뒤에 남는 해석 한두 개다.
-    Feature.PERFORMANCE_ATTRIBUTION: (1, 2),
+    #
+    # 상한이 2일 때 운영에서 요약이 통째로 비는 일이 잦았다 (이슈 #101). 1회차가
+    # raw_number 로 반려되면 재생성이 그 수치를 피해 풀어 쓰면서 문장이 늘어나는데,
+    # 상한 2 안에 다시 착지할 여지가 없어 MAX_ATTEMPTS 를 소진하고 요약 없이 끝난다.
+    # 3 으로 둔다 — #94 가 요청한 "짧게"는 개편 전 상한이 4였으므로 그대로 지켜진다.
+    Feature.PERFORMANCE_ATTRIBUTION: (1, 3),
 }
 
 

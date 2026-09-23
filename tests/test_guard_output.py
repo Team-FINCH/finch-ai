@@ -269,6 +269,19 @@ def test_citation_integrity_rejects_declared_only_citation() -> None:
 
 
 # ── 7. 금지 표현 ─────────────────────────────────────────────────────────────
+def test_length_attribution_allows_three_sentences() -> None:
+    """성과 요인 요약 상한은 3이다 (이슈 #101).
+
+    상한이 2였을 때, 1회차가 raw_number 로 반려되면 재생성이 그 수치를 풀어 쓰면서
+    문장이 늘어나 상한 안에 다시 착지하지 못했고 요약이 통째로 비었다.
+    """
+    three = "시장이 밀어 올렸습니다. 종목 선택은 깎았습니다. 방향이 엇갈렸습니다."
+    four = three + " 기여가 큰 종목과 깎은 종목이 갈렸습니다."
+    assert check_length(three, Feature.PERFORMANCE_ATTRIBUTION).passed
+    assert not check_length(four, Feature.PERFORMANCE_ATTRIBUTION).passed
+    assert check_length("한 문장입니다.", Feature.PERFORMANCE_ATTRIBUTION).passed
+
+
 def test_forbidden_expression_accepts_neutral_sentence() -> None:
     result = check_forbidden_expression("반도체 비중이 42.3%까지 올라왔습니다[^cit_1].")
     assert result.passed
