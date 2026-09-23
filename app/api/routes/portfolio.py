@@ -529,6 +529,11 @@ async def build_diagnosis(
     return envelope
 
 
+#: 요약 생성이 반려된 응답을 캐시로 재사용하는 시간. 연속 호출이 같은 실패를 다시
+#: 만드는 것만 막고, 이 창이 지나면 다시 생성해 본다 (이슈 #101).
+_FAILED_SUMMARY_TTL = timedelta(minutes=10)
+
+
 async def _cached_attribution(
     db: DbSession, user_id: str, period: str, end: date
 ) -> Envelope[AttributionContent] | None:
@@ -536,6 +541,9 @@ async def _cached_attribution(
 
     시세는 장 마감 후 하루 한 번 확정되므로 마지막 거래일이 같으면 입력이 같다.
     전용 테이블 대신 응답 로그를 읽는다 — 종목 분석 캐시와 같은 방식이다.
+
+    요약이 있는 행을 먼저 고르고, 없으면 `_FAILED_SUMMARY_TTL` 안의 요약 없는 행을
+    쓴다. 뒤쪽이 없으면 `None` 을 돌려 다시 만들게 한다.
     """
     version = prompt_version_for("portfolio.attribution")
     try:
@@ -558,23 +566,49 @@ async def _cached_attribution(
     except Exception:  # 캐시는 최적화다. 조회 실패가 본래 분해를 막으면 안 된다.
         log.warning("성과 요인 캐시 조회 실패 · user=%s", user_id, exc_info=True)
         return None
+
+    def _envelope(row: AIResponse, content: dict) -> Envelope[AttributionContent]:
+        cached_at = row.created_at
+        if cached_at.tzinfo is None:
+            cached_at = cached_at.replace(tzinfo=now_kst().tzinfo)
+        if isinstance(content.get("summary"), dict):
+            content["summary"] |= {"cached": True, "cached_at": cached_at.isoformat()}
+        return Envelope[AttributionContent](
+            content=content,
+            data_as_of=DataAsOf.model_validate(row.payload.get("data_as_of", {})),
+            model=row.payload.get("model") or settings.llm_model,
+            cached=True,
+        )
+
+    fallback: tuple[AIResponse, dict] | None = None
     for row in rows:
         payload = row.payload
         content = payload.get("content") if isinstance(payload, dict) else None
         if not isinstance(content, dict) or content.get("period") != period:
             continue
-        if content.get("end") != end.isoformat() or not content.get("summary"):
+        if content.get("end") != end.isoformat():
             continue
-        cached_at = row.created_at
-        if cached_at.tzinfo is None:
-            cached_at = cached_at.replace(tzinfo=now_kst().tzinfo)
-        content["summary"] |= {"cached": True, "cached_at": cached_at.isoformat()}
-        return Envelope[AttributionContent](
-            content=content,
-            data_as_of=DataAsOf.model_validate(payload.get("data_as_of", {})),
-            model=payload.get("model") or settings.llm_model,
-            cached=True,
+        if content.get("summary"):
+            return _envelope(row, content)
+        if fallback is None:
+            fallback = (row, content)
+    # 요약이 없는 응답도 짧은 동안은 캐시로 쓴다. 분해 결과 자체는 유효한데 캐시
+    # 원본으로 안 잡히면, 같은 화면을 다시 열 때마다 실패한 요약 생성을 처음부터
+    # 되풀이한다 — 한 번에 15~29초와 그만큼의 토큰이다 (이슈 #101).
+    #
+    # 24시간을 주지 않는 이유가 핵심이다. 그렇게 하면 실패가 하루 종일 굳어 요약이
+    # 빈 화면이 고정된다. 짧게 잡아 두면 연속 호출의 비용만 끊고, 창이 지난 뒤에는
+    # 다시 만들어 볼 기회가 남는다 — 반려는 모델 출력에 따라 갈리므로 다음 번에
+    # 통과할 수 있다.
+    if fallback is not None:
+        row, content = fallback
+        age = now_kst() - (
+            row.created_at
+            if row.created_at.tzinfo
+            else row.created_at.replace(tzinfo=now_kst().tzinfo)
         )
+        if age <= _FAILED_SUMMARY_TTL:
+            return _envelope(row, content)
     return None
 
 

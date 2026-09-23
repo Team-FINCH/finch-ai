@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from app.api.deps import get_session
 from app.api.main import create_app
 from app.core.models import AIFeedback, AIResponse
+from app.core.schemas import now_kst
 from app.engines.attribution import (
     BenchmarkDay,
     EventRecord,
@@ -560,3 +561,88 @@ def test_기여_종목의_return_은_저장된_이름으로도_되읽힌다():
     }
     assert AttributionContributor.model_validate({**base, "return_": 0.01}).return_ == 0.01
     assert AttributionContributor.model_validate({**base, "return": 0.02}).return_ == 0.02
+
+
+# ── 요약 없는 응답의 캐시 재사용 (이슈 #101) ─────────────────
+#
+# 요약 생성이 가드에 반려되면 응답은 200 으로 나가지만 예전에는 캐시 원본으로
+# 잡히지 않아, 같은 화면을 다시 열 때마다 실패한 생성을 처음부터 되풀이했다.
+# 한 번에 15~29초와 그만큼의 토큰이다.
+
+
+class _StubRows:
+    def __init__(self, rows: list[Any]) -> None:
+        self._rows = rows
+
+    def all(self) -> list[Any]:
+        return self._rows
+
+
+class _StubDb:
+    def __init__(self, rows: list[Any]) -> None:
+        self._rows = rows
+
+    async def scalars(self, _statement: Any) -> _StubRows:
+        return _StubRows(self._rows)
+
+
+def _row(*, created_at: Any, summary: dict[str, Any] | None, period: str = "1m") -> AIResponse:
+    return AIResponse(
+        request_id=f"req_{created_at.isoformat()}",
+        endpoint="portfolio.attribution",
+        cached=False,
+        created_at=created_at,
+        payload={
+            "model": "test-model",
+            "data_as_of": {},
+            "content": {
+                "period": period,
+                "start": "2026-08-24",
+                "end": "2026-09-23",
+                "trading_days": 21,
+                "portfolio_return": 0.02,
+                "total_return": 0.02,
+                "benchmark_return": 0.01,
+                "excess_return": 0.01,
+                "breakdown": {"market": 0.01, "sector": 0.0, "selection": 0.01},
+                "contributors": [],
+                "detractors": [],
+                "sectors": [],
+                "notes": [],
+                "summary": summary,
+                "text": None,
+                "segments": None,
+            },
+        },
+    )
+
+
+async def _lookup(rows: list[AIResponse]) -> Any:
+    from app.api.routes.portfolio import _cached_attribution
+
+    return await _cached_attribution(_StubDb(rows), "u1", "1m", date(2026, 9, 23))
+
+
+@pytest.mark.anyio
+async def test_요약이_있는_행을_먼저_고른다():
+    fresh_empty = _row(created_at=now_kst(), summary=None)
+    older_good = _row(created_at=now_kst() - timedelta(minutes=1), summary={"text": "요약"})
+    hit = await _lookup([fresh_empty, older_good])
+    assert hit is not None
+    assert hit.content.summary is not None
+    assert hit.content.summary.text == "요약"
+
+
+@pytest.mark.anyio
+async def test_요약이_없어도_짧은_창_안이면_캐시로_쓴다():
+    """같은 실패를 15초씩 다시 만들지 않는 것이 이 분기의 목적이다."""
+    hit = await _lookup([_row(created_at=now_kst() - timedelta(minutes=1), summary=None)])
+    assert hit is not None
+    assert hit.cached is True
+    assert hit.content.summary is None
+
+
+@pytest.mark.anyio
+async def test_창이_지나면_다시_만들게_한다():
+    """24시간 굳히면 요약이 빈 화면이 하루 종일 고정된다. 다시 만들 기회를 남긴다."""
+    assert await _lookup([_row(created_at=now_kst() - timedelta(hours=2), summary=None)]) is None
