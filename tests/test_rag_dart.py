@@ -308,9 +308,7 @@ def test_정기공시는_종류별_최신_1건만_남긴다() -> None:
             f("[기재정정]분기보고서 (2026.03)", "20260520"),
         ]
     )
-    names = sorted(k.report_nm for k in kept)
-    assert names == [
-        "[기재정정]분기보고서 (2026.03)",
-        "단일판매ㆍ공급계약체결",
-        "사업보고서 (2025.12)",
-    ]
+    names = [k.report_nm for k in kept]
+    # 정기공시가 앞이다. 호출부의 max_docs 절단에 밀리지 않게.
+    assert names[-1] == "단일판매ㆍ공급계약체결"
+    assert set(names[:2]) == {"[기재정정]분기보고서 (2026.03)", "사업보고서 (2025.12)"}

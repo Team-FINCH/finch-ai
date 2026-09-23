@@ -293,7 +293,9 @@ def keep_latest_periodic(filings: Sequence[Filing]) -> list[Filing]:
             others.append(filing)
         elif kind not in latest or filing.rcept_dt > latest[kind].rcept_dt:
             latest[kind] = filing
-    return others + list(latest.values())
+    # 정기공시를 앞에 둔다. 호출부가 `[:max_docs]` 로 앞에서 자르므로 뒤에 두면 신규
+    # 종목 백필에서 사업보고서가 20건 상한에 밀려 영영 안 들어온다 — 운영에서 그랬다.
+    return list(latest.values()) + others
 
 
 async def tickers_without_documents(tickers: Sequence[str]) -> set[str]:
