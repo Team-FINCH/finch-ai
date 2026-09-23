@@ -104,6 +104,31 @@ def test_완료된_작업은_result_와_근거를_실어_준다(client):
     assert body["content"]["error"] is None
 
 
+def test_완료된_작업의_request_id_는_저장된_값이고_조회마다_같다(client):
+    """피드백(POST /ai/feedback)이 이 값으로 원본 응답을 찾는다 (이슈 #102).
+
+    Envelope 의 기본값은 조회할 때마다 새로 발급되므로, 저장분에서 옮겨 오지 않으면
+    두 번 조회한 값이 서로 다르고 응답 로그의 값과도 어긋난다.
+    """
+    job_id = client.post(URL, json={"message": "질문"}, headers=AUTH).json()["content"]["job_id"]
+    job = client.db.rows[-1]
+    job.status = "completed"
+    job.result = {
+        "request_id": "req_원본",
+        "content": {
+            "conversation_id": job.conversation_id,
+            "answer": {"title": None, "text": "답", "segments": []},
+            "tools_used": [],
+        },
+        "citations": [],
+        "data_as_of": {},
+    }
+    first = client.get(f"{URL}/{job_id}", headers=AUTH).json()["request_id"]
+    second = client.get(f"{URL}/{job_id}", headers=AUTH).json()["request_id"]
+    assert first == "req_원본"
+    assert first == second
+
+
 def test_실패한_작업은_200_본문의_error_로_온다(client):
     job_id = client.post(URL, json={"message": "질문"}, headers=AUTH).json()["content"]["job_id"]
     job = client.db.rows[-1]
