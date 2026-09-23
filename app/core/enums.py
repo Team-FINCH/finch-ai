@@ -109,6 +109,7 @@ class EventType(StrEnum):
     DIVIDEND = "dividend"
     MACRO = "macro"
     PRODUCT = "product"
+    NEWS = "news"
 
 
 class BriefingCategory(StrEnum):

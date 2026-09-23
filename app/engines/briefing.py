@@ -40,13 +40,14 @@ MOVE_FULL_SCALE = 0.05
 #: 섹터 비중이 이만큼(%p) 움직이면 구조 변화로 본다. §5.2.
 SECTOR_SHIFT_THRESHOLD = 0.05
 
-#: §5.2 importance 표. 배당·신제품은 "일반 뉴스" 칸에 해당한다.
+#: §5.2 importance 표. 배당·신제품·일반 뉴스가 모두 표의 "일반 뉴스" 칸(0.4)이다.
 _TYPE_IMPORTANCE: dict[EventType, float] = {
     EventType.EARNINGS: 1.0,
     EventType.FILING: 0.8,
     EventType.MACRO: 0.6,
     EventType.DIVIDEND: 0.4,
     EventType.PRODUCT: 0.4,
+    EventType.NEWS: 0.4,
 }
 
 #: §5.2의 "거시 이벤트 × rate_sensitivity 계수". moderate가 중립(계수 1.0)이다.
@@ -56,13 +57,18 @@ _RATE_COEFFICIENT: dict[RateSensitivity, float] = {
     RateSensitivity.HIGH: 1.5,
 }
 
-#: 화면 분류. BriefingCategory에 뉴스 칸이 없어 배당·신제품도 공시로 묶인다.
+#: 화면 분류. BriefingCategory에 뉴스 칸이 없어 배당·신제품·뉴스도 공시로 묶인다.
+#:
+#: **그래도 화면이 "공시"라고 쓰지는 않는다.** 프런트의 한글 라벨은 category가
+#: 아니라 event_type이 고른다(`features/home/lib/briefingEventLabel.ts`). 여기서
+#: 묶는 것은 §8 응답의 `category` 값뿐이다 — FINCH-346.
 _TYPE_CATEGORY: dict[EventType, BriefingCategory] = {
     EventType.EARNINGS: BriefingCategory.EARNINGS,
     EventType.FILING: BriefingCategory.FILING,
     EventType.MACRO: BriefingCategory.MACRO_EVENT,
     EventType.DIVIDEND: BriefingCategory.FILING,
     EventType.PRODUCT: BriefingCategory.FILING,
+    EventType.NEWS: BriefingCategory.FILING,
 }
 
 #: 동점일 때의 순서. §8이 나열한 순서를 그대로 쓴다 — 사전순으로 흘려보내면

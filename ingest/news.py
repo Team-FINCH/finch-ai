@@ -54,7 +54,9 @@ RULES: list[tuple[tuple[str, ...], EventType, float]] = [
     (("수주", "공급계약", "신제품", "출시"), EventType.PRODUCT, 0.5),
     (("기준금리", "통화정책", "환율"), EventType.MACRO, 0.4),
 ]
-DEFAULT = (EventType.FILING, 0.3)
+# Headlines matching no rule are plain news, not filings (FINCH-346). The
+# briefing picks its label from event_type, so FILING made every article read 공시.
+DEFAULT = (EventType.NEWS, 0.3)
 
 
 def classify(title: str) -> tuple[EventType, float]:
