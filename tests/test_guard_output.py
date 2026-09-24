@@ -26,6 +26,7 @@ from app.llm.guard import (
     check_length,
     check_raw_number,
     check_schema,
+    check_unit_doubled,
     check_unknown_placeholder,
     check_unsubstituted_placeholder,
     check_wiki_tone,
@@ -266,6 +267,51 @@ def test_citation_integrity_rejects_unknown_citation() -> None:
 def test_citation_integrity_rejects_declared_only_citation() -> None:
     result = check_citation_integrity("공시가 있었습니다.", {"cit_1"}, used_citations=["cit_9"])
     assert not result.passed
+
+
+# ── 10. 단위 겹침 (이슈 #105) ────────────────────────────────────────────────
+#
+# 치환값은 부호와 단위까지 포함해 들어간다. 모델이 그 뒤에 단위를 또 쓰면
+# `41.00%%` · `-0.40%pp` 가 되어 화면에 나간다. 아래 둘은 운영에서 실제로 나온
+# 문자열이다 — 브리핑 홈 카드와 성과 요인 요약.
+
+_UNIT_VALUES = {
+    "market": "-0.40%p",
+    "sector_weight": "41.00%",
+    "cash": "1,250원",
+    "count": "3.0개",
+    "trading_days": "21",
+}
+
+
+@pytest.mark.parametrize(
+    ("narrative", "doubled"),
+    [
+        pytest.param("비중은 {{sector_weight}}%였습니다.", "{{sector_weight}}%", id="브리핑 실례"),
+        pytest.param("시장의 기여는 {{market}}p 하락,", "{{market}}p", id="성과요인 실례"),
+        pytest.param("기여는 {{market}}%p 입니다.", "{{market}}%p", id="%p 통째"),
+        pytest.param("예수금은 {{cash}}원입니다.", "{{cash}}원", id="원"),
+        pytest.param("유효 종목은 {{count}}개입니다.", "{{count}}개", id="개"),
+    ],
+)
+def test_unit_doubled_rejects(narrative: str, doubled: str) -> None:
+    result = check_unit_doubled(narrative, _UNIT_VALUES)
+    assert not result.passed, narrative
+    assert result.disposition is Disposition.REGENERATE
+    assert doubled in result.reasons[0]
+
+
+@pytest.mark.parametrize(
+    "narrative",
+    [
+        pytest.param("최근 {{trading_days}}일 동안", id="단위 없는 값에는 붙여야 말이 된다"),
+        pytest.param("기여는 {{market}}였습니다.", id="조사가 이어질 때"),
+        pytest.param("비중은 {{sector_weight}}로 나타납니다.", id="퍼센트 뒤 조사"),
+        pytest.param("알 수 없는 key {{nope}}% 입니다.", id="값이 없으면 판단하지 않는다"),
+    ],
+)
+def test_unit_doubled_accepts(narrative: str) -> None:
+    assert check_unit_doubled(narrative, _UNIT_VALUES).passed, narrative
 
 
 # ── 7. 금지 표현 ─────────────────────────────────────────────────────────────
