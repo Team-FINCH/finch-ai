@@ -383,6 +383,46 @@ def test_forbidden_expression_allows_label_words_without_colon() -> None:
     assert check_forbidden_expression("위험 요인은 다음과 같습니다: 집중도입니다.").passed
 
 
+_NO_DATA_REAL = (
+    "관련 자료를 확인하지 못했습니다. 해당 이벤트의 포트폴리오 영향 여부는 확인된 바 없습니다."
+)
+
+
+@pytest.mark.parametrize(
+    "feature",
+    [
+        Feature.DAILY_BRIEFING_ITEM,
+        Feature.PERFORMANCE_ATTRIBUTION,
+        Feature.BEFORE_YOU_TRADE,
+        Feature.PORTFOLIO_DOCTOR_FINDING,
+        Feature.PORTFOLIO_DOCTOR_SUMMARY,
+    ],
+)
+def test_forbidden_expression_rejects_no_data_where_prompt_forbids(feature: Feature) -> None:
+    """이 기능들의 프롬프트는 문서를 조회하지 않으므로 이 말을 금지한다 (이슈 #107).
+
+    위 문장은 운영 브리핑에서 실제로 나온 것이다.
+    """
+    result = check_forbidden_expression(_NO_DATA_REAL, feature=feature)
+    assert not result.passed
+    assert result.disposition is Disposition.REGENERATE
+
+
+@pytest.mark.parametrize(
+    "feature",
+    [Feature.STOCK_ANALYST_SECTION, Feature.ASK_MY_PORTFOLIO, None],
+)
+def test_forbidden_expression_allows_no_data_where_prompt_requires(feature: Feature | None) -> None:
+    """종목 분석과 채팅은 확인하지 못한 것을 그대로 쓰라고 요구한다. 막으면 안 된다."""
+    assert check_forbidden_expression(_NO_DATA_REAL, feature=feature).passed
+
+
+def test_forbidden_expression_allows_causal_disclaimer_in_briefing() -> None:
+    """브리핑 프롬프트는 인과에 대해 "확인된 바 없음" 을 쓰라고 요구한다. 다른 말이다."""
+    sentence = "같은 날 공시가 있었습니다. 주가 움직임과의 인과는 확인된 바 없습니다."
+    assert check_forbidden_expression(sentence, feature=Feature.DAILY_BRIEFING_ITEM).passed
+
+
 def test_forbidden_expression_allows_attributed_future_statement() -> None:
     """출처를 밝힌 전망은 우리 주장이 아니므로 통과해야 한다."""
     assert check_forbidden_expression("회사는 실적이 개선될 것이라고 밝혔습니다.").passed
