@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import math
 import re
 from datetime import date, timedelta
@@ -621,6 +622,34 @@ async def _lookup(rows: list[AIResponse]) -> Any:
     from app.api.routes.portfolio import _cached_attribution
 
     return await _cached_attribution(_StubDb(rows), "u1", "1m", date(2026, 9, 23))
+
+
+@pytest.mark.parametrize(
+    ("use_cache", "expected"),
+    [
+        pytest.param(True, 1, id="기본값은 캐시를 본다"),
+        pytest.param(False, 0, id="끄면 보지 않는다"),
+    ],
+)
+def test_use_cache_가_캐시_조회를_가른다(
+    client: TestClient, monkeypatch, use_cache, expected
+) -> None:
+    """실패를 재현하려는 호출이 실패 캐시에 걸리지 않게 한다 (이슈 #106).
+
+    반환값이 아니라 **조회가 불렸는지**를 센다. 캐시가 비어 있으면 어느 쪽이든
+    같은 결과가 나와 검사가 의미를 잃기 때문이다.
+    """
+    from app.api.routes import portfolio as module
+
+    calls: list[int] = []
+
+    async def spy(*_args: Any, **_kwargs: Any) -> None:
+        calls.append(1)
+        return None
+
+    monkeypatch.setattr(module, "_cached_attribution", spy)
+    asyncio.run(module.build_attribution(HOLDER, client.db, module.Period.D1, use_cache=use_cache))
+    assert len(calls) == expected
 
 
 @pytest.mark.anyio
