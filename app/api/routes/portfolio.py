@@ -621,12 +621,20 @@ async def attribution(
 
 
 async def build_attribution(
-    user_id: str, db: AsyncSession, period: Period = Period.D1
+    user_id: str, db: AsyncSession, period: Period = Period.D1, *, use_cache: bool = True
 ) -> Envelope[AttributionContent]:
     """기간 수익률 분해를 조회하거나 생성한다. 배치(`ingest.briefings`)와 라우터가 같이 쓴다.
 
     사용자·기간·마지막 거래일로 캐시하므로 기간당 하루 한 번만 생성된다. 프런트가 쓰는
     `1d` 는 아침 배치가 미리 만들고, 다른 기간은 요청 때 만들어 그날 캐시된다.
+
+    `use_cache=False` 는 캐시를 건너뛰고 새로 만든다. `build_briefing` 의 같은 인자와
+    짝이며(`ingest.briefings --force` 가 그것을 쓴다), **HTTP 로는 노출하지 않는다** —
+    사용자가 재생성을 강제할 수 있으면 토큰 예산을 우회하는 통로가 된다.
+
+    이 인자가 없어서 조사가 막힌 적이 있다. 실패한 요약도 짧은 동안 캐시되므로
+    (`_FAILED_SUMMARY_TTL`) 실패를 재현하려는 호출이 곧바로 그 캐시에 걸려, 같은
+    조건을 반복 측정하면 2회차부터 LLM 을 아예 부르지 않는다 (이슈 #106).
 
     벤치마크는 시가총액으로 합성한 시장 전체다 — 왜 업종지수를 쓰지 않는지는
     `app.engines.attribution` 모듈 설명에 적혀 있다. 원장을 못 읽거나 구간에 거래일이
@@ -650,7 +658,10 @@ async def build_attribution(
         raise InsufficientData(f"{period.value} 구간에 거래일이 없습니다.")
 
     days = [row.trade_date for row in window]
-    if (hit := await _cached_attribution(db, user_id, period.value, days[-1])) is not None:
+    if (
+        use_cache
+        and (hit := await _cached_attribution(db, user_id, period.value, days[-1])) is not None
+    ):
         await record(db, hit, user_id=user_id, endpoint="portfolio.attribution")
         return hit
     weights = [{c.symbol: c.weight for c in row.contributions} for row in window]
