@@ -711,6 +711,7 @@
             <tr><td class="n">7</td><td>금지 표현 — <a href="#forbidden">§5.1</a> 분류</td><td>재생성</td></tr>
             <tr><td class="n">8</td><td>Wiki 어투 — <code>ai_inferred</code> 단정 사용</td><td>재생성</td></tr>
             <tr><td class="n">9</td><td>길이 — 기능별 문장 수 상한</td><td>재생성</td></tr>
+            <tr><td class="n">10</td><td>단위 겹침 — 자리표시자 뒤에 같은 단위 덧붙임</td><td>재생성</td></tr>
           </tbody>
         </table>
       </div>
@@ -718,6 +719,7 @@
         <strong>5번만 재생성이 아니라 차단이다.</strong> 값이 어긋났다는 것은 파이프라인 어딘가가 고장났다는 뜻이므로,
         다시 생성해서 우연히 맞기를 기대하면 안 된다. 즉시 <code>GUARDRAIL_BLOCKED</code>로 처리하고 알림을 띄운다.
       </p>
+      <p>10번은 치환 <strong>전</strong> 원문에 대고 돈다. 치환 뒤에는 자리표시자 경계가 사라져 <code>-0.40%pp</code> 중 어디까지가 엔진 값이고 어디부터 모델이 쓴 글자인지 구분할 수 없다. 단위가 없는 값(<code>{{trading_days}}일</code>)은 대상이 아니다.</p>
       <p>7번은 정규식만으로 부족하다. "지금이 좋은 자리로 보입니다"는 금지어 목록에 걸리지 않지만 명백한 매수 권유다. <strong>경량 분류 호출을 함께 태워</strong> 표현이 아니라 의미를 검사한다.</p>
 
       <h2 id="routing"><span class="num">§6</span>모델 라우팅</h2>
