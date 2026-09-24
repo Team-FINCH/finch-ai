@@ -1,6 +1,6 @@
 """LLM 출력단 Guardrail.
 
-응답 정책 §5.2의 9개 검사를 그대로 옮긴 것이다. 문자열을 받아 판정만 돌려주는
+응답 정책 §5.2의 10개 검사를 그대로 옮긴 것이다. 문자열을 받아 판정만 돌려주는
 순수 함수 모음이며, 네트워크도 DB도 건드리지 않는다.
 
 검사는 §5.2가 정한 순서대로 돈다. 앞 검사가 뒤 검사의 전제가 되기 때문이다.
@@ -51,6 +51,7 @@ __all__ = [
     "check_unsubstituted_placeholder",
     "check_unknown_placeholder",
     "check_raw_number",
+    "check_unit_doubled",
     "check_engine_values",
     "check_citation_integrity",
     "check_forbidden_expression",
@@ -69,7 +70,7 @@ class Disposition(StrEnum):
 
 
 class CheckName(StrEnum):
-    """§5.2 표의 9개 검사. 값은 재생성 프롬프트에 그대로 실린다."""
+    """§5.2 표의 10개 검사. 값은 재생성 프롬프트에 그대로 실린다."""
 
     SCHEMA = "schema"
     UNSUBSTITUTED_PLACEHOLDER = "unsubstituted_placeholder"
@@ -80,6 +81,7 @@ class CheckName(StrEnum):
     FORBIDDEN_EXPRESSION = "forbidden_expression"
     WIKI_TONE = "wiki_tone"
     LENGTH = "length"
+    UNIT_DOUBLED = "unit_doubled"
 
 
 #: §5.2 표의 "실패 시" 열. 5번만 차단이고 나머지는 재생성이다.
@@ -93,6 +95,7 @@ DISPOSITION_BY_CHECK: dict[CheckName, Disposition] = {
     CheckName.FORBIDDEN_EXPRESSION: Disposition.REGENERATE,
     CheckName.WIKI_TONE: Disposition.REGENERATE,
     CheckName.LENGTH: Disposition.REGENERATE,
+    CheckName.UNIT_DOUBLED: Disposition.REGENERATE,
 }
 
 #: §5.2 표의 검사 순서. 앞 검사가 뒤 검사의 전제다.
@@ -101,6 +104,7 @@ CHECK_ORDER: tuple[CheckName, ...] = (
     CheckName.UNSUBSTITUTED_PLACEHOLDER,
     CheckName.UNKNOWN_PLACEHOLDER,
     CheckName.RAW_NUMBER,
+    CheckName.UNIT_DOUBLED,
     CheckName.ENGINE_VALUE,
     CheckName.CITATION_INTEGRITY,
     CheckName.FORBIDDEN_EXPRESSION,
@@ -466,6 +470,51 @@ def check_raw_number(narrative: str) -> CheckResult:
 
 
 # ── 5. 엔진 값 대조 ──────────────────────────────────────
+#: 치환값 끝에 붙는 단위. `generate.py` 의 세 포맷터가 만드는 것이 전부다 —
+#: ratio_segment 는 `%`·`%p`, count_segment 는 `개`, krw_segment 는 `원`.
+#: 단위가 없는 값(개수 원본, 일수)은 여기 해당하지 않아 검사도 건너뛴다.
+_UNIT_TAILS: tuple[str, ...] = ("%p", "%", "개", "원")
+
+
+def _dup_forms(tail: str) -> tuple[str, ...]:
+    """겹쳐 쓸 수 있는 형태. `%p` 는 `p` 만 덧붙여도 `%pp` 가 된다."""
+    return tuple(tail[i:] for i in range(len(tail)))
+
+
+def check_unit_doubled(narrative: str, engine_values: Mapping[str, str]) -> CheckResult:
+    """10. 자리표시자 뒤에 단위를 덧붙이면 안 된다.
+
+    치환값은 부호와 단위까지 포함해 들어간다(`-0.40%p`, `41.00%`, `1,250원`). 모델이
+    그 사실을 모르고 `{{market}}p` 처럼 쓰면 `-0.40%pp` 가 되어 나간다. 프롬프트에
+    적어 두는 것만으로는 막히지 않아 검사로 함께 막는다 (이슈 #105).
+
+    **치환 전 원문에 대고 돌린다.** 치환 뒤에는 자리표시자 경계가 사라져 어디까지가
+    엔진 값이고 어디부터 모델이 쓴 글자인지 구분할 수 없다.
+
+    단위가 없는 값에는 아무 일도 하지 않는다 — `{{trading_days}}일` 처럼 모델이
+    단위를 붙여야 말이 되는 자리가 있다.
+    """
+    check = CheckName.UNIT_DOUBLED
+    problems: list[tuple[str, str | None]] = []
+    for match in _PLACEHOLDER_RE.finditer(narrative):
+        value = engine_values.get(match.group(1))
+        if not value:
+            continue
+        tail = next((unit for unit in _UNIT_TAILS if value.endswith(unit)), None)
+        if tail is None:
+            continue
+        rest = narrative[match.end() :]
+        dup = next((form for form in _dup_forms(tail) if rest.startswith(form)), None)
+        if dup is not None:
+            problems.append(
+                (
+                    f"자리표시자가 이미 '{tail}' 를 포함해 치환된다. 뒤에 단위를 덧붙이지 않는다",
+                    f"{match.group(0)}{dup}",
+                )
+            )
+    return _fail(check, *problems) if problems else _ok(check)
+
+
 def check_engine_values(
     rendered: str,
     substitutions: Mapping[str, str],
@@ -698,7 +747,7 @@ class GuardContext:
 
 @dataclass(frozen=True, slots=True)
 class GuardReport:
-    """9개 검사를 돌린 결과."""
+    """10개 검사를 돌린 결과."""
 
     results: tuple[CheckResult, ...]
     rendered: str | None = None
@@ -737,7 +786,7 @@ def run_output_guard(
     *,
     stop_at_first_failure: bool = True,
 ) -> GuardReport:
-    """§5.2의 9개 검사를 순서대로 돌린다.
+    """§5.2의 10개 검사를 순서대로 돌린다.
 
     기본은 fail-fast다. 앞 검사가 뒤 검사의 전제이기 때문이다. 위반을 한 번에
     모아 보고 싶으면 ``stop_at_first_failure=False``로 두되, 앞이 깨진 상태에서
@@ -767,6 +816,7 @@ def run_output_guard(
             context.allowed_keys,
         ),
         lambda: check_raw_number(draft.narrative),
+        lambda: check_unit_doubled(draft.narrative, context.engine_values),
         lambda: check_engine_values(
             rendered,
             substitutions,
