@@ -651,11 +651,30 @@ _COMPARATIVE_RE = re.compile(r"[가-힣A-Za-z0-9)\]]\s*보다")
 _SUPERIORITY_RE = re.compile(r"낫|나은|우수|매력적|유리|좋|앞선|앞섭|뛰어난")
 
 
+#: "자료를 찾지 못했다" 류. **기능마다 규칙이 반대라** 전역 금지어에 넣지 않는다.
+#:
+#: 아래 기능의 프롬프트는 이 말을 금지한다 — 애초에 문서를 조회하지 않거나, 엔진
+#: 수치가 근거 전부라서 "못 찾았다" 는 사실이 아니다. 그런데도 모델이 쓴다
+#: (데일리 브리핑, 이슈 #107). 반대로 종목 분석(`stock_analyst.md`)과 채팅
+#: (`ask_my_portfolio.md`)은 확인하지 못한 것을 그대로 쓰라고 요구하므로 여기 없다.
+_NO_DATA_FORBIDDEN_FEATURES: frozenset[Feature] = frozenset(
+    {
+        Feature.DAILY_BRIEFING_ITEM,
+        Feature.PERFORMANCE_ATTRIBUTION,
+        Feature.BEFORE_YOU_TRADE,
+        Feature.PORTFOLIO_DOCTOR_FINDING,
+        Feature.PORTFOLIO_DOCTOR_SUMMARY,
+    }
+)
+_NO_DATA_RE = re.compile(r"(?:자료|근거|정보)[를을가이]?\s*(?:찾|확인하)지\s*못")
+
+
 def check_forbidden_expression(
     rendered: str,
     *,
     causal_confidence: float | None = None,
     semantic_classifier: SemanticClassifier | None = None,
+    feature: Feature | None = None,
 ) -> CheckResult:
     """7. §5.1 금지 표현 분류.
 
@@ -672,6 +691,15 @@ def check_forbidden_expression(
     for label, pattern in _FORBIDDEN_EXPRESSIONS:
         for found in pattern.finditer(rendered):
             problems.append((f"{label} 표현이다", found.group(0)))
+
+    if feature in _NO_DATA_FORBIDDEN_FEATURES:
+        for found in _NO_DATA_RE.finditer(rendered):
+            problems.append(
+                (
+                    "이 기능은 문서를 조회하지 않으므로 '자료를 찾지 못했다' 고 쓰지 않는다",
+                    found.group(0),
+                )
+            )
 
     for sentence in split_sentences(rendered):
         if _COMPARATIVE_RE.search(sentence) and _SUPERIORITY_RE.search(sentence):
@@ -831,6 +859,7 @@ def run_output_guard(
             rendered,
             causal_confidence=context.causal_confidence,
             semantic_classifier=context.semantic_classifier,
+            feature=context.feature,
         ),
         lambda: check_wiki_tone(rendered, context.wiki_source),
         lambda: check_length(rendered, context.feature),

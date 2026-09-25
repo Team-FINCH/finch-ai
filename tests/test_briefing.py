@@ -677,3 +677,40 @@ def test_뉴스_종류와_출처를_보존하고_category를_유지한다(
     assert item["category"] == category
     assert item["publisher"] == publisher
     assert item["publisher"] == body["citations"][0]["publisher"]
+
+
+# ── 이벤트 요청 문자열 (이슈 #107) ─────────────────────────────────────────
+
+
+def test_이벤트_요청에_종목명과_한글_유형을_싣는다() -> None:
+    """헤드라인에 종목명이 없으면 모델이 "해당 보유 비중" 으로 얼버무렸다.
+
+    영문 유형(`filing`)을 넘기면 본문에 "filing 이벤트" 로 옮겨 적었다.
+    """
+    snapshot = _snapshot(_holding("A", weight=0.2, stock_weight=0.2))
+    [candidate] = event_candidates(
+        [EventRecord("e1", EventType.NEWS.value, "[스냅드래곤 서밋] 2나노 전쟁", DAY, ticker="A")],
+        snapshot,
+        DAY,
+    )
+    assert "종목A 관련" in candidate.request
+    assert "뉴스 '[스냅드래곤 서밋] 2나노 전쟁'" in candidate.request
+    assert "news" not in candidate.request
+
+
+def test_매크로_이벤트는_종목명_없이_쓴다() -> None:
+    snapshot = _snapshot(_holding("A", weight=0.2, stock_weight=0.2))
+    [candidate] = event_candidates(
+        [EventRecord("m1", EventType.MACRO.value, "기준금리 동결", DAY, ticker=None)],
+        snapshot,
+        DAY,
+    )
+    assert "관련" not in candidate.request
+    assert "정책 '기준금리 동결'" in candidate.request
+
+
+def test_모든_이벤트_유형에_한글_이름이_있다() -> None:
+    """유형이 늘었는데 이름을 빠뜨리면 KeyError 로 브리핑 전체가 죽는다."""
+    from app.engines.briefing import _TYPE_LABEL
+
+    assert set(_TYPE_LABEL) == set(EventType)

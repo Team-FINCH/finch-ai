@@ -57,6 +57,18 @@ _RATE_COEFFICIENT: dict[RateSensitivity, float] = {
     RateSensitivity.HIGH: 1.5,
 }
 
+#: 요청 문자열에 쓰는 한글 이름. 영문 값을 그대로 넘기면 모델이 "filing 이벤트"
+#: 처럼 본문에 옮겨 적는다 (이슈 #107). 어휘는 프런트의 화면 라벨과 같게 둔다
+#: (`features/home/lib/briefingEventLabel.ts`) — 같은 사건을 두 이름으로 부르지 않는다.
+_TYPE_LABEL: dict[EventType, str] = {
+    EventType.EARNINGS: "실적",
+    EventType.FILING: "공시",
+    EventType.MACRO: "정책",
+    EventType.DIVIDEND: "배당",
+    EventType.PRODUCT: "신제품",
+    EventType.NEWS: "뉴스",
+}
+
 #: 화면 분류. BriefingCategory에 뉴스 칸이 없어 배당·신제품·뉴스도 공시로 묶인다.
 #:
 #: **그래도 화면이 "공시"라고 쓰지는 않는다.** 프런트의 한글 라벨은 category가
@@ -314,9 +326,14 @@ def event_candidates(
                 values=(
                     {"weight": holding.weight} if holding is not None else {}
                 ),
+                # 보유 종목 이벤트면 종목명을 앞에 둔다. 프롬프트는 "{{weight}}를 차지하는
+                # SK하이닉스가…" 처럼 종목명으로 쓰라는데, 헤드라인에 종목명이 없으면
+                # 모델이 어느 종목인지 몰라 "해당 보유 비중" 으로 얼버무린다 (이슈 #107).
                 request=(
-                    f"{event.event_date.isoformat()}자 {event_type.value} 이벤트 "
-                    f"'{event.title}'를 쓰십시오. 주가와의 인과로 단정하지 마십시오."
+                    f"{event.event_date.isoformat()}자 "
+                    + (f"{holding.name} 관련 " if holding is not None else "")
+                    + f"{_TYPE_LABEL[event_type]} '{event.title}'를 쓰십시오. "
+                    "주가와의 인과로 단정하지 마십시오."
                 ),
             )
         )
