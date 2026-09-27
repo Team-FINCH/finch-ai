@@ -479,6 +479,43 @@ async def run(
     return saved, chunks, failed
 
 
+async def prune(
+    days: int, tickers: Sequence[str] | None = None, *, apply: bool = False
+) -> list[tuple[str, str]]:
+    names = dict(await load_targets(None, tickers))
+    if not names:
+        return []
+    cutoff = datetime.now(KST) - timedelta(days=max(days, 1))
+    async with SessionFactory() as session:
+        rows = (
+            await session.execute(
+                select(Document.id, Document.ticker, Document.title, Document.body).where(
+                    Document.source == SOURCE,
+                    Document.ticker.in_(list(names)),
+                    Document.published_at >= cutoff,
+                )
+            )
+        ).all()
+        stale = [
+            row for row in rows if not is_relevant(row.title, row.body or "", names[row.ticker])
+        ]
+        for row in stale:
+            log.info(
+                "무관 기사 %s: %s(%s) %s",
+                "삭제" if apply else "후보",
+                names[row.ticker],
+                row.ticker,
+                row.title,
+            )
+        if apply and stale:
+            ids = [row.id for row in stale]
+            await session.execute(delete(Event).where(Event.document_id.in_(ids)))
+            await session.execute(delete(Document).where(Document.id.in_(ids)))
+            await session.commit()
+    log.info("무관 기사 %d건 %s (검사 %d건)", len(stale), "삭제" if apply else "후보", len(rows))
+    return [(row.ticker, row.title) for row in stale]
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="NAVER API HUB 뉴스 적재기")
     parser.add_argument("--days", type=int, default=7, help="최근 며칠 기사. 기본 7")
@@ -486,6 +523,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--tickers", help="쉼표 구분 종목코드")
     parser.add_argument("--max-docs", type=int, default=20, help="종목당 최대 기사 수")
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument(
+        "--prune", action="store_true", help="적재된 무관 기사를 찾는다. 수집하지 않는다"
+    )
+    parser.add_argument("--apply", action="store_true", help="--prune 결과를 실제로 삭제한다")
     args = parser.parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -493,6 +534,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     logging.getLogger("httpx").setLevel(logging.WARNING)
     tickers = [x.strip() for x in args.tickers.split(",") if x.strip()] if args.tickers else None
+    if args.prune:
+        asyncio.run(prune(args.days, tickers, apply=args.apply))
+        return 0
     _, _, failed = asyncio.run(run(args.days, args.limit, args.max_docs, tickers))
     return 1 if failed else 0
 

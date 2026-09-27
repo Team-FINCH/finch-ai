@@ -622,3 +622,57 @@ def test_수집할_때_무관한_기사를_적재하지_않는다(monkeypatch, c
         assert asyncio.run(news_mod.run(7, None, 20)) == (1, 1, 0)
     assert saved == ["NAVER 실적 발표"]
     assert "검색 2건 · 무관 1건" in caplog.text
+
+
+class _PruneSession:
+    def __init__(self, rows):
+        self.rows = rows
+        self.deleted = []
+        self.commits = 0
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_exc):
+        return None
+
+    async def execute(self, statement: Any, parameters=None):
+        sql = str(statement)
+        if sql.startswith("SELECT"):
+            return _Result(rows=self.rows)
+        self.deleted.append(sql.split()[2])
+        return _Result()
+
+    async def commit(self):
+        self.commits += 1
+
+
+def _prune_rows():
+    return [
+        SimpleNamespace(id=uuid.uuid4(), ticker="035420", title="NAVER 실적 발표", body=""),
+        SimpleNamespace(
+            id=uuid.uuid4(),
+            ticker="035420",
+            title="괴산군 김장 경연대회 참가자 모집",
+            body="참가 신청은 네이버 폼으로 받는다.",
+        ),
+    ]
+
+
+@pytest.mark.parametrize("apply", [False, True])
+def test_prune은_무관_기사만_고르고_apply일_때만_지운다(monkeypatch, apply):
+    session = _PruneSession(_prune_rows())
+
+    async def targets(*args):
+        return [("035420", "NAVER")]
+
+    monkeypatch.setattr(news_mod, "load_targets", targets)
+    monkeypatch.setattr(news_mod, "SessionFactory", lambda: session)
+    stale = asyncio.run(news_mod.prune(7, apply=apply))
+    assert stale == [("035420", "괴산군 김장 경연대회 참가자 모집")]
+    if apply:
+        assert session.deleted == ["events", "documents"]
+        assert session.commits == 1
+    else:
+        assert session.deleted == []
+        assert session.commits == 0
