@@ -548,3 +548,77 @@ def test_expired_and_failed_articles_are_reported(monkeypatch, caplog):
         assert asyncio.run(news_mod.run(7, 1, 4)) == (1, 1, 1)
     assert "read=4 created=1 duplicates=0 not_promoted=3" in caplog.text
     assert "daily_cap=0 outside_window=1 failed_or_unattempted=2" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("title", "summary", "name"),
+    [
+        ("괴산군 김장 경연대회 참가자 모집", "참가 신청은 네이버 폼으로 받는다.", "NAVER"),
+        ("당진 가을 축제 개최", "자세한 일정은 네이버 밴드에서 확인할 수 있다.", "NAVER"),
+        ("지역 행사 안내", "네이버에서 검색하면 된다.", "NAVER"),
+        (
+            "전 남친 돈으로 산 침대서 신혼여행 첫날밤 보낸 거냐",
+            "카카오톡으로 제보 바랍니다.",
+            "카카오",
+        ),
+        ("과태료는 나중에 내도 된다?", "카카오페이로 납부할 수 있다.", "카카오"),
+        (
+            "2026 Aim 한국-대만 산\ufffd\ufffd\ufffd 비즈니스",
+            "SK하이닉스가 참가한다.",
+            "SK하이닉스",
+        ),
+        ("SK하이닉스 HBM 공급", "\ufffd\ufffd 깨진 요약", "SK하이닉스"),
+    ],
+)
+def test_종목과_무관한_기사를_거른다(title, summary, name) -> None:
+    assert not news_mod.is_relevant(title, summary, name)
+
+
+@pytest.mark.parametrize(
+    ("title", "summary", "name"),
+    [
+        ("네이버, 3분기 영업이익 개선", "", "NAVER"),
+        ("NAVER 주가 반등", "", "NAVER"),
+        ("유럽 시총 1위 ASML", "SK하이닉스 등 국내 반도체주도 강세를 보였다.", "SK하이닉스"),
+        ("HBM 공급 확대", "삼성전자가 HBM 공급을 확대한다.", "삼성전자"),
+        ("현대자동차, 신차 공개", "", "현대차"),
+        ("카카오톡 개편 논란", "", "카카오"),
+        ("플랫폼 규제 강화", "카카오는 이번 규제의 직접 대상이다.", "카카오"),
+    ],
+)
+def test_종목_기사는_남긴다(title, summary, name) -> None:
+    assert news_mod.is_relevant(title, summary, name)
+
+
+def test_수집할_때_무관한_기사를_적재하지_않는다(monkeypatch, caplog):
+    now = datetime.now(news_mod.KST)
+    relevant = article_for(0, title="NAVER 실적 발표", published_at=now, ticker="035420")
+    unrelated = article_for(
+        1,
+        title="괴산군 김장 경연대회 참가자 모집",
+        summary="참가 신청은 네이버 폼으로 받는다.",
+        published_at=now,
+        ticker="035420",
+    )
+    saved = []
+
+    async def targets(*args):
+        return [("035420", "NAVER")]
+
+    async def known(*args):
+        return set()
+
+    async def fake_save(article):
+        saved.append(article.title)
+        return news_mod.SaveResult(1, "created")
+
+    monkeypatch.setattr(news_mod, "load_targets", targets)
+    monkeypatch.setattr(news_mod, "existing_ids", known)
+    monkeypatch.setattr(news_mod, "save", fake_save)
+    monkeypatch.setattr(news_mod, "fetch_news", lambda *args, **kwargs: [relevant, unrelated])
+    monkeypatch.setattr(news_mod.settings, "naver_client_id", "test")
+    monkeypatch.setattr(news_mod.settings, "naver_client_secret", "test")
+    with caplog.at_level("INFO", logger="ingest.news"):
+        assert asyncio.run(news_mod.run(7, None, 20)) == (1, 1, 0)
+    assert saved == ["NAVER 실적 발표"]
+    assert "검색 2건 · 무관 1건" in caplog.text

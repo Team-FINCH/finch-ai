@@ -67,6 +67,52 @@ def classify(title: str) -> tuple[EventType, float]:
     return DEFAULT
 
 
+_ALIASES: dict[str, tuple[str, ...]] = {
+    "NAVER": ("NAVER", "네이버"),
+    "SK하이닉스": ("SK하이닉스", "하이닉스"),
+    "현대차": ("현대차", "현대자동차"),
+    "SK텔레콤": ("SK텔레콤", "SKT"),
+    "한국항공우주": ("한국항공우주", "KAI"),
+    "LG씨엔에스": ("LG씨엔에스", "LG CNS"),
+}
+_PLATFORM_USE = re.compile(
+    r"(?:NAVER|네이버)\s?(?:폼|카페|블로그|밴드|지도|예약|검색|스마트스토어|플레이스|톡톡|오픈채팅|페이로)"
+    r"|카카오\s?(?:톡|채널|맵|택시|T(?![A-Za-z])|오픈채팅|페이로|뱅크로)",
+    re.IGNORECASE,
+)
+_SUBJECT = r"(?:가|이|는|은|의|와|과|도|,|측)"
+_MARKET_TERMS = tuple(
+    "주가 주식 증시 코스피 코스닥 시총 시가총액 목표가 투자의견 실적 영업이익 매출 순이익 "
+    "배당 자사주 공시 증권 상장 급등 급락 순매수 순매도 수주 공급계약 인수 합병 지분 주주".split()
+)
+
+
+def _aliases(name: str) -> tuple[str, ...]:
+    return _ALIASES.get(name, (name,))
+
+
+def _mentions(text: str, name: str) -> bool:
+    folded = text.casefold()
+    return any(alias.casefold() in folded for alias in _aliases(name))
+
+
+def _as_subject(text: str, name: str) -> bool:
+    return any(
+        re.search(re.escape(alias) + _SUBJECT, text, re.IGNORECASE) for alias in _aliases(name)
+    )
+
+
+def is_relevant(title: str, summary: str, name: str) -> bool:
+    if "�" in title or "�" in summary:
+        return False
+    if _mentions(title, name):
+        return True
+    rest = _PLATFORM_USE.sub(" ", summary)
+    if not _mentions(rest, name):
+        return False
+    return _as_subject(rest, name) or any(term in f"{title} {rest}" for term in _MARKET_TERMS)
+
+
 def priority(article: NewsArticle) -> tuple[float, float, str]:
     """Highest importance, newest publication, then stable URL identity."""
     return (-classify(article.title)[1], -article.published_at.timestamp(), article.external_id)
@@ -375,7 +421,7 @@ async def run(
     with httpx.Client() as client:
         for index, (ticker, name) in enumerate(targets, start=1):
             try:
-                articles = fetch_news(
+                fetched = fetch_news(
                     client,
                     client_id,
                     client_secret,
@@ -383,16 +429,22 @@ async def run(
                     ticker=ticker,
                     max_docs=max_docs,
                 )
+                articles = [
+                    article
+                    for article in fetched
+                    if is_relevant(article.title, article.summary, name)
+                ]
                 recent = [article for article in articles if article.published_at >= cutoff]
                 known = await existing_ids([article.external_id for article in recent])
                 pending = [article for article in recent if article.external_id not in known]
                 log.info(
-                    "[%d/%d] %s(%s) 검색 %d건 · 최근 %d건 · 신규 %d건",
+                    "[%d/%d] %s(%s) 검색 %d건 · 무관 %d건 · 최근 %d건 · 신규 %d건",
                     index,
                     len(targets),
                     name,
                     ticker,
-                    len(articles),
+                    len(fetched),
+                    len(fetched) - len(articles),
                     len(recent),
                     len(pending),
                 )
