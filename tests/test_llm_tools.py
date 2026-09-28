@@ -12,6 +12,8 @@ from typing import Any
 
 import pytest
 
+import app.llm.tools as tools_module
+from app.core.adapters import BackendLedgerSource
 from app.core.enums import DocumentType, MetricSource, Screen, WikiSource
 from app.llm import tools as tool_mod
 from app.llm.tools import TOOL_NAMES, TOOLS, ToolContext, dispatch
@@ -331,3 +333,106 @@ def test_기여도_한_줄에는_없는_근거_id가_섞이지_않는다():
         ),
     )
     assert _contributor_row(row)["events"] == ["공급계약 체결"]
+
+
+# ── 백엔드 원장 분기 (GitLab #107 후속) ──────────────────────────────────────
+#
+# LEDGER_SOURCE=backend 이면 get_portfolio 가 이 분기로 빠지는데, 예전에는 여기서
+# metrics 를 통째로 비워 두어 ctx.values 가 하나도 차지 않았다. 그러면 최종 생성이
+# "수치를 언급하지 마십시오" 를 받아, 도구가 7종목을 가져와도 답은 "확인되지
+# 않았습니다" 였다.
+
+_BACKEND_PAYLOAD = {
+    "asOf": "2026-09-28T10:27:46+09:00",
+    "cashBalance": 7_360_000,
+    "holdings": [
+        {
+            "stockCode": "005930",
+            "stockName": "삼성전자",
+            "quantity": 70,
+            "avgBuyPrice": 281_500,
+            "currentPrice": 275_000,
+        },
+        {
+            "stockCode": "003490",
+            "stockName": "대한항공",
+            "quantity": 150,
+            "avgBuyPrice": 26_300,
+            "currentPrice": 31_350,
+        },
+    ],
+}
+
+
+class _FakeBackendSource(BackendLedgerSource):
+    def __init__(self) -> None:  # 네트워크를 타지 않는다
+        pass
+
+    async def load_portfolio(self, user_id: str) -> dict:
+        return _BACKEND_PAYLOAD
+
+
+@pytest.fixture
+def backend_ctx(monkeypatch) -> ToolContext:
+    monkeypatch.setattr(tools_module, "ledger_source", lambda: _FakeBackendSource())
+    return ToolContext(user_id=HOLDER)
+
+
+def test_백엔드_원장도_종목별_자리표시자를_채운다(backend_ctx):
+    result = run(dispatch("get_portfolio", {}, backend_ctx))
+
+    assert len(result["holdings"]) == 2
+    for ticker in ("005930", "003490"):
+        for prefix in ("weight", "return", "pnl", "value"):
+            assert f"{prefix}_{ticker}" in backend_ctx.values
+    assert {"total_value", "cash_balance", "cash_weight"} <= set(backend_ctx.values)
+
+
+def test_백엔드_원장_수익률은_평단과_현재가로_낸다(backend_ctx):
+    run(dispatch("get_portfolio", {}, backend_ctx))
+
+    # 대한항공 26,300 -> 31,350 = +19.2%
+    assert backend_ctx.values["return_003490"].value == "+19.2%"
+    # 삼성전자 70주 * (275,000 - 281,500) = -455,000원
+    assert backend_ctx.values["pnl_005930"].value == "-455,000원"
+
+
+def test_백엔드_원장은_종목코드와_이름을_함께_들고_온다(backend_ctx):
+    """자리표시자 key 가 코드로 끝나서, 이름표가 없으면 모델이 "005930: +3.4%" 라고 쓴다."""
+    run(dispatch("get_portfolio", {}, backend_ctx))
+    assert backend_ctx.names == {"005930": "삼성전자", "003490": "대한항공"}
+
+
+def test_이름표가_최종_요청에_실린다(backend_ctx):
+    """agent 가 ctx.names 를 요청에 넣어야 모델이 코드 대신 종목명을 쓴다."""
+    import asyncio
+
+    import app.llm.agent as agent_module
+    from app.llm.client import ToolTurn
+
+    run(dispatch("get_portfolio", {}, backend_ctx))
+    captured: dict[str, str] = {}
+
+    class _NoToolClient:
+        async def converse(self, **_kwargs):
+            return ToolTurn(stop_reason="end_turn", content=[])
+
+    async def fake_generate_section(_key, **kwargs):
+        captured["request"] = kwargs["request"]
+        raise RuntimeError("여기까지만 본다")
+
+    original = agent_module.generate_section
+    agent_module.generate_section = fake_generate_section
+    try:
+        with pytest.raises(RuntimeError):
+            asyncio.run(
+                agent_module.answer(
+                    "보유 종목 수익률", client=_NoToolClient(), ctx=backend_ctx, history=[]
+                )
+            )
+    finally:
+        agent_module.generate_section = original
+
+    assert "[종목코드와 이름]" in captured["request"]
+    assert "005930 = 삼성전자" in captured["request"]
+    assert "본문에는 코드가 아니라 종목명을 씁니다." in captured["request"]

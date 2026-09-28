@@ -250,6 +250,9 @@ class ToolContext:
     ticker: str | None = None
 
     values: dict[str, Segment] = field(default_factory=dict)
+    #: 종목코드 -> 종목명. 자리표시자 key 가 `return_000660` 처럼 코드로 끝나서,
+    #: 이름표가 없으면 모델이 코드를 종목명인 줄 알고 "000660: +3.4%" 라고 쓴다.
+    names: dict[str, str] = field(default_factory=dict)
     hits: list[dict[str, Any]] = field(default_factory=list)
     wiki: str = ""
     wiki_source: WikiSource | None = None
@@ -281,6 +284,16 @@ def _as_datetime(day: date) -> datetime:
     return datetime.combine(day, time(15, 30))
 
 
+def _parse_as_of(raw: object) -> datetime | None:
+    """백엔드가 준 ISO 시각. 형식이 어긋나면 None 이다 — 없어도 답은 나가야 한다."""
+    if not isinstance(raw, str):
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
 def _put(ctx: ToolContext, key: str, segment: Segment) -> tuple[str, str]:
     """엔진 값을 등록하고 (자리표시자 key, 표시 문자열)을 돌려준다."""
     ctx.values[key] = segment
@@ -295,22 +308,82 @@ async def _get_portfolio(ctx: ToolContext, _: dict[str, Any]) -> dict[str, Any]:
             raw = await source.load_portfolio(ctx.user_id)
         except (KeyError, FileNotFoundError, OSError):
             return {"unavailable": "이 사용자의 원장을 읽을 수 없습니다."}
-        holdings = [
-            {
-                "ticker": row.get("stockCode"),
-                "name": row.get("stockName") or row.get("stockCode"),
-                "quantity": row.get("quantity"),
-                "avg_cost": row.get("avgBuyPrice"),
-                "current_price": row.get("currentPrice"),
-            }
-            for row in raw.get("holdings", ())
+        rows = list(raw.get("holdings", ()))
+        cash = float(raw.get("cashBalance") or 0.0)
+        # 백엔드 원장은 수량·평단·현재가를 준다. 이 셋이면 평가액·손익·수익률·비중이
+        # 나온다 — 시장 시계열이 필요한 것은 변동성·베타·상관 같은 위험 지표뿐이다.
+        # 예전에는 그 구분 없이 metrics 를 통째로 비워 두었고, 그래서 이 경로에서는
+        # ctx.values 가 하나도 차지 않아 최종 생성이 "수치를 언급하지 마십시오" 를
+        # 받았다. 도구가 7종목을 가져와도 답은 "확인되지 않았습니다" 였다.
+        market_values = [
+            float(r.get("quantity") or 0) * float(r.get("currentPrice") or 0) for r in rows
         ]
+        total_value = sum(market_values) + cash
+
+        engine = MetricSource.PORTFOLIO_ENGINE
+        metrics = dict(
+            [
+                _put(ctx, "total_value", krw_segment(total_value, engine)),
+                _put(ctx, "cash_balance", krw_segment(cash, engine)),
+                _put(
+                    ctx,
+                    "cash_weight",
+                    ratio_segment(cash / total_value if total_value else 0.0, engine),
+                ),
+            ]
+        )
+
+        holdings = []
+        for row, market_value in zip(rows, market_values, strict=True):
+            ticker = row.get("stockCode")
+            if ticker:
+                ctx.names[ticker] = row.get("stockName") or ticker
+            quantity = float(row.get("quantity") or 0)
+            avg_cost = float(row.get("avgBuyPrice") or 0)
+            cost = quantity * avg_cost
+            holdings.append(
+                {
+                    "ticker": ticker,
+                    "name": row.get("stockName") or ticker,
+                    "quantity": row.get("quantity"),
+                    "avg_cost": row.get("avgBuyPrice"),
+                    "current_price": row.get("currentPrice"),
+                    "metrics": dict(
+                        [
+                            _put(
+                                ctx,
+                                f"weight_{ticker}",
+                                ratio_segment(
+                                    market_value / total_value if total_value else 0.0, engine
+                                ),
+                            ),
+                            _put(
+                                ctx,
+                                f"return_{ticker}",
+                                ratio_segment(
+                                    market_value / cost - 1.0 if cost else 0.0,
+                                    engine,
+                                    signed=True,
+                                ),
+                            ),
+                            _put(
+                                ctx,
+                                f"pnl_{ticker}",
+                                krw_segment(market_value - cost, engine, signed=True),
+                            ),
+                            _put(ctx, f"value_{ticker}", krw_segment(market_value, engine)),
+                        ]
+                    ),
+                }
+            )
+
+        ctx.portfolio_as_of = _parse_as_of(raw.get("asOf"))
         return {
             "as_of": raw.get("asOf"),
             "cash_balance": raw.get("cashBalance"),
             "holdings": holdings,
-            "metrics": {},
-            "note": "시장 시계열이 없어 비중·손익·위험 지표는 계산하지 않았습니다.",
+            "metrics": metrics,
+            "note": "시장 시계열이 없어 변동성·베타 같은 위험 지표는 계산하지 않았습니다.",
         }
     snapshot = await _snapshot(ctx.user_id)
     if snapshot is None:
@@ -334,6 +407,7 @@ async def _get_portfolio(ctx: ToolContext, _: dict[str, Any]) -> dict[str, Any]:
 
     holdings = []
     for holding in snapshot.holdings:
+        ctx.names[holding.symbol] = holding.name
         holdings.append(
             {
                 "ticker": holding.symbol,
