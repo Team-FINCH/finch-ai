@@ -108,7 +108,9 @@ def test_envelope_defaults() -> None:
     payload = Envelope[dict](content={}, data_as_of=DataAsOf()).model_dump(mode="json")
     assert payload["request_id"].startswith("req_")
     assert payload["generated_at"].endswith("+09:00"), "시각은 KST 오프셋을 명시한다"
-    assert payload["model"] == "gpt-5-nano"
+    # 특정 모델이 아니라 "설정된 모델이 봉투에 실린다" 가 계약이다. 이름을 박아 두면
+    # 모델을 바꿀 때마다 무관한 테스트가 깨진다 (FINCH-355).
+    assert payload["model"] == settings.llm_model
     assert payload["disclaimer"]
     assert payload["freshness_warnings"] == []
 
