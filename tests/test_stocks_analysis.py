@@ -19,6 +19,7 @@ from app.api.routes.stocks import (
     UpcomingEvent,
     _cached_common_sections,
 )
+from app.core.config import settings
 from app.core.db import get_session
 from app.core.enums import EventType
 from app.core.models import AIFeedback, AIResponse
@@ -312,7 +313,8 @@ def test_검색_결과가_없어도_생성은_진행한다(client):
 
 def test_면책_문구와_모델이_봉투에_들어간다(client):
     body = _post(client, {"sections": ["current"]}).json()
-    assert body["model"] == "gpt-5-nano"
+    # 설정된 모델이 실리는지만 본다 — 이름을 박으면 모델 교체가 무관한 테스트를 깬다.
+    assert body["model"] == settings.llm_model
     assert body["disclaimer"]
     assert body["request_id"].startswith("req_")
 

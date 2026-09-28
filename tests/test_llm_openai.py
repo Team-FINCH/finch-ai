@@ -146,8 +146,10 @@ def test_도구를_안_부르면_end_turn이다() -> None:
 def test_인자가_깨져도_턴을_버리지_않는다() -> None:
     """빈 인자로 부르면 도구 쪽 검증에 걸리고 그 사유가 다음 턴에 실린다."""
     turn = _turn_from_openai(
-        _chat({"tool_calls": [{"id": "t1", "function": {"name": "f", "arguments": "{깨짐"}}]},
-              finish="tool_calls")
+        _chat(
+            {"tool_calls": [{"id": "t1", "function": {"name": "f", "arguments": "{깨짐"}}]},
+            finish="tool_calls",
+        )
     )
     assert turn.tool_uses[0].input == {}
 
@@ -198,6 +200,33 @@ async def test_converse가_도구를_function_모양으로_보낸다() -> None:
     assert tool["function"]["name"] == "get_portfolio"
     # Anthropic은 input_schema, OpenAI는 parameters다.
     assert tool["function"]["parameters"] == {"type": "object", "properties": {}}
+
+
+@pytest.mark.asyncio
+async def test_도구_턴은_추론을_끈다() -> None:
+    """gpt-6-luna 는 Chat Completions 에서 도구와 reasoning_effort 를 함께 받지 않는다.
+
+    `low` 를 보내면 400 "Function tools with reasoning_effort are not supported" 다.
+    끄는 것 말고 선택지가 없고, 끄면 도구 턴이 빨라진다.
+    """
+    http = _FakeHttp(_chat({"content": "답"}))
+    client = GmsClient("k", client=http)
+
+    await client.converse(
+        system=[{"type": "text", "text": "지시"}],
+        messages=[{"role": "user", "content": "질문"}],
+        tools=[{"name": "t", "description": "", "input_schema": {"type": "object"}}],
+    )
+
+    assert http.sent["reasoning_effort"] == "none"
+
+
+def test_effort_어휘에_none_이_있다() -> None:
+    """도구 턴이 쓰는 값이라 빠지면 medium 으로 떨어져 400 이 난다."""
+    from app.llm.client import _EFFORT, _TOOL_TURN_EFFORT
+
+    assert _TOOL_TURN_EFFORT in _EFFORT
+    assert _EFFORT[_TOOL_TURN_EFFORT] == "none"
 
 
 @pytest.mark.asyncio

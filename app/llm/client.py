@@ -403,7 +403,7 @@ class GmsClient:
                         }
                         for t in tools
                     ],
-                    "reasoning_effort": "low",
+                    "reasoning_effort": _TOOL_TURN_EFFORT,
                     "max_completion_tokens": max_tokens or settings.llm_max_tokens,
                 }
             )
@@ -426,7 +426,17 @@ class GmsClient:
 
 
 # effort 어휘가 서로 다르다. 정책 §6.1의 이름을 OpenAI 쪽으로 옮긴다.
-_EFFORT = {"low": "low", "medium": "medium", "high": "high"}
+#
+# `none` 은 정책에 없는 값이라 §6.1 이름이 아니다. gpt-6-luna 가 Chat Completions
+# 에서 **도구와 reasoning_effort 를 함께 받지 않기 때문에** 필요하다 — 도구를 쓰는
+# 호출은 추론을 끄는 것 말고 선택지가 없다 (실측: 도구+low → 400 "Function tools
+# with reasoning_effort are not supported for gpt-6-luna").
+_EFFORT = {"none": "none", "low": "low", "medium": "medium", "high": "high"}
+
+#: 도구를 쓰는 턴의 추론 강도. 모델이 도구와 추론을 함께 받지 못하므로 끈다.
+#: 도구 턴은 "무엇을 부를지" 고르는 자리라 추론이 크게 필요하지 않고, 끄면 응답이
+#: 빨라진다(실측 1.0s → 0.8s, 추론 토큰 0).
+_TOOL_TURN_EFFORT = "none"
 
 
 def _system_text(system: list[dict[str, Any]]) -> str:
