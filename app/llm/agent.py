@@ -184,6 +184,14 @@ async def answer(
         "확인하겠다거나 데이터를 가져오겠다는 작업 계획으로 끝내지 마십시오. "
         "이미 실행된 도구 결과로 답하고, 결과가 없으면 확인하지 못했다고 명시하십시오."
     )
+    # 자리표시자 key 가 `return_000660` 처럼 종목코드로 끝난다. 이름표가 없으면
+    # 모델이 코드를 종목명으로 오인해 "000660: +3.4%" 라고 쓴다 — 사용자는 그것이
+    # 무슨 종목인지 모른다.
+    if ctx.names:
+        rows = "\n".join(f"{code} = {name}" for code, name in sorted(ctx.names.items()))
+        request_parts.append(
+            f"[종목코드와 이름]\n{rows}\n\n본문에는 코드가 아니라 종목명을 씁니다."
+        )
     outcome = await generate_section(
         "answer",
         client=client,
