@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # GMS OpenAI 호환 Chat Completions API를 사용한다.
     gms_key: str = ""
     gms_base_url: str = "https://api.openai.com/v1"
-    llm_model: str = "gpt-5-nano"
+    llm_model: str = "gpt-6-luna"
     #: 추론 토큰 상한. low 실측 ~550 이라 여유 7배. 16_000 이면 모델이 추론에
     #: 그만큼 쓸 수 있어 사용량 폭주를 막지 못한다 (2026-09-16 실측 high 4,480).
     llm_max_tokens: int = 4_000
