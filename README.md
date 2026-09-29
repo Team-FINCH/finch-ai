@@ -10,6 +10,53 @@
 
 > 담당: 김세민 [@tpals0409](https://github.com/tpals0409) · 커밋 비중 75%
 
+## 아키텍처
+
+```mermaid
+flowchart TB
+    BE["Backend<br/>AI 중계"] -->|요청| API["FastAPI 라우트<br/>브리핑 · 채팅 · 분석 · 진단"]
+    API --> IG["입력 가드<br/>정제 · 프롬프트 주입 탐지"]
+
+    subgraph ANALYSIS["분석 기능 — 고정 파이프라인"]
+        ENG["계산 엔진<br/>수익률 분해 · 위험 지표"] --> GEN["LLM 서술<br/>자리표시자만 사용"]
+    end
+
+    subgraph CHAT["채팅 — 에이전트"]
+        Q[("chat_jobs 큐<br/>SKIP LOCKED")] --> AG["도구 턴<br/>최대 3턴 · 12호출 · 병렬"]
+        AG --> TOOLS["도구<br/>포트폴리오 · 수익률 분해 · 시세<br/>뉴스 · 공시 · 재무 · 위키"]
+        TOOLS --> NAR["서술 턴<br/>strict JSON"]
+    end
+
+    IG --> ENG
+    IG --> Q
+    GEN --> OG
+    NAR --> OG
+    OG{"출력 가드 10종"} -->|위반| RE["사유 붙여 재생성"] --> OG
+    OG -->|통과| SUB["자리표시자 치환<br/>텍스트 · 수치 segments"]
+    OG -->|재실패| BLK["차단"]
+    SUB --> BE
+
+    TOOLS -->|"/internal/v1"| LEDGER["Backend 원장<br/>읽기 전용"]
+    TOOLS --> RAG["하이브리드 검색<br/>pgvector + 어휘 · RRF 융합"]
+```
+
+```mermaid
+flowchart LR
+    subgraph SRC["수집 원천"]
+        N["네이버 뉴스<br/>매일 06시 · 평일 13시"]
+        DA["DART 공시<br/>매일 18:40"]
+        M["시세 · 지수<br/>장중 매시"]
+    end
+    N --> CH["청크 1,000자"] --> EMB["임베딩<br/>text-embedding-3-small · 1024차원"]
+    DA --> CH
+    N --> EV["이벤트 승격<br/>중요도 규칙"]
+    DA --> EV
+    EMB --> DB[("PostgreSQL + pgvector")]
+    EV --> DB
+    M --> DB
+    DB --> BR["09:20 데일리 브리핑 배치"]
+```
+
 ## 핵심 과제
 
 금융 서비스에서 LLM 의 두 가지 실패 — **숫자 환각**과 **투자 권유** — 를 프롬프트가 아니라 **구조로** 막는 것.
